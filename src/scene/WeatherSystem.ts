@@ -28,6 +28,9 @@ export class WeatherSystem {
     uColor: { value: new THREE.Color('#ffe8c4') },
     uOpacity: { value: 0.24 },
   };
+  private readonly incenseDayCol = new THREE.Color('#ffdcb0');
+  private readonly incenseNightCol = new THREE.Color('#ffaa5a');
+  private lastAppliedRain = -1;
 
   private lampCones: THREE.InstancedMesh;
   private lampConeMat: THREE.ShaderMaterial;
@@ -267,10 +270,14 @@ export class WeatherSystem {
       this.rainUniforms.uOpacity.value = this.rainFactor * 0.55;
     }
 
-    // Wet reflective streets & Barcelona panot sidewalks during rain!
-    for (const item of this.wetMaterials) {
-      item.mat.roughness = THREE.MathUtils.lerp(item.baseRoughness, 0.13, this.rainFactor);
-      item.mat.envMapIntensity = THREE.MathUtils.lerp(item.baseEnv, 1.95, this.rainFactor);
+    // Wet reflective streets & Barcelona panot sidewalks during rain (update only when transitioning!)
+    if (Math.abs(this.rainFactor - this.lastAppliedRain) > 0.002) {
+      this.lastAppliedRain = this.rainFactor;
+      for (let i = 0; i < this.wetMaterials.length; i++) {
+        const item = this.wetMaterials[i];
+        item.mat.roughness = THREE.MathUtils.lerp(item.baseRoughness, 0.13, this.rainFactor);
+        item.mat.envMapIntensity = THREE.MathUtils.lerp(item.baseEnv, 1.95, this.rainFactor);
+      }
     }
 
     // Atmospheric fog boost during mist or rain
@@ -282,11 +289,11 @@ export class WeatherSystem {
     }
 
     // Sanctuary incense visible indoors near nave/altar
-    this.incensePoints.visible = indoorFactor > 0.25 && cameraPos.y > -1.0 && cameraPos.y < 52.0;
+    this.incensePoints.visible = indoorFactor > 0.25 && cameraPos.y > -1.0 && cameraPos.y < 48.0;
     if (this.incensePoints.visible) {
       this.incenseUniforms.uColor.value
-        .set('#ffdcb0')
-        .lerp(new THREE.Color('#ffaa5a'), (1.0 - nightFactor) * 0.45);
+        .copy(this.incenseDayCol)
+        .lerp(this.incenseNightCol, (1.0 - nightFactor) * 0.45);
       this.incenseUniforms.uOpacity.value = THREE.MathUtils.lerp(0.14, 0.26, dayFactor);
     }
 

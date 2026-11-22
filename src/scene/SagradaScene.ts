@@ -57,6 +57,7 @@ export class SagradaScene {
   public instancedGroups = 0;
   public savedDrawCalls = 0;
   public reflectorActive = true;
+  public readonly reflectorRes: number;
 
   private pondReflector!: Reflector;
   private pondBox = new THREE.Box3(new THREE.Vector3(67.5, -1.0, -17.5), new THREE.Vector3(97.5, 1.5, 17.5));
@@ -68,6 +69,8 @@ export class SagradaScene {
   private interiorCubeCam: THREE.CubeCamera;
   private interiorPmrem: THREE.PMREMGenerator;
   private interiorPmremReady = false;
+  private interiorProbeDirty = false;
+  private lastIndoorFactor = 0;
   private currentInteriorEnvRT: THREE.WebGLRenderTarget | null = null;
   private interiorReflectiveMats: THREE.MeshStandardMaterial[] = [];
 
@@ -83,20 +86,51 @@ export class SagradaScene {
     uHazeColor: { value: new THREE.Color('#f0dec4') },
     uHazeStrength: { value: 0.22 },
   };
+  private readonly hazeDayCol = new THREE.Color('#d8be9a');
+  private readonly hazeNightCol = new THREE.Color('#141d32');
+  private readonly nightWindowCol = new THREE.Color('#ffbd69');
+
   private eixampleNightMats: THREE.MeshStandardMaterial[] = [];
   private internalStairMeshes: THREE.Object3D[] = [];
-  private interiorOnlyRoots: THREE.Object3D[] = [];
+  private interiorDeepMeshes: THREE.Object3D[] = [];
+  private cryptMeshes: THREE.Object3D[] = [];
+  private highTowerMeshes: THREE.Object3D[] = [];
+  private eixampleDetailMeshes: THREE.Object3D[] = [];
+  private plazaLifeRoot: THREE.Object3D | null = null;
+  private eixampleRoot: THREE.Object3D | null = null;
+  private exteriorShellRoots: THREE.Object3D[] = [];
+
+  // Pre-allocated reflector visibility lists & throttle state (zero per-frame allocations!)
+  private reflectorHiddenObjs: THREE.Object3D[] = [];
+  private reflectorSavedVis: boolean[] = [];
+  private readonly lastReflCamPos = new THREE.Vector3(Infinity, 0, 0);
+  private readonly lastReflCamQuat = new THREE.Quaternion();
+  private lastReflTimeHours = -1;
+  private reflFrameCounter = 0;
+  private reflDirty = true;
 
   constructor(private renderer: THREE.WebGLRenderer) {
+    const mobile = isMobileDevice();
+    this.reflectorRes = mobile ? 160 : 256;
+
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2('#c8dff5', 0.0012);
 
     this.lighting = new LightingSystem(this.scene, this.renderer);
     this.geometryOverlay = new GeometryOverlay();
     this.timeline = new ConstructionTimeline();
+    this.timeline.onLocalClippingChange = (enabled) => {
+      this.renderer.localClippingEnabled = enabled;
+      this.reflDirty = true;
+      if (enabled) {
+        for (let i = 0; i < this.interiorDeepMeshes.length; i++) this.interiorDeepMeshes[i].visible = true;
+        for (let i = 0; i < this.cryptMeshes.length; i++) this.cryptMeshes[i].visible = true;
+        for (let i = 0; i < this.highTowerMeshes.length; i++) this.highTowerMeshes[i].visible = true;
+        for (let i = 0; i < this.internalStairMeshes.length; i++) this.internalStairMeshes[i].visible = true;
+      }
+    };
     this.scene.add(this.geometryOverlay.group);
 
-    const mobile = isMobileDevice();
     this.birds = new FlockingBirds(mobile ? 8 : 16);
     this.scene.add(this.birds.group);
 
@@ -115,6 +149,17 @@ export class SagradaScene {
     this.elevator = new JesusElevator();
     this.scene.add(this.elevator.group);
 
+    // Non-architectural overlays/particles never need to render inside the distant pond reflector
+    this.reflectorHiddenObjs.push(
+      this.candles.group,
+      this.glassCarpets.group,
+      this.weather.group,
+      this.birds.group,
+      this.fountain.points,
+      this.elevator.group,
+      this.lighting.particles.points
+    );
+
     // Prepare cached interior reflection probe (128px on mobile for lower VRAM, 256px on desktop)
     const probeRes = mobile ? 128 : 256;
     this.interiorProbeRT = new THREE.WebGLCubeRenderTarget(probeRes, {
@@ -127,9 +172,15 @@ export class SagradaScene {
     this.scene.add(this.interiorCubeCam);
     this.interiorPmrem = new THREE.PMREMGenerator(this.renderer);
 
-    this.lighting.onTimeBucketChanged = () => this.captureInteriorReflectionProbe();
+    this.lighting.onTimeBucketChanged = () => {
+      if (this.lastIndoorFactor > 0.15) {
+        this.captureInteriorReflectionProbe();
+      } else {
+        this.interiorProbeDirty = true;
+      }
+    };
 
-    this.buildReflectivePond();
+    this.buildReflectivePond(mobile);
   }
 
   /**
@@ -147,6 +198,17 @@ export class SagradaScene {
     this.pondReflector.visible = false;
     this.geometryOverlay.group.visible = false;
 
+    const savedDeep: boolean[] = [];
+    for (let i = 0; i < this.interiorDeepMeshes.length; i++) {
+      savedDeep[i] = this.interiorDeepMeshes[i].visible;
+      this.interiorDeepMeshes[i].visible = true;
+    }
+    const savedExt: boolean[] = [];
+    for (let i = 0; i < this.exteriorShellRoots.length; i++) {
+      savedExt[i] = this.exteriorShellRoots[i].visible;
+      this.exteriorShellRoots[i].visible = true;
+    }
+
     this.interiorCubeCam.update(this.renderer, this.scene);
     const nextEnv = this.interiorPmrem.fromCubemap(this.interiorProbeRT.texture);
 
@@ -159,7 +221,14 @@ export class SagradaScene {
       this.currentInteriorEnvRT.dispose();
     }
     this.currentInteriorEnvRT = nextEnv;
+    this.interiorProbeDirty = false;
 
+    for (let i = 0; i < this.interiorDeepMeshes.length; i++) {
+      this.interiorDeepMeshes[i].visible = savedDeep[i];
+    }
+    for (let i = 0; i < this.exteriorShellRoots.length; i++) {
+      this.exteriorShellRoots[i].visible = savedExt[i];
+    }
     this.pondReflector.visible = prevPond;
     this.geometryOverlay.group.visible = prevGeo;
   }
@@ -206,29 +275,49 @@ export class SagradaScene {
     return tex;
   }
 
-  private buildReflectivePond(): void {
+  private buildReflectivePond(mobile: boolean): void {
     const pondGeo = new THREE.PlaneGeometry(29.0, 34.0);
-    const mobile = isMobileDevice();
-    const reflRes = mobile ? 256 : 384;
     const reflector = new Reflector(pondGeo, {
       clipBias: 0.003,
-      textureWidth: reflRes,
-      textureHeight: reflRes,
+      textureWidth: this.reflectorRes,
+      textureHeight: this.reflectorRes,
       color: 0x6f90a1,
+      multisample: mobile ? 0 : 2,
     });
     const origBeforeRender = reflector.onBeforeRender.bind(reflector);
     reflector.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
       if (scene.overrideMaterial !== null) return;
-      // Render pond reflection EVERY frame in 1:1 lockstep with camera (ZERO judder/stutter when strafing!)
-      // while hiding interior-only meshes to keep reflection cost ~70% lighter!
-      const savedVis: Array<[THREE.Object3D, boolean]> = [];
-      for (const obj of [...this.interiorOnlyRoots, ...this.internalStairMeshes, this.candles.group, this.glassCarpets.group]) {
-        savedVis.push([obj, obj.visible]);
+
+      // Throttle reflector renders intelligently while keeping smooth 1:1 lockstep during desktop movement
+      this.reflFrameCounter++;
+      const distSq = this.lastReflCamPos.distanceToSquared(camera.position);
+      const qDot = Math.abs(this.lastReflCamQuat.dot(camera.quaternion));
+      const camMoved = distSq > 0.0004 || 1.0 - qDot > 0.000015;
+      const timeChanged = Math.abs(this.lighting.timeHours - this.lastReflTimeHours) > 0.002;
+      const stationaryPeriod = mobile ? 12 : 8;
+      const shouldRender =
+        this.reflDirty ||
+        timeChanged ||
+        this.timeline.isHistorical ||
+        (camMoved ? (!mobile || (this.reflFrameCounter & 1) === 0) : this.reflFrameCounter % stationaryPeriod === 0);
+
+      if (!shouldRender) return;
+
+      this.reflDirty = false;
+      this.lastReflCamPos.copy(camera.position);
+      this.lastReflCamQuat.copy(camera.quaternion);
+      this.lastReflTimeHours = this.lighting.timeHours;
+
+      // Zero-allocation temporary hide of interior/distant detail meshes (~80% lighter reflection pass!)
+      const hiddenCount = this.reflectorHiddenObjs.length;
+      for (let i = 0; i < hiddenCount; i++) {
+        const obj = this.reflectorHiddenObjs[i];
+        this.reflectorSavedVis[i] = obj.visible;
         obj.visible = false;
       }
       origBeforeRender(renderer, scene, camera, geometry, material, group);
-      for (const [obj, vis] of savedVis) {
-        obj.visible = vis;
+      for (let i = 0; i < hiddenCount; i++) {
+        this.reflectorHiddenObjs[i].visible = this.reflectorSavedVis[i];
       }
     };
     reflector.rotation.x = -Math.PI / 2;
@@ -311,13 +400,43 @@ export class SagradaScene {
     this.scene.add(overlay);
   }
 
+  private downgradePhysicalToStandard(mat: THREE.MeshPhysicalMaterial): THREE.MeshStandardMaterial {
+    const std = new THREE.MeshStandardMaterial({
+      name: mat.name,
+      color: mat.color,
+      map: mat.map,
+      normalMap: mat.normalMap,
+      normalScale: mat.normalScale,
+      roughnessMap: mat.roughnessMap,
+      roughness: mat.name.includes('FloorMarble') ? Math.max(0.14, mat.roughness * 0.72) : mat.roughness,
+      metalness: mat.metalness,
+      metalnessMap: mat.metalnessMap,
+      emissive: mat.emissive,
+      emissiveMap: mat.emissiveMap,
+      emissiveIntensity: mat.emissiveIntensity,
+      side: mat.side,
+      transparent: mat.transparent,
+      opacity: mat.opacity,
+      depthWrite: mat.depthWrite,
+      alphaTest: mat.alphaTest,
+      vertexColors: Boolean(mat.vertexColors),
+      envMap: mat.envMap,
+      envMapIntensity: mat.envMapIntensity,
+      lightMap: mat.lightMap,
+      lightMapIntensity: mat.lightMapIntensity,
+    });
+    mat.dispose();
+    return std;
+  }
+
   /**
    * Multi-Scale Macro Anti-Tiling Weathering + Atmospheric Height Haze (Cathedral volumetric depth!).
-   * Eliminates repetitive tiling across 172m towers and adds subtle warm golden elevation haze in high vaults.
+   * Uses a lean 1-octave variant on mobile GPUs to cut stone fragment shader ALU cost.
    */
-  private injectStoneAntiTilingAndHeightFog(mat: THREE.MeshStandardMaterial): void {
+  private injectStoneAntiTilingAndHeightFog(mat: THREE.MeshStandardMaterial, mobile: boolean): void {
     const hazeU = this.hazeUniforms;
-    mat.customProgramCacheKey = () => 'sagrada-stone-antitiling-v1';
+    mat.customProgramCacheKey = () =>
+      mobile ? 'sagrada-stone-antitiling-mobile-v1' : 'sagrada-stone-antitiling-v1';
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uHazeColor = hazeU.uHazeColor;
       shader.uniforms.uHazeStrength = hazeU.uHazeStrength;
@@ -333,25 +452,35 @@ export class SagradaScene {
         '#include <common>',
         `#include <common>\nuniform vec3 uHazeColor;\nuniform float uHazeStrength;\nvarying vec3 vWorldPosAAA;`
       );
-      // Break macro texture tiling via smooth 3D world-space multi-frequency stone variation + base ground patina
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <map_fragment>',
-        `#include <map_fragment>
-         float macroW1 = sin(vWorldPosAAA.x * 0.14 + vWorldPosAAA.z * 0.11) * cos(vWorldPosAAA.y * 0.09 - vWorldPosAAA.x * 0.07);
-         float macroW2 = sin(vWorldPosAAA.y * 0.31 + vWorldPosAAA.z * 0.23) * cos(vWorldPosAAA.x * 0.27);
-         float macroTone = 0.94 + 0.09 * macroW1 + 0.045 * macroW2;
-         float groundPatina = mix(0.87, 1.03, smoothstep(0.0, 14.0, vWorldPosAAA.y));
-         diffuseColor.rgb *= macroTone * groundPatina;`
-      );
-      // Subtle atmospheric height-stratified cathedral haze in high vaults (Y = 22..65m)
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <fog_fragment>',
-        `#include <fog_fragment>
-         float camDistAAA = length(vWorldPosAAA - cameraPosition);
-         float vaultBand = smoothstep(14.0, 52.0, vWorldPosAAA.y) * (1.0 - smoothstep(68.0, 115.0, vWorldPosAAA.y));
-         float heightHaze = clamp((camDistAAA / 95.0) * vaultBand * uHazeStrength, 0.0, 0.32);
-         gl_FragColor.rgb = mix(gl_FragColor.rgb, uHazeColor, heightHaze);`
-      );
+      if (mobile) {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `#include <map_fragment>
+           float macroW1 = sin(vWorldPosAAA.x * 0.14 + vWorldPosAAA.z * 0.11) * cos(vWorldPosAAA.y * 0.09);
+           float groundPatina = mix(0.88, 1.02, clamp(vWorldPosAAA.y * 0.0714, 0.0, 1.0));
+           diffuseColor.rgb *= (0.95 + 0.08 * macroW1) * groundPatina;`
+        );
+      } else {
+        // Break macro texture tiling via smooth 3D world-space multi-frequency stone variation + base ground patina
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `#include <map_fragment>
+           float macroW1 = sin(vWorldPosAAA.x * 0.14 + vWorldPosAAA.z * 0.11) * cos(vWorldPosAAA.y * 0.09 - vWorldPosAAA.x * 0.07);
+           float macroW2 = sin(vWorldPosAAA.y * 0.31 + vWorldPosAAA.z * 0.23) * cos(vWorldPosAAA.x * 0.27);
+           float macroTone = 0.94 + 0.09 * macroW1 + 0.045 * macroW2;
+           float groundPatina = mix(0.87, 1.03, smoothstep(0.0, 14.0, vWorldPosAAA.y));
+           diffuseColor.rgb *= macroTone * groundPatina;`
+        );
+        // Subtle atmospheric height-stratified cathedral haze in high vaults (Y = 22..65m)
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <fog_fragment>',
+          `#include <fog_fragment>
+           float camDistAAA = length(vWorldPosAAA - cameraPosition);
+           float vaultBand = smoothstep(14.0, 52.0, vWorldPosAAA.y) * (1.0 - smoothstep(68.0, 115.0, vWorldPosAAA.y));
+           float heightHaze = clamp((camDistAAA / 95.0) * vaultBand * uHazeStrength, 0.0, 0.32);
+           gl_FragColor.rgb = mix(gl_FragColor.rgb, uHazeColor, heightHaze);`
+        );
+      }
     };
     mat.needsUpdate = true;
   }
@@ -414,7 +543,8 @@ export class SagradaScene {
     const texLoader = new THREE.TextureLoader(loadingManager);
 
     const eixampleNightTex = this.createEixampleNightWindowTexture();
-    const maxAniso = Math.min(isMobileDevice() ? 4 : 16, this.renderer.capabilities.getMaxAnisotropy());
+    const mobile = isMobileDevice();
+    const maxAniso = Math.min(mobile ? 2 : 4, this.renderer.capabilities.getMaxAnisotropy());
     const lightmapCache = new Map<string, THREE.Texture>();
     // Share identical MeshStandardMaterials across all 7 GLBs (dramatically cuts GPU textures & shader compiles!)
     const sharedMaterials = new Map<string, THREE.MeshStandardMaterial>();
@@ -441,7 +571,7 @@ export class SagradaScene {
           matName.includes('VaultStone') ||
           matName.includes('CryptStone')
         ) {
-          this.injectStoneAntiTilingAndHeightFog(mat);
+          this.injectStoneAntiTilingAndHeightFog(mat, mobile);
         }
         if (
           obj.name === 'Interior_MarbleFloor' ||
@@ -449,7 +579,9 @@ export class SagradaScene {
           matName.includes('GoldAccent')
         ) {
           mat.envMapIntensity = obj.name === 'Interior_MarbleFloor' ? 0.85 : 0.72;
-          this.interiorReflectiveMats.push(mat);
+          if (!this.interiorReflectiveMats.includes(mat)) {
+            this.interiorReflectiveMats.push(mat);
+          }
         }
         if (isStainedGlass) {
           mat.side = THREE.DoubleSide;
@@ -465,10 +597,12 @@ export class SagradaScene {
           mat.side = THREE.DoubleSide;
         }
         if (matName.includes('EixampleFacade')) {
-          mat.emissive = new THREE.Color('#ffbd69');
+          mat.emissive.copy(this.nightWindowCol);
           mat.emissiveMap = eixampleNightTex;
           mat.emissiveIntensity = 0.0;
-          this.eixampleNightMats.push(mat);
+          if (!this.eixampleNightMats.includes(mat)) {
+            this.eixampleNightMats.push(mat);
+          }
         }
         if (isFoliage) {
           this.injectTreeWindSway(mat);
@@ -476,28 +610,61 @@ export class SagradaScene {
       }
     };
 
+    const maybeDowngradeClearcoat = (mat: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial => {
+      if (mat instanceof THREE.MeshPhysicalMaterial) {
+        const keepClearcoat =
+          !mobile && (mat.name.includes('FloorMarble') || mat.name.includes('PorphyryRed'));
+        if (!keepClearcoat) {
+          return this.downgradePhysicalToStandard(mat);
+        }
+      }
+      return mat;
+    };
+
     const processLoadedRoot = (spec: ModelSpec, root: THREE.Group) => {
       root.name = `Module_${spec.id}`;
       root.traverse((obj) => {
         if (!(obj instanceof THREE.Mesh)) return;
-        const mat = obj.material instanceof THREE.MeshStandardMaterial ? obj.material : null;
+        let mat = obj.material instanceof THREE.MeshStandardMaterial ? obj.material : null;
         const matName = mat ? mat.name : '';
-        const isStainedGlass = obj.name.includes('StainedGlass') || matName.includes('StainedGlass');
-        const isGroundOrFloor =
-          obj.name.includes('Floor') ||
-          obj.name.includes('Carpet') ||
-          obj.name.includes('Crosswalks') ||
-          obj.name.includes('Streets') ||
-          obj.name.includes('Sidewalks') ||
-          obj.name.includes('ParkLawns');
-        const isGlassCase = obj.name.includes('GlassCases') || obj.name.includes('ElevatorShaftGlass') || matName.includes('GlassCase');
+        const meshName = obj.name;
+        const isStainedGlass = meshName.includes('StainedGlass') || matName.includes('StainedGlass');
+        const isGlassCase = meshName.includes('GlassCases') || meshName.includes('ElevatorShaftGlass') || matName.includes('GlassCase');
 
-        obj.castShadow = !isStainedGlass && !isGroundOrFloor && !isGlassCase;
-        obj.receiveShadow = !isStainedGlass && !isGlassCase;
+        // Selective Shadow Casters: ONLY major sunlight-blocking exterior architecture casts 2K sun shadows!
+        let castShadow = false;
+        if (!isStainedGlass && !isGlassCase) {
+          if (spec.id === 'facades') {
+            castShadow = !meshName.includes('Doors') && !meshName.includes('Doves') && !meshName.includes('EntranceStairs');
+          } else if (spec.id === 'towers') {
+            castShadow = !meshName.includes('InternalStair') && !meshName.includes('RoofStairs');
+          } else if (spec.id === 'interior') {
+            castShadow = meshName === 'Interior_NaveWalls';
+          } else if (spec.id === 'cloister_crypt') {
+            castShadow = meshName === 'Cloister_And_Sacristies';
+          } else if (spec.id === 'eixample') {
+            castShadow =
+              meshName.startsWith('Eixample_Buildings') ||
+              meshName === 'Eixample_Roofs' ||
+              meshName.startsWith('PlaneTree') ||
+              meshName.startsWith('CypressTree');
+          }
+        }
+        obj.castShadow = castShadow;
+
+        const skipReceiveShadow =
+          isStainedGlass ||
+          isGlassCase ||
+          meshName === 'Eixample_DistantCity' ||
+          meshName === 'Barcelona_HorizonHills' ||
+          meshName === 'Barcelona_MediterraneanSea' ||
+          meshName.includes('InternalStair') ||
+          meshName.startsWith('Crypt_');
+        obj.receiveShadow = !skipReceiveShadow;
 
         if (mat) {
-          const lmSpec = LIGHTMAP_BY_MESH[obj.name];
-          const lmTex = lightmapCache.get(obj.name);
+          const lmSpec = LIGHTMAP_BY_MESH[meshName];
+          const lmTex = lightmapCache.get(meshName);
           const hasUniqueLightmap = Boolean(lmSpec && lmTex && obj.geometry.attributes.uv1);
 
           if (!hasUniqueLightmap && matName) {
@@ -513,10 +680,14 @@ export class SagradaScene {
               }
               configureMaterial(cached, obj);
             } else {
+              mat = maybeDowngradeClearcoat(mat);
+              obj.material = mat;
               sharedMaterials.set(matName, mat);
               configureMaterial(mat, obj);
             }
           } else {
+            mat = maybeDowngradeClearcoat(mat);
+            obj.material = mat;
             if (hasUniqueLightmap && lmSpec && lmTex) {
               mat.lightMap = lmTex;
               mat.lightMapIntensity = lmSpec.intensity;
@@ -535,18 +706,64 @@ export class SagradaScene {
       collision.registerCollisionMeshes(root);
       this.lighting.registerLoadedMaterials(root);
       this.timeline.registerModule(root);
+
+      // Register spatial zone & pond-reflector culling lists ONCE (no per-frame scene traversals!)
       if (spec.id === 'eixample' || spec.id === 'plaza_life') {
         this.weather.registerExteriorGroundMaterials(root);
       }
-      if (spec.id === 'furnishings' || spec.id === 'cloister_crypt') {
-        this.interiorOnlyRoots.push(root);
-      }
-      if (spec.id === 'towers') {
-        root.traverse((o) => {
-          if (o.name === 'Towers_InternalStaircases' || o.name === 'Towers_InternalStairRails') {
-            this.internalStairMeshes.push(o);
+      if (spec.id === 'facades') {
+        this.exteriorShellRoots.push(root);
+      } else if (spec.id === 'furnishings') {
+        this.interiorDeepMeshes.push(root);
+        this.reflectorHiddenObjs.push(root);
+      } else if (spec.id === 'plaza_life') {
+        this.plazaLifeRoot = root;
+        this.reflectorHiddenObjs.push(root);
+      } else if (spec.id === 'interior') {
+        for (const child of root.children) {
+          const n = child.name;
+          if (n !== 'Interior_NaveWalls' && !n.includes('StainedGlass')) {
+            this.interiorDeepMeshes.push(child);
+            this.reflectorHiddenObjs.push(child);
           }
-        });
+        }
+      } else if (spec.id === 'cloister_crypt') {
+        for (const child of root.children) {
+          if (child.name.startsWith('Crypt_')) {
+            this.cryptMeshes.push(child);
+            this.reflectorHiddenObjs.push(child);
+          }
+        }
+      } else if (spec.id === 'eixample') {
+        this.eixampleRoot = root;
+        for (const child of root.children) {
+          const n = child.name;
+          const isTree = n.startsWith('Instanced_PlaneTree') || n.startsWith('Instanced_CypressTree');
+          const isDetail =
+            n === 'Eixample_BalconiesIron' ||
+            n === 'Eixample_ShopAwnings' ||
+            n === 'Eixample_DistantCity' ||
+            n === 'Barcelona_HorizonHills' ||
+            n === 'Barcelona_MediterraneanSea' ||
+            n.startsWith('Instanced_StreetLamp');
+          if (isTree || isDetail) {
+            this.eixampleDetailMeshes.push(child);
+          }
+          if (isDetail) {
+            this.reflectorHiddenObjs.push(child);
+          }
+        }
+      } else if (spec.id === 'towers') {
+        this.exteriorShellRoots.push(root);
+        for (const child of root.children) {
+          const n = child.name;
+          if (n === 'Towers_InternalStaircases' || n === 'Towers_InternalStairRails') {
+            this.internalStairMeshes.push(child);
+            this.reflectorHiddenObjs.push(child);
+          } else if (!n.includes('Nativity') && !n.includes('Passion')) {
+            this.highTowerMeshes.push(child);
+          }
+        }
       }
     };
 
@@ -655,16 +872,17 @@ export class SagradaScene {
 
   public update(dt: number, camera: THREE.PerspectiveCamera, indoorFactor: number): void {
     const cameraPos = camera.position;
+    this.lastIndoorFactor = indoorFactor;
     this.waterUniforms.uTime.value += dt;
     this.waterUniforms.uSunDir.value.copy(this.lighting.sunDir);
     this.waterUniforms.uSunColor.value.copy(this.lighting.sunLight.color);
     this.waterUniforms.uNightFactor.value = this.lighting.nightFactor;
     this.windUniform.value += dt;
 
-    // Restrained warm golden haze in the 45-60m vaults by day, subtle indigo at night
+    // Restrained warm golden haze in the 45-60m vaults by day, subtle indigo at night (zero allocations!)
     this.hazeUniforms.uHazeColor.value
-      .set('#d8be9a')
-      .lerp(new THREE.Color('#141d32'), this.lighting.nightFactor * 0.88);
+      .copy(this.hazeDayCol)
+      .lerp(this.hazeNightCol, this.lighting.nightFactor * 0.88);
     this.hazeUniforms.uHazeStrength.value = THREE.MathUtils.lerp(0.14, 0.09, this.lighting.nightFactor);
 
     camera.updateMatrixWorld();
@@ -676,20 +894,73 @@ export class SagradaScene {
       cameraPos.y > -1.0 &&
       distPond < 250 &&
       this.frustum.intersectsBox(this.pondBox);
+    if (pondVisible && !this.pondReflector.visible) {
+      this.reflDirty = true;
+    }
     this.pondReflector.visible = pondVisible;
     this.reflectorActive = pondVisible;
 
-    // Smart 55k-tri Interior Tower Staircase Culling: ONLY show high tower spiral stairs when up on Emporen/Towers (Y > 10.5m)
-    // Never pops in when simply walking through ground-level cathedral portals!
     const distBasilica = Math.hypot(cameraPos.x, cameraPos.z - 8.0);
+    const distApse = Math.hypot(cameraPos.x, cameraPos.z + 21.0);
+    const distCenter = Math.hypot(cameraPos.x, cameraPos.z);
+
+    // Conservative Spatial Zone Culling (~40-70% triangle & draw-call reduction with ZERO visual pop-in!)
     const showInternalStairs = cameraPos.y > 10.5 && distBasilica < 68.0;
-    for (const sm of this.internalStairMeshes) {
-      sm.visible = showInternalStairs;
+    if (!this.timeline.isHistorical) {
+      const inDeepCrypt = cameraPos.y < -2.2;
+      const nearCryptStairExit = inDeepCrypt && Math.hypot(cameraPos.x - -15.0, cameraPos.z - -13.8) <= 7.5;
+      const inDeepInterior = !inDeepCrypt && indoorFactor > 0.88 && cameraPos.y < 46.0 && cameraPos.y > -1.0;
+      const farExterior = !inDeepCrypt && indoorFactor < 0.01 && distBasilica > 54.0;
+
+      const showCrypt = cameraPos.y < 3.5 && distApse < 36.0;
+      for (let i = 0; i < this.cryptMeshes.length; i++) {
+        this.cryptMeshes[i].visible = showCrypt;
+      }
+
+      const showDeepInterior = !farExterior && (!inDeepCrypt || nearCryptStairExit);
+      for (let i = 0; i < this.interiorDeepMeshes.length; i++) {
+        this.interiorDeepMeshes[i].visible = showDeepInterior;
+      }
+
+      const showHighTowers = !inDeepCrypt && !inDeepInterior;
+      for (let i = 0; i < this.highTowerMeshes.length; i++) {
+        this.highTowerMeshes[i].visible = showHighTowers;
+      }
+
+      const showExtShells = !inDeepCrypt;
+      for (let i = 0; i < this.exteriorShellRoots.length; i++) {
+        this.exteriorShellRoots[i].visible = showExtShells;
+      }
+
+      if (this.eixampleRoot) this.eixampleRoot.visible = !inDeepCrypt;
+      if (this.plazaLifeRoot) this.plazaLifeRoot.visible = !inDeepCrypt && !inDeepInterior;
+
+      const showEixDetails = !inDeepCrypt && !inDeepInterior;
+      for (let i = 0; i < this.eixampleDetailMeshes.length; i++) {
+        this.eixampleDetailMeshes[i].visible = showEixDetails;
+      }
+
+      for (let i = 0; i < this.internalStairMeshes.length; i++) {
+        this.internalStairMeshes[i].visible = showInternalStairs && !inDeepCrypt && !inDeepInterior;
+      }
+    } else {
+      for (let i = 0; i < this.exteriorShellRoots.length; i++) this.exteriorShellRoots[i].visible = true;
+      if (this.eixampleRoot) this.eixampleRoot.visible = true;
+      if (this.plazaLifeRoot) this.plazaLifeRoot.visible = true;
+      for (let i = 0; i < this.eixampleDetailMeshes.length; i++) this.eixampleDetailMeshes[i].visible = true;
+      for (let i = 0; i < this.highTowerMeshes.length; i++) this.highTowerMeshes[i].visible = true;
+    }
+
+    // Jesus Tower Glass Elevator (strictly runs in upper tower core Y=56..136m)
+    this.elevator.group.visible = cameraPos.y > 44.0 && distCenter < 34.0;
+
+    if (this.interiorProbeDirty && indoorFactor > 0.15) {
+      this.captureInteriorReflectionProbe();
     }
 
     const windowGlow = THREE.MathUtils.smoothstep(this.lighting.nightFactor, 0.12, 0.85) * 1.45;
-    for (const m of this.eixampleNightMats) {
-      m.emissiveIntensity = windowGlow;
+    for (let i = 0; i < this.eixampleNightMats.length; i++) {
+      this.eixampleNightMats[i].emissiveIntensity = windowGlow;
     }
 
     this.lighting.update(dt, cameraPos, indoorFactor);
@@ -706,7 +977,7 @@ export class SagradaScene {
     this.weather.update(dt, cameraPos, indoorFactor, this.lighting.nightFactor, this.lighting.dayFactor, this.scene);
     this.waterUniforms.uRainFactor.value = this.weather.rainFactor;
 
-    this.birds.group.visible = indoorFactor < 0.85 && this.lighting.dayFactor > 0.12 && this.weather.rainFactor < 0.5;
+    this.birds.group.visible = indoorFactor < 0.85 && cameraPos.y > -1.0 && this.lighting.dayFactor > 0.12 && this.weather.rainFactor < 0.5;
     if (this.birds.group.visible) {
       this.birds.update(dt, this.lighting.dayFactor);
     }

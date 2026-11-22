@@ -77,7 +77,7 @@ export class PostProcessingPipeline {
   private nightFactor = 0.0;
   private dofFocus = 24.0;
   private dofAperture = 0.00018;
-  private mobileDrsScale = 1.0;
+  private drsScale: number = isMobileDevice() ? 1.0 : 1.05;
   private drsCooldown = 0;
 
   constructor(
@@ -162,8 +162,7 @@ export class PostProcessingPipeline {
       this.gradePass!.enabled = true;
       this.bokehPass!.enabled = this.dofEnabled;
     } else if (tier === 'aaa') {
-      const mobileCap = isMobileDevice() ? this.mobileDrsScale : 1.1;
-      const dpr = Math.min(window.devicePixelRatio, mobileCap);
+      const dpr = Math.min(window.devicePixelRatio, this.drsScale);
       this.renderer.setPixelRatio(dpr);
       if (this.composer) {
         this.composer.setPixelRatio(dpr);
@@ -186,27 +185,40 @@ export class PostProcessingPipeline {
   }
 
   /**
-   * Automatic Mobile Dynamic Resolution Scaling (DRS):
-   * Smoothly scales render resolution between 0.72x and 1.05x on smartphones/tablets to lock fluid framerates!
+   * Automatic Dynamic Resolution Scaling (DRS) for Desktop iGPUs & Mobile GPUs:
+   * Smoothly adapts pixel ratio in 'aaa' tier to keep interactive framerates fluid without touching geometry/lights!
    */
-  public updateMobileDrs(dt: number, currentFps: number): void {
-    if (!isMobileDevice() || this.tier !== 'aaa') return;
+  public updateDrs(dt: number, currentFps: number): void {
+    if (this.tier !== 'aaa') return;
+    const mobile = isMobileDevice();
+    const interval = mobile ? 1.6 : 2.0;
     this.drsCooldown += dt;
-    if (this.drsCooldown < 1.8) return;
+    if (this.drsCooldown < interval) return;
     this.drsCooldown = 0;
 
-    let next = this.mobileDrsScale;
-    if (currentFps < 28 && next > 0.72) {
-      next = Math.max(0.72, next - 0.10);
-    } else if (currentFps > 48 && next < 1.05) {
-      next = Math.min(1.05, next + 0.08);
+    const minScale = mobile ? 0.70 : 0.80;
+    const maxScale = mobile ? 1.15 : 1.10;
+    const lowFps = mobile ? 36 : 44;
+    const highFps = mobile ? 52 : 56;
+    const stepDown = 0.08;
+    const stepUp = mobile ? 0.06 : 0.05;
+
+    let next = this.drsScale;
+    if (currentFps < lowFps && next > minScale) {
+      next = Math.max(minScale, next - stepDown);
+    } else if (currentFps > highFps && next < maxScale) {
+      next = Math.min(maxScale, next + stepUp);
     }
-    if (Math.abs(next - this.mobileDrsScale) > 0.01) {
-      this.mobileDrsScale = next;
-      const dpr = Math.min(window.devicePixelRatio, this.mobileDrsScale);
+    if (Math.abs(next - this.drsScale) > 0.01) {
+      this.drsScale = next;
+      const dpr = Math.min(window.devicePixelRatio, this.drsScale);
       this.renderer.setPixelRatio(dpr);
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
+  }
+
+  public updateMobileDrs(dt: number, currentFps: number): void {
+    this.updateDrs(dt, currentFps);
   }
 
   public cycleTier(): GraphicsTier {

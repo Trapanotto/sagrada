@@ -48,7 +48,7 @@ def create_instanced_column_mesh(
     sides: int,
 ) -> bpy.types.Mesh:
     bm = bmesh.new()
-    build_gaudi_column_bmesh(bm, base_z=base_z, knot_z=knot_z, radius_base=radius, sides=sides, rings=26, radial_segs=40)
+    build_gaudi_column_bmesh(bm, base_z=base_z, knot_z=knot_z, radius_base=radius, sides=sides, rings=16, radial_segs=24)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.normal_update()
     apply_box_uv(bm, scale=0.22)

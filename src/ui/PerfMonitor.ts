@@ -10,6 +10,8 @@ export interface PerfSnapshot {
   activeLights: number;
   totalLights: number;
   reflectorActive: boolean;
+  reflectorRes?: number;
+  shadowMapSize?: number;
   shadowCached: boolean;
   instancedGroups: number;
   savedDrawCalls: number;
@@ -41,6 +43,10 @@ export class PerfMonitor {
     this.pillEl.addEventListener('click', () => this.toggle());
   }
 
+  public getFps(): number {
+    return this.fps;
+  }
+
   public toggle(): boolean {
     this.expanded = !this.expanded;
     this.cardEl.classList.toggle('hidden', !this.expanded);
@@ -66,13 +72,15 @@ export class PerfMonitor {
 
     const info = renderer.info;
     const trisK = (info.render.triangles / 1000).toFixed(1);
+    const reflRes = extra.reflectorRes ?? 256;
+    const shadowLabel = extra.shadowMapSize && extra.shadowMapSize <= 1024 ? '1K' : '2K';
     this.bodyEl.innerHTML = `
       <div class="perf-row"><span>Frame-Zeit</span><strong>${this.frameMs.toFixed(1)} ms (${this.fps} FPS)</strong></div>
       <div class="perf-row"><span>Draw Calls</span><strong>${info.render.calls}</strong></div>
       <div class="perf-row"><span>Dreiecke</span><strong>${trisK}k</strong></div>
       <div class="perf-row"><span>Aktive Lichter</span><strong>${extra.activeLights} / ${extra.totalLights}</strong></div>
-      <div class="perf-row"><span>Spiegelteich</span><strong>${extra.reflectorActive ? 'Aktiv (512px)' : 'Gecullt (0 ms)'}</strong></div>
-      <div class="perf-row"><span>2K-Sonnenschatten</span><strong>${extra.shadowCached ? 'Gecacht (0 ms)' : 'Neu berechnet'}</strong></div>
+      <div class="perf-row"><span>Spiegelteich</span><strong>${extra.reflectorActive ? `Aktiv (${reflRes}px)` : 'Gecullt (0 ms)'}</strong></div>
+      <div class="perf-row"><span>${shadowLabel}-Sonnenschatten</span><strong>${extra.shadowCached ? 'Gecacht (0 ms)' : 'Neu berechnet'}</strong></div>
       <div class="perf-row"><span>Auto-Instancing</span><strong>${extra.instancedGroups} Batches (-${extra.savedDrawCalls} Calls)</strong></div>
       <div class="perf-row"><span>VRAM Ressourcen</span><strong>${info.memory.geometries} Geo · ${info.memory.textures} Tex</strong></div>
     `;

@@ -46,20 +46,38 @@ export class LightingSystem {
   private pmremNight: THREE.Texture | null = null;
   private activeEnvKey: 'day' | 'sunset' | 'night' | null = null;
 
-  // 4 wide high-efficiency SpotLight.map stained-glass projectors
-  private eastProjectors: THREE.SpotLight[] = [];
-  private westProjectors: THREE.SpotLight[] = [];
-  private apseGlassLight: THREE.PointLight;
-  private interiorFillLights: THREE.PointLight[] = [];
-  private cryptLights: THREE.PointLight[] = [];
-  private nightSpotLights: THREE.PointLight[] = [];
-  private starPointLight: THREE.PointLight;
-  private crossPointLight: THREE.PointLight;
+  // Consolidated high-efficiency lighting:
+  // Desktop: 7 permanent lights (Sun + Hemi + 2 wide SpotLight.map + 2 interior fill + 1 dual-purpose Crypt/Night zone light)
+  // Mobile: 5 permanent lights (0 expensive textured SpotLights!)
+  public readonly shadowMapSize: number;
+  private eastProjector: THREE.SpotLight | null = null;
+  private westProjector: THREE.SpotLight | null = null;
+  private naveFillLight: THREE.PointLight;
+  private apseFillLight: THREE.PointLight;
+  private zoneAccentLight: THREE.PointLight;
+  private allLights: THREE.Light[] = [];
 
   private eastBeams: THREE.Mesh[] = [];
   private westBeams: THREE.Mesh[] = [];
   private starHaloSprite: THREE.Sprite;
   private crossHaloSprite: THREE.Sprite;
+
+  // Pre-allocated scratch Colors & perf object for zero-GC per-frame updates
+  private readonly cTopDay = new THREE.Color('#1654a8');
+  private readonly cTopGolden = new THREE.Color('#254684');
+  private readonly cTopNight = new THREE.Color('#040814');
+  private readonly cHorDay = new THREE.Color('#b6d6f4');
+  private readonly cHorGolden = new THREE.Color('#f49a52');
+  private readonly cHorNight = new THREE.Color('#0e172c');
+  private readonly cSunDay = new THREE.Color('#fff5df');
+  private readonly cSunGolden = new THREE.Color('#ff9642');
+  private readonly cHemiSkyDay = new THREE.Color('#c8ddf5');
+  private readonly cHemiGroundDay = new THREE.Color('#685543');
+  private readonly cHemiGroundNight = new THREE.Color('#090d16');
+  private readonly scratchTop = new THREE.Color();
+  private readonly scratchHor = new THREE.Color();
+  private readonly scratchSun = new THREE.Color();
+  private readonly perfStats = { activeLights: 0, totalLights: 0, shadowCached: true };
 
   private trackedMats: TrackedMaterials = {
     east: [],
@@ -95,6 +113,9 @@ export class LightingSystem {
       uHdriNight: { value: null },
     };
 
+    const mobile = isMobileDevice();
+    const cloudOctaves = mobile ? 2 : 3;
+
     const skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
@@ -108,7 +129,6 @@ export class LightingSystem {
         }
       `,
       fragmentShader: /* glsl */ `
-        #define PI 3.14159265359
         uniform float uTime;
         uniform vec3 uSunDir;
         uniform vec3 uTopColor;
@@ -116,10 +136,6 @@ export class LightingSystem {
         uniform vec3 uSunColor;
         uniform float uNightFactor;
         uniform float uGoldenFactor;
-        uniform float uUseHdri;
-        uniform sampler2D uHdriDay;
-        uniform sampler2D uHdriSunset;
-        uniform sampler2D uHdriNight;
         varying vec3 vWorldDir;
 
         float hash21(vec2 p) {
@@ -141,9 +157,9 @@ export class LightingSystem {
 
         float fbmCloud(vec2 p) {
           float v = 0.0;
-          float a = 0.52;
+          float a = 0.54;
           mat2 rot = mat2(0.80, 0.60, -0.60, 0.80);
-          for (int i = 0; i < 4; i++) {
+          for (int i = 0; i < ${cloudOctaves}; i++) {
             v += a * noise2(p);
             p = rot * p * 2.08 + vec2(13.1, 7.7);
             a *= 0.48;
@@ -157,23 +173,23 @@ export class LightingSystem {
           float h = clamp(dir.y, 0.0, 1.0);
           float sunAmt = max(dot(dir, sunN), 0.0);
 
-          // Crisp Physically-Inspired Mediterranean Rayleigh + Mie Atmospheric Sky (zero muddy overcast HDRI blur!)
+          // Crisp Physically-Inspired Mediterranean Rayleigh + Mie Atmospheric Sky
           vec3 zenith = uTopColor;
           vec3 horizon = uHorizonColor;
           vec3 col = mix(horizon, zenith, pow(h, 0.50));
 
-          // Warm Mie forward-scattering glow around the sun near the horizon (authentic Barcelona Golden Hour!)
+          // Warm Mie forward-scattering glow around the sun near the horizon
           float horizonBand = exp(-h * 4.2);
           col += uSunColor * pow(sunAmt, 4.0) * (0.34 + 0.55 * uGoldenFactor) * (0.45 + 0.55 * horizonBand) * (1.0 - uNightFactor);
           col += uSunColor * pow(sunAmt, 24.0) * 0.42 * (1.0 - uNightFactor * 0.96);
           col += uSunColor * smoothstep(0.9988, 0.9996, sunAmt) * 2.6 * (1.0 - uNightFactor);
 
-          // High-altitude sunlit Mediterranean cirrus/cumulus cloud wisps (lit warmly on sun-facing edges!)
+          // Single-FBM + cheap 1-octave detail Mediterranean cirrus/cumulus cloud wisps
           if (dir.y > 0.025) {
             vec2 skyUv = dir.xz / (dir.y + 0.18) * 1.45 + vec2(uTime * 0.0045, uTime * 0.0022);
             float c1 = fbmCloud(skyUv);
-            float c2 = fbmCloud(skyUv * 2.3 - vec2(uTime * 0.006, 0.0));
-            float cloudMask = smoothstep(0.49, 0.78, c1 * 0.72 + c2 * 0.28) * smoothstep(0.025, 0.24, dir.y);
+            float c2 = noise2(skyUv * 2.4 - vec2(uTime * 0.006, 0.0));
+            float cloudMask = smoothstep(0.49, 0.78, c1 * 0.76 + c2 * 0.24) * smoothstep(0.025, 0.24, dir.y);
             vec3 cloudLit = mix(vec3(0.96, 0.96, 0.98), vec3(1.0, 0.72, 0.44), uGoldenFactor);
             vec3 cloudShade = mix(vec3(0.62, 0.70, 0.82), vec3(0.46, 0.40, 0.54), uGoldenFactor);
             vec3 cloudCol = mix(cloudShade, cloudLit, smoothstep(0.2, 0.85, sunAmt * 0.7 + c2 * 0.45));
@@ -200,21 +216,20 @@ export class LightingSystem {
       `,
     });
 
-    this.skyMesh = new THREE.Mesh(new THREE.SphereGeometry(640, 32, 20), skyMat);
+    this.skyMesh = new THREE.Mesh(new THREE.SphereGeometry(640, 28, 16), skyMat);
     this.skyMesh.renderOrder = -10;
     this.scene.add(this.skyMesh);
 
     this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
 
-    // 2. Hemisphere + Crisp 2048px Cached Directional Sun Light
+    // 2. Hemisphere + Cached Directional Sun Light
     this.hemiLight = new THREE.HemisphereLight('#bfd9f5', '#877258', 0.85);
     this.scene.add(this.hemiLight);
 
-    const mobile = isMobileDevice();
     this.sunLight = new THREE.DirectionalLight('#fff6e3', 2.0);
     this.sunLight.castShadow = true;
-    const shadowSize = mobile ? 1024 : 2048;
-    this.sunLight.shadow.mapSize.set(shadowSize, shadowSize);
+    this.shadowMapSize = mobile ? 1024 : 2048;
+    this.sunLight.shadow.mapSize.set(this.shadowMapSize, this.shadowMapSize);
     this.sunLight.shadow.camera.near = 25;
     this.sunLight.shadow.camera.far = 420;
     const d = 132;
@@ -228,86 +243,54 @@ export class LightingSystem {
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // 3. 4 Wide Textured SpotLight.map Stained-Glass Projectors (Joan Vila-Grau patterns, tiny 46KB WebP!)
-    const texLoader = new THREE.TextureLoader();
-    const texEast = texLoader.load('./textures/stained_glass_east.webp');
-    texEast.colorSpace = THREE.SRGBColorSpace;
-    texEast.wrapS = THREE.ClampToEdgeWrapping;
-    texEast.wrapT = THREE.ClampToEdgeWrapping;
+    // 3. Stained-Glass SpotLight.map Projectors (Desktop only: 2 wide projectors; Mobile uses GI + Floor Carpets!)
+    if (!mobile) {
+      const texLoader = new THREE.TextureLoader();
+      const texEast = texLoader.load('./textures/stained_glass_east.webp');
+      texEast.colorSpace = THREE.SRGBColorSpace;
+      texEast.wrapS = THREE.ClampToEdgeWrapping;
+      texEast.wrapT = THREE.ClampToEdgeWrapping;
 
-    const texWest = texLoader.load('./textures/stained_glass_west.webp');
-    texWest.colorSpace = THREE.SRGBColorSpace;
-    texWest.wrapS = THREE.ClampToEdgeWrapping;
-    texWest.wrapT = THREE.ClampToEdgeWrapping;
+      const texWest = texLoader.load('./textures/stained_glass_west.webp');
+      texWest.colorSpace = THREE.SRGBColorSpace;
+      texWest.wrapS = THREE.ClampToEdgeWrapping;
+      texWest.wrapT = THREE.ClampToEdgeWrapping;
 
-    const bayZs = [19, 35];
-    for (let i = 0; i < bayZs.length; i++) {
-      const es = new THREE.SpotLight('#ffffff', 220, 62, Math.PI * 0.34, 0.45, 1.05);
+      const es = new THREE.SpotLight('#ffffff', 240, 68, Math.PI * 0.44, 0.50, 1.05);
       es.map = texEast;
-      es.position.set(21.4, 18.0, bayZs[i]);
-      es.target.position.set(-4.0, 1.2, bayZs[i]);
+      es.position.set(21.4, 19.0, 26.0);
+      es.target.position.set(-4.0, 1.5, 26.0);
       this.scene.add(es);
       this.scene.add(es.target);
-      this.eastProjectors.push(es);
+      this.eastProjector = es;
 
-      const ws = new THREE.SpotLight('#ffffff', 220, 62, Math.PI * 0.34, 0.45, 1.05);
+      const ws = new THREE.SpotLight('#ffffff', 240, 68, Math.PI * 0.44, 0.50, 1.05);
       ws.map = texWest;
-      ws.position.set(-21.4, 18.0, bayZs[i]);
-      ws.target.position.set(4.0, 1.2, bayZs[i]);
+      ws.position.set(-21.4, 19.0, 26.0);
+      ws.target.position.set(4.0, 1.5, 26.0);
       this.scene.add(ws);
       this.scene.add(ws.target);
-      this.westProjectors.push(ws);
+      this.westProjector = ws;
     }
 
-    this.apseGlassLight = new THREE.PointLight('#9ab8ff', 42, 54, 1.25);
-    this.apseGlassLight.position.set(0, 17, -26);
-    this.scene.add(this.apseGlassLight);
+    // 4. Consolidated High-Efficiency Interior Fill Lights (enhanced by real Cycles GI Lightmaps!)
+    this.naveFillLight = new THREE.PointLight('#ffe0b0', 56, 82, 1.2);
+    this.naveFillLight.position.set(0, 24.0, 16.0);
+    this.scene.add(this.naveFillLight);
 
-    // 4. Consolidated High-Efficiency Interior Lights (enhanced by real Cycles GI Lightmaps!)
-    const interiorSpots: Array<[number, number, number, string, number, number]> = [
-      [0, 32, 4, '#ffe2b4', 56, 78],
-      [0, 12.0, 26, '#ffd494', 48, 62],
-      [0, 13.5, -18, '#ffd48a', 52, 52],
-    ];
-    for (const [x, y, z, col, intensity, dist] of interiorSpots) {
-      const l = new THREE.PointLight(col, intensity, dist, 1.25);
-      l.position.set(x, y, z);
-      this.scene.add(l);
-      this.interiorFillLights.push(l);
-    }
+    this.apseFillLight = new THREE.PointLight('#e4d8c8', 54, 58, 1.25);
+    this.apseFillLight.position.set(0, 14.5, -19.0);
+    this.scene.add(this.apseFillLight);
 
-    // 5. Subterranean Crypt Warm Candlelight
-    const cryptCoords: Array<[number, number, number, number]> = [
-      [0, -2.0, -21, 28],
-      [-9.5, -3.2, -23.5, 22],
-    ];
-    for (const [x, y, z, inten] of cryptCoords) {
-      const cl = new THREE.PointLight('#ff9d3b', inten, 30, 1.35);
-      cl.position.set(x, y, z);
-      this.scene.add(cl);
-      this.cryptLights.push(cl);
-    }
+    // 5. Dual-Purpose Zone Accent Light (Crypt Candlelight below Y=2.2m <-> Exterior Night Architectural Flood outside!)
+    this.zoneAccentLight = new THREE.PointLight('#ff9d3b', 0, 34, 1.3);
+    this.zoneAccentLight.position.set(-3.0, -2.2, -21.5);
+    this.scene.add(this.zoneAccentLight);
 
-    // 6. Night Architectural Floodlights
-    const nightFloods: Array<[number, number, number, string]> = [
-      [52, 26, 20, '#ffcb85'],
-      [-52, 26, -15, '#dbe6ff'],
-    ];
-    for (const [x, y, z, col] of nightFloods) {
-      const nl = new THREE.PointLight(col, 0, 145, 1.2);
-      nl.position.set(x, y, z);
-      this.scene.add(nl);
-      this.nightSpotLights.push(nl);
-    }
-
-    // 7. Luminous Star of Mary (138m) & Cross of Jesus (172.5m)
-    this.starPointLight = new THREE.PointLight('#fff0c2', 35, 105, 1.25);
-    this.starPointLight.position.set(0, 134.2, -22.5);
-    this.scene.add(this.starPointLight);
-
-    this.crossPointLight = new THREE.PointLight('#fff7e0', 40, 120, 1.25);
-    this.crossPointLight.position.set(0, 164.5, 0);
-    this.scene.add(this.crossPointLight);
+    this.allLights = [this.sunLight, this.hemiLight, this.naveFillLight, this.apseFillLight, this.zoneAccentLight];
+    if (this.eastProjector) this.allLights.push(this.eastProjector);
+    if (this.westProjector) this.allLights.push(this.westProjector);
+    this.perfStats.totalLights = this.allLights.length;
 
     const haloTex = this.createRadialGlowTexture();
     this.starHaloSprite = new THREE.Sprite(
@@ -372,10 +355,9 @@ export class LightingSystem {
       this.pmremDay = this.pmremGenerator.fromEquirectangular(dayTex).texture;
       this.pmremSunset = this.pmremGenerator.fromEquirectangular(sunsetTex).texture;
       this.pmremNight = this.pmremGenerator.fromEquirectangular(nightTex).texture;
-      this.skyUniforms.uHdriDay.value = dayTex;
-      this.skyUniforms.uHdriSunset.value = sunsetTex;
-      this.skyUniforms.uHdriNight.value = nightTex;
-      this.skyUniforms.uUseHdri.value = 1.0;
+      dayTex.dispose();
+      sunsetTex.dispose();
+      nightTex.dispose();
       this.activeEnvKey = null;
       this.setTimeOfDay(this.timeHours, false);
     } catch (err) {
@@ -467,12 +449,12 @@ export class LightingSystem {
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
       for (const m of mats) {
         if (!(m instanceof THREE.MeshStandardMaterial)) continue;
-        if (m.name.includes('StainedGlassEast')) this.trackedMats.east.push(m);
-        else if (m.name.includes('StainedGlassWest')) this.trackedMats.west.push(m);
-        else if (m.name.includes('StainedGlassApse')) this.trackedMats.apse.push(m);
-        else if (m.name.includes('LuminousStar')) this.trackedMats.star.push(m);
-        else if (m.name.includes('LuminousCross')) this.trackedMats.cross.push(m);
-        else if (m.name.includes('CandleGlow')) this.trackedMats.lamps.push(m);
+        if (m.name.includes('StainedGlassEast') && !this.trackedMats.east.includes(m)) this.trackedMats.east.push(m);
+        else if (m.name.includes('StainedGlassWest') && !this.trackedMats.west.includes(m)) this.trackedMats.west.push(m);
+        else if (m.name.includes('StainedGlassApse') && !this.trackedMats.apse.includes(m)) this.trackedMats.apse.push(m);
+        else if (m.name.includes('LuminousStar') && !this.trackedMats.star.includes(m)) this.trackedMats.star.push(m);
+        else if (m.name.includes('LuminousCross') && !this.trackedMats.cross.includes(m)) this.trackedMats.cross.push(m);
+        else if (m.name.includes('CandleGlow') && !this.trackedMats.lamps.includes(m)) this.trackedMats.lamps.push(m);
       }
     });
     this.setTimeOfDay(this.timeHours, false);
@@ -501,26 +483,19 @@ export class LightingSystem {
     this.dayFactor = dayFactor;
     this.nightFactor = nightFactor;
 
-    const topDay = new THREE.Color('#1654a8');
-    const topGolden = new THREE.Color('#254684');
-    const topNight = new THREE.Color('#040814');
-    const horDay = new THREE.Color('#b6d6f4');
-    const horGolden = new THREE.Color('#f49a52');
-    const horNight = new THREE.Color('#0e172c');
-
-    const topCol = topNight.clone().lerp(topDay, dayFactor).lerp(topGolden, goldenFactor * 0.62);
-    const horCol = horNight.clone().lerp(horDay, dayFactor).lerp(horGolden, goldenFactor * 0.85);
-    const sunCol = new THREE.Color('#fff5df').lerp(new THREE.Color('#ff9642'), goldenFactor * 0.85);
+    this.scratchTop.copy(this.cTopNight).lerp(this.cTopDay, dayFactor).lerp(this.cTopGolden, goldenFactor * 0.62);
+    this.scratchHor.copy(this.cHorNight).lerp(this.cHorDay, dayFactor).lerp(this.cHorGolden, goldenFactor * 0.85);
+    this.scratchSun.copy(this.cSunDay).lerp(this.cSunGolden, goldenFactor * 0.85);
 
     this.skyUniforms.uSunDir.value.copy(this.sunDir);
-    this.skyUniforms.uTopColor.value.copy(topCol);
-    this.skyUniforms.uHorizonColor.value.copy(horCol);
-    this.skyUniforms.uSunColor.value.copy(sunCol);
+    this.skyUniforms.uTopColor.value.copy(this.scratchTop);
+    this.skyUniforms.uHorizonColor.value.copy(this.scratchHor);
+    this.skyUniforms.uSunColor.value.copy(this.scratchSun);
     this.skyUniforms.uNightFactor.value = nightFactor;
     this.skyUniforms.uGoldenFactor.value = goldenFactor;
 
     if (this.scene.fog instanceof THREE.FogExp2) {
-      this.scene.fog.color.copy(horCol);
+      this.scene.fog.color.copy(this.scratchHor);
       this.scene.fog.density = THREE.MathUtils.lerp(0.0012, 0.0019, nightFactor);
     }
 
@@ -541,7 +516,7 @@ export class LightingSystem {
       }
     }
 
-    this.sunLight.color.copy(sunCol);
+    this.sunLight.color.copy(this.scratchSun);
     // Physically grounded solar intensity: strong crisp shadows without blowing out sandstone highlights!
     this.baseSunInt = dayFactor * THREE.MathUtils.lerp(2.05, 1.48, goldenFactor * 0.75);
     this.sunLight.intensity = this.baseSunInt;
@@ -550,8 +525,8 @@ export class LightingSystem {
 
     // Avoid double-stacking HemisphereLight + HDRI PMREM IBL!
     // HDRI provides realistic sky ambient; HemiLight adds only subtle warm ground-bounce fill.
-    this.hemiLight.color.copy(topCol).lerp(new THREE.Color('#c8ddf5'), 0.35 * dayFactor);
-    this.hemiLight.groundColor.set('#685543').lerp(new THREE.Color('#090d16'), nightFactor * 0.92);
+    this.hemiLight.color.copy(this.scratchTop).lerp(this.cHemiSkyDay, 0.35 * dayFactor);
+    this.hemiLight.groundColor.copy(this.cHemiGroundDay).lerp(this.cHemiGroundNight, nightFactor * 0.92);
     this.baseHemiInt = THREE.MathUtils.lerp(0.05, 0.22, dayFactor);
     this.baseEnvInt = THREE.MathUtils.lerp(0.08, 0.44, dayFactor) * THREE.MathUtils.lerp(1.0, 0.78, goldenFactor);
     this.hemiLight.intensity = this.baseHemiInt;
@@ -566,38 +541,34 @@ export class LightingSystem {
     const targetClimbY = THREE.MathUtils.lerp(7.5, 1.2, THREE.MathUtils.clamp(elevation / 0.65, 0, 1));
     const beamTilt = THREE.MathUtils.lerp(1.12, 0.48, THREE.MathUtils.clamp(elevation / 1.0, 0, 1));
 
-    this.baseEastInt = 8 * dayFactor + eastSunHit * 240;
-    for (let i = 0; i < this.eastProjectors.length; i++) {
-      const es = this.eastProjectors[i];
-      es.intensity = this.baseEastInt;
-      es.target.position.set(21.4 - reach, targetClimbY, es.position.z);
-      es.target.updateMatrixWorld();
+    this.baseEastInt = 12 * dayFactor + eastSunHit * 295;
+    if (this.eastProjector) {
+      this.eastProjector.intensity = this.baseEastInt;
+      this.eastProjector.target.position.set(21.4 - reach, targetClimbY, 26.0);
+      this.eastProjector.target.updateMatrixWorld();
     }
     for (let i = 0; i < this.eastBeams.length; i++) {
       const eb = this.eastBeams[i];
       eb.rotation.z = beamTilt;
       eb.position.x = 21.4 - Math.sin(beamTilt) * 11.5;
       (eb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.14;
-      eb.visible = eastSunHit > 0.03;
     }
 
-    this.baseWestInt = 8 * dayFactor + westSunHit * 265;
-    for (let i = 0; i < this.westProjectors.length; i++) {
-      const ws = this.westProjectors[i];
-      ws.intensity = this.baseWestInt;
-      ws.target.position.set(-21.4 + reach, targetClimbY, ws.position.z);
-      ws.target.updateMatrixWorld();
+    this.baseWestInt = 12 * dayFactor + westSunHit * 325;
+    if (this.westProjector) {
+      this.westProjector.intensity = this.baseWestInt;
+      this.westProjector.target.position.set(-21.4 + reach, targetClimbY, 26.0);
+      this.westProjector.target.updateMatrixWorld();
     }
     for (let i = 0; i < this.westBeams.length; i++) {
       const wb = this.westBeams[i];
       wb.rotation.z = -beamTilt;
       wb.position.x = -21.4 + Math.sin(beamTilt) * 11.5;
       (wb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.16;
-      wb.visible = westSunHit > 0.03;
     }
 
-    this.baseApseInt = 9 * dayFactor + 10;
-    this.apseGlassLight.intensity = this.baseApseInt;
+    this.baseApseInt = 18 * dayFactor + 36;
+    this.apseFillLight.intensity = this.baseApseInt;
 
     const ambientGlass = 0.24 * dayFactor + 0.12;
     this.baseEastGlassGlow = ambientGlass + eastSunHit * 2.1;
@@ -608,23 +579,16 @@ export class LightingSystem {
     for (const m of this.trackedMats.apse) m.emissiveIntensity = this.baseApseGlassGlow;
 
     // Realistic stone basilica Chiaroscuro: restrained ambient fill so stained glass & candles define the space!
-    this.baseInteriorInt = THREE.MathUtils.lerp(13, 28, nightFactor);
-    for (const il of this.interiorFillLights) {
-      il.intensity = this.baseInteriorInt;
-    }
+    this.baseInteriorInt = THREE.MathUtils.lerp(46, 62, nightFactor);
+    this.naveFillLight.intensity = this.baseInteriorInt;
 
-    this.baseNightInt = nightFactor * 165;
-    for (const nl of this.nightSpotLights) {
-      nl.intensity = this.baseNightInt;
-    }
+    this.baseNightInt = nightFactor * 195;
 
     const landmarkGlow = 1.2 + nightFactor * 3.2;
     for (const m of this.trackedMats.star) m.emissiveIntensity = landmarkGlow * 1.25;
     for (const m of this.trackedMats.cross) m.emissiveIntensity = landmarkGlow * 1.0;
-    this.starPointLight.intensity = 14 + nightFactor * 105;
-    this.crossPointLight.intensity = 16 + nightFactor * 115;
-    (this.starHaloSprite.material as THREE.SpriteMaterial).opacity = 0.16 + nightFactor * 0.58;
-    (this.crossHaloSprite.material as THREE.SpriteMaterial).opacity = 0.14 + nightFactor * 0.52;
+    (this.starHaloSprite.material as THREE.SpriteMaterial).opacity = 0.18 + nightFactor * 0.62;
+    (this.crossHaloSprite.material as THREE.SpriteMaterial).opacity = 0.16 + nightFactor * 0.56;
   }
 
   public requestShadowUpdate(immediate = false): void {
@@ -642,7 +606,7 @@ export class LightingSystem {
   private baseEastInt = 0;
   private baseWestInt = 0;
   private baseApseInt = 0;
-  private baseInteriorInt = 16;
+  private baseInteriorInt = 52;
   private baseNightInt = 0;
   private baseEastGlassGlow = 1.2;
   private baseWestGlassGlow = 1.2;
@@ -650,7 +614,7 @@ export class LightingSystem {
 
   public updateZoneCulling(cameraPos: THREE.Vector3, indoorFactor: number): void {
     // CRITICAL ANTI-STUTTER FIX:
-    // NEVER toggle light.visible = false/true while walking! Keep all 12 lights permanently visible
+    // NEVER toggle light.visible = false/true while walking! Keep active lights permanently visible
     // and smoothly modulate intensities to prevent GLSL shader recompilation freezes!
     const inCryptRange = cameraPos.y < 2.2;
     const nearInterior =
@@ -661,11 +625,11 @@ export class LightingSystem {
       cameraPos.z < 68;
     const needNightFloods = this.nightFactor > 0.04 && indoorFactor < 0.92;
 
-    // REALISTIC STAINED GLASS: From OUTSIDE in daylight, stained glass is dark reflective leaded cathedral glass
-    // (NOT glowing RGB LED billboards!). From INSIDE or AT NIGHT, it glows richly with transmitted jewel light!
+    // REALISTIC STAINED GLASS: From OUTSIDE in daylight, stained glass is dark reflective leaded cathedral glass;
+    // from INSIDE or AT NIGHT, it glows richly with transmitted jewel light!
     const glassTransmittance = Math.max(indoorFactor, THREE.MathUtils.smoothstep(this.nightFactor, 0.25, 0.85) * 0.72);
-    const glassScale = THREE.MathUtils.lerp(0.02, 1.0, glassTransmittance);
-    const diffuseShade = THREE.MathUtils.lerp(0.24, 1.0, glassTransmittance);
+    const glassScale = THREE.MathUtils.lerp(0.08, 1.0, glassTransmittance);
+    const diffuseShade = THREE.MathUtils.lerp(0.32, 1.0, glassTransmittance);
     for (const m of this.trackedMats.east) {
       m.emissiveIntensity = this.baseEastGlassGlow * glassScale;
       m.color.setScalar(diffuseShade);
@@ -680,53 +644,61 @@ export class LightingSystem {
     }
 
     // Physical outdoor-sky occlusion inside stone cathedral walls:
-    // Dramatically reduce outdoor sky IBL & hemisphere fill indoors so stone vaults have real depth & contrast!
     const outdoorSkyLeak = THREE.MathUtils.lerp(1.0, 0.28, indoorFactor);
     this.hemiLight.intensity = this.baseHemiInt * outdoorSkyLeak;
-    this.scene.environmentIntensity = this.baseEnvInt * THREE.MathUtils.lerp(1.0, 0.34, indoorFactor);
+    this.scene.environmentIntensity = this.baseEnvInt * THREE.MathUtils.lerp(1.0, 0.36, indoorFactor);
     this.sunLight.intensity = this.baseSunInt * (cameraPos.y < -1.2 ? 0.05 : 1.0);
 
-    if (!inCryptRange) {
-      for (const cl of this.cryptLights) cl.intensity = 0;
-    }
-    const intMul = nearInterior ? 1.0 : 0.0;
-    for (const es of this.eastProjectors) es.intensity = this.baseEastInt * intMul;
-    for (const ws of this.westProjectors) ws.intensity = this.baseWestInt * intMul;
-    this.apseGlassLight.intensity = this.baseApseInt * intMul;
-    for (const il of this.interiorFillLights) il.intensity = this.baseInteriorInt * intMul;
+    const intMul = nearInterior && !inCryptRange ? 1.0 : 0.0;
+    if (this.eastProjector) this.eastProjector.intensity = this.baseEastInt * intMul;
+    if (this.westProjector) this.westProjector.intensity = this.baseWestInt * intMul;
+    this.naveFillLight.intensity = this.baseInteriorInt * intMul;
+    this.apseFillLight.intensity = this.baseApseInt * intMul;
 
-    const nightMul = needNightFloods ? 1.0 : 0.0;
-    for (const nl of this.nightSpotLights) nl.intensity = this.baseNightInt * nightMul;
+    const showEastBeams = nearInterior && this.eastSunHit > 0.03;
+    const showWestBeams = nearInterior && this.westSunHit > 0.03;
+    for (let i = 0; i < this.eastBeams.length; i++) this.eastBeams[i].visible = showEastBeams;
+    for (let i = 0; i < this.westBeams.length; i++) this.westBeams[i].visible = showWestBeams;
+
+    if (inCryptRange) {
+      this.zoneAccentLight.color.set('#ff9d3b');
+      this.zoneAccentLight.position.set(-3.0, -2.2, -21.5);
+      this.zoneAccentLight.distance = 34;
+      this.zoneAccentLight.decay = 1.3;
+    } else if (needNightFloods) {
+      this.zoneAccentLight.color.set('#ffcb85');
+      this.zoneAccentLight.position.set(48, 28, 16);
+      this.zoneAccentLight.distance = 165;
+      this.zoneAccentLight.decay = 1.15;
+      this.zoneAccentLight.intensity = this.baseNightInt;
+    } else {
+      this.zoneAccentLight.intensity = 0;
+    }
 
     this.particles.points.visible = indoorFactor > 0.15 && cameraPos.y > -1.0;
+    this.starHaloSprite.visible = cameraPos.y > -2.0;
+    this.crossHaloSprite.visible = cameraPos.y > -2.0;
   }
 
   public getPerfLightStats(): { activeLights: number; totalLights: number; shadowCached: boolean } {
-    const all: THREE.Light[] = [
-      this.sunLight,
-      this.hemiLight,
-      this.apseGlassLight,
-      this.starPointLight,
-      this.crossPointLight,
-      ...this.eastProjectors,
-      ...this.westProjectors,
-      ...this.interiorFillLights,
-      ...this.cryptLights,
-      ...this.nightSpotLights,
-    ];
     let activeLights = 0;
-    for (const l of all) {
+    for (let i = 0; i < this.allLights.length; i++) {
+      const l = this.allLights[i];
       if (l.visible && l.intensity > 0.01) activeLights++;
     }
-    const cached = !this.shadowUpdatedThisFrame;
+    this.perfStats.activeLights = activeLights;
+    this.perfStats.shadowCached = !this.shadowUpdatedThisFrame;
     this.shadowUpdatedThisFrame = false;
-    return { activeLights, totalLights: all.length, shadowCached: cached };
+    return this.perfStats;
   }
 
   public update(dt: number, cameraPos: THREE.Vector3, indoorFactor: number): void {
     this.clockSec += dt;
     this.skyUniforms.uTime.value = this.clockSec;
-    this.skyMesh.position.copy(cameraPos);
+    this.skyMesh.visible = cameraPos.y > -2.0;
+    if (this.skyMesh.visible) {
+      this.skyMesh.position.copy(cameraPos);
+    }
 
     this.updateZoneCulling(cameraPos, indoorFactor);
 
@@ -735,11 +707,8 @@ export class LightingSystem {
     }
 
     if (cameraPos.y < 2.2) {
-      for (let i = 0; i < this.cryptLights.length; i++) {
-        const base = i === 0 ? 28 : 22;
-        const flicker = Math.sin(this.clockSec * 5.2 + i * 2.1) * 0.9 + Math.sin(this.clockSec * 11.7 + i) * 0.45;
-        this.cryptLights[i].intensity = base + flicker;
-      }
+      const flicker = Math.sin(this.clockSec * 5.2) * 0.9 + Math.sin(this.clockSec * 11.7) * 0.45;
+      this.zoneAccentLight.intensity = 34 + flicker;
     }
   }
 }

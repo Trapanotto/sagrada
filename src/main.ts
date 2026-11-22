@@ -30,17 +30,18 @@ function yawToCompass(yaw: number): string {
 async function bootstrap(): Promise<void> {
   const canvas = document.getElementById('scene-canvas') as HTMLCanvasElement;
 
+  const mobile = isMobileDevice();
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true, // Used cleanly in 'fast' single-pass mode; 'aaa'/'ultra' use 4x MSAA HalfFloat RT
+    antialias: !mobile, // Desktop uses hardware MSAA; mobile skips expensive tile-resolve MSAA!
     powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobileDevice() ? 1.0 : 1.1));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobile ? 1.0 : 1.05));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.autoUpdate = false; // Cached 2K sun shadows: only re-rendered when sun moves or scene loads!
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.localClippingEnabled = true; // Enables smooth stone-by-stone historical construction timelapse!
+  renderer.shadowMap.autoUpdate = false; // Cached sun shadows: only re-rendered when sun moves or scene loads!
+  renderer.shadowMap.type = mobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+  renderer.localClippingEnabled = false; // Enabled lazily ONLY when user inspects historical construction timelapse!
   // Blender 4/5 cinema standard: realistic physical exposure (0.74 outdoors -> auto-adapts gently indoors!)
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.toneMappingExposure = 0.74;
@@ -562,6 +563,12 @@ async function bootstrap(): Promise<void> {
   let lastTime = performance.now();
   let hudTick = 0;
   let smoothIndoorFactor = collision.getIndoorFactor(camera.position);
+  let lastZone = '';
+  let lastCompass = '';
+  let lastAlt = '';
+  let lastElevMsg: string | null = null;
+  let lastElevShown = false;
+  let lastCrosshairHidden = true;
 
   const animate = (now: number) => {
     requestAnimationFrame(animate);
@@ -618,6 +625,8 @@ async function bootstrap(): Promise<void> {
       activeLights: lightStats.activeLights,
       totalLights: lightStats.totalLights,
       reflectorActive: sagrada.reflectorActive,
+      reflectorRes: sagrada.reflectorRes,
+      shadowMapSize: sagrada.lighting.shadowMapSize,
       shadowCached: lightStats.shadowCached,
       instancedGroups: sagrada.instancedGroups,
       savedDrawCalls: sagrada.savedDrawCalls,
@@ -625,34 +634,55 @@ async function bootstrap(): Promise<void> {
 
     if (!entered) return;
 
-    // Update UI overlays smoothly
-    crosshairEl.classList.toggle('hidden', !player.isPointerLocked);
+    // Update UI overlays smoothly (dirty-checked to avoid per-frame DOM thrash!)
+    const crossHidden = !player.isPointerLocked;
+    if (crossHidden !== lastCrosshairHidden) {
+      lastCrosshairHidden = crossHidden;
+      crosshairEl.classList.toggle('hidden', crossHidden);
+    }
     hotspots.updateProjections(camera, window.innerWidth, window.innerHeight);
 
     hudTick += dt;
     if (hudTick >= 0.08) {
       hudTick = 0;
-      zoneBadge.textContent = collision.detectZone(camera.position);
-      compassDir.textContent = yawToCompass(player.getYaw());
-      altitudeReadout.textContent = `H: ${camera.position.y.toFixed(1)} m`;
+      const nextZone = collision.detectZone(camera.position);
+      if (nextZone !== lastZone) {
+        lastZone = nextZone;
+        zoneBadge.textContent = nextZone;
+      }
+      const nextCompass = yawToCompass(player.getYaw());
+      if (nextCompass !== lastCompass) {
+        lastCompass = nextCompass;
+        compassDir.textContent = nextCompass;
+      }
+      const nextAlt = `H: ${camera.position.y.toFixed(1)} m`;
+      if (nextAlt !== lastAlt) {
+        lastAlt = nextAlt;
+        altitudeReadout.textContent = nextAlt;
+      }
       audio.updateSpatial(0.08, indoorFactor, camera.position, sagrada.weather.rainFactor);
 
       const elevMsg =
         !tour.active && !photoMode
-          ? sagrada.elevator.getPromptText(camera.position, isMobileDevice() || window.innerWidth <= 900)
+          ? sagrada.elevator.getPromptText(camera.position, mobile || window.innerWidth <= 900)
           : null;
       touchControls.setElevatorAvailable(!!elevMsg);
       if (elevMsg) {
-        elevatorPrompt.innerHTML = elevMsg;
-        elevatorPrompt.classList.remove('hidden');
-      } else {
+        if (elevMsg !== lastElevMsg) {
+          lastElevMsg = elevMsg;
+          elevatorPrompt.innerHTML = elevMsg;
+        }
+        if (!lastElevShown) {
+          lastElevShown = true;
+          elevatorPrompt.classList.remove('hidden');
+        }
+      } else if (lastElevShown) {
+        lastElevShown = false;
+        lastElevMsg = null;
         elevatorPrompt.classList.add('hidden');
       }
 
-      const fpsText = parseInt(document.getElementById('perf-fps-pill')?.textContent || '60', 10);
-      if (!Number.isNaN(fpsText)) {
-        post.updateMobileDrs(0.08, fpsText);
-      }
+      post.updateDrs(0.08, perfMonitor.getFps());
 
       if (!minimapContainer.classList.contains('hidden')) {
         minimap.render(camera.position, player.getYaw());

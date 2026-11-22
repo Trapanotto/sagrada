@@ -16,28 +16,35 @@ export const TIMELINE_MILESTONES: TimelineMilestone[] = [
 ];
 
 interface PhaseEntry {
-  obj: THREE.Object3D;
+  obj: THREE.Mesh;
   startYear: number;
   endYear: number;
   minY: number;
   maxY: number;
   clipPlane: THREE.Plane;
-  materials: THREE.Material[];
+  origMaterial: THREE.Material | THREE.Material[];
+  clippedMaterials: THREE.Material[] | null;
 }
 
 /**
  * Interactive Historical Construction Timelapse (1882 -> 2034+ Final Design).
- * Uses smooth per-phase vertical GPU clipping planes so the basilica literally rises
- * stone-by-stone through 150 years of real architectural history!
+ * Uses smooth per-phase vertical GPU clipping planes lazily ONLY when viewing historical years,
+ * keeping Final mode (2034) free of fragment discard / Hardware Early-Z overhead!
  */
 export class ConstructionTimeline {
   public currentYear = 2034;
   public playing = false;
+  private clippingActive = false;
   private entries: PhaseEntry[] = [];
   private trackedUuids = new Set<string>();
 
   public onYearChange?: (year: number, caption: string) => void;
   public onPlayChange?: (playing: boolean) => void;
+  public onLocalClippingChange?: (enabled: boolean) => void;
+
+  public get isHistorical(): boolean {
+    return this.currentYear < 2033.8;
+  }
 
   /**
    * Classify every mesh in a loaded GLB module into its authentic historical construction phase.
@@ -154,15 +161,8 @@ export class ConstructionTimeline {
         maxY = 66.0;
       }
 
-      // Clone material only if needed so each phase owns an independent clipping plane
-      const origMats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      // Defer material cloning & clipping planes until historical timelapse is actually used
       const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 300);
-      const clonedMats = origMats.map((m) => {
-        const cm = m.clone();
-        cm.clippingPlanes = [clipPlane];
-        return cm;
-      });
-      obj.material = Array.isArray(obj.material) ? clonedMats : clonedMats[0];
 
       this.entries.push({
         obj,
@@ -171,11 +171,26 @@ export class ConstructionTimeline {
         minY,
         maxY,
         clipPlane,
-        materials: clonedMats,
+        origMaterial: obj.material,
+        clippedMaterials: null,
       });
     });
 
     this.applyYear(this.currentYear);
+  }
+
+  private ensureClippedMaterials(e: PhaseEntry): THREE.Material[] {
+    if (e.clippedMaterials) return e.clippedMaterials;
+    const origMats = Array.isArray(e.origMaterial) ? e.origMaterial : [e.origMaterial];
+    e.clippedMaterials = origMats.map((m) => {
+      const cm = m.clone();
+      cm.onBeforeCompile = m.onBeforeCompile;
+      cm.customProgramCacheKey = m.customProgramCacheKey;
+      cm.clippingPlanes = [e.clipPlane];
+      cm.needsUpdate = true;
+      return cm;
+    });
+    return e.clippedMaterials;
   }
 
   public getCaptionForYear(year: number): string {
@@ -192,23 +207,41 @@ export class ConstructionTimeline {
     this.currentYear = THREE.MathUtils.clamp(year, 1882, 2034);
     const isFinal = this.currentYear >= 2033.8;
 
-    for (const e of this.entries) {
-      if (isFinal) {
-        e.obj.visible = true;
-        e.clipPlane.constant = 300;
-        continue;
+    if (isFinal) {
+      if (this.clippingActive) {
+        this.clippingActive = false;
+        this.onLocalClippingChange?.(false);
+        for (const e of this.entries) {
+          e.obj.material = e.origMaterial;
+        }
       }
-
-      if (this.currentYear <= e.startYear) {
-        e.obj.visible = false;
-      } else if (this.currentYear >= e.endYear) {
+      for (const e of this.entries) {
         e.obj.visible = true;
         e.clipPlane.constant = 300;
-      } else {
-        e.obj.visible = true;
-        const frac = (this.currentYear - e.startYear) / Math.max(0.5, e.endYear - e.startYear);
-        // Smooth organic upward growth of stonework!
-        e.clipPlane.constant = THREE.MathUtils.lerp(e.minY, e.maxY, frac);
+      }
+    } else {
+      if (!this.clippingActive) {
+        this.clippingActive = true;
+        this.onLocalClippingChange?.(true);
+      }
+      for (const e of this.entries) {
+        const clipped = this.ensureClippedMaterials(e);
+        const targetMat = Array.isArray(e.origMaterial) ? clipped : clipped[0];
+        if (e.obj.material !== targetMat) {
+          e.obj.material = targetMat;
+        }
+
+        if (this.currentYear <= e.startYear) {
+          e.obj.visible = false;
+        } else if (this.currentYear >= e.endYear) {
+          e.obj.visible = true;
+          e.clipPlane.constant = 300;
+        } else {
+          e.obj.visible = true;
+          const frac = (this.currentYear - e.startYear) / Math.max(0.5, e.endYear - e.startYear);
+          // Smooth organic upward growth of stonework!
+          e.clipPlane.constant = THREE.MathUtils.lerp(e.minY, e.maxY, frac);
+        }
       }
     }
 
