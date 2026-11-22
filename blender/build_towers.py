@@ -484,16 +484,70 @@ def build_towers() -> None:
     add_box(bm_warm_stone, (0.0, -47.9, 72.6), (22.8, 0.35, 1.3))
     add_box(bm_warm_stone, (0.0, -51.1, 72.6), (22.8, 0.35, 1.3))
 
-    # ── 7. Walkable Gallery-to-Tower Access Bridges at Z = 14.5m (West Passion & South Glory!) ──
-    # West Empore (-21, -14.5) -> Inner SW Passion Tower Spiral Base (-31.5, -3.6)
-    add_box(bm_passion_stone, (-26.2, -9.0, 14.1), (12.8, 12.6, 0.8))
-    add_box(bm_passion_stone, (-26.2, -2.7, 15.1), (12.8, 0.38, 1.2))
-    add_box(bm_passion_stone, (-26.2, -15.3, 15.1), (12.8, 0.38, 1.2))
-    # South Choir Gallery (±3.8, -43.5) -> Inner Glory Tower Spiral Bases (±3.8, -49.5)
+    # ── 7. Complete Walkable Pedestrian Network: All 18 Towers, Base Galleries, Roof Stair-Bridges & Viewpoints! ──
+    def add_stepped_skybridge(
+        bm: bmesh.types.BMesh,
+        p0: Vector,
+        p1: Vector,
+        width: float = 2.8,
+        parapet_h: float = 1.15,
+    ) -> None:
+        """Creates a walkable stone bridge or stepped roof staircase with side parapets between any two 3D points."""
+        delta = p1 - p0
+        horiz = math.hypot(delta.x, delta.y)
+        ang = math.atan2(delta.y, delta.x)
+        dz = delta.z
+        nx = -math.sin(ang)
+        ny = math.cos(ang)
+
+        if abs(dz) < 0.25:
+            mid = (p0 + p1) * 0.5
+            add_box(bm, (mid.x, mid.y, mid.z - 0.35), (horiz + 0.6, width, 0.7), rot_euler=(0, 0, ang))
+            for side in (-1, 1):
+                ox = nx * side * (width * 0.5 - 0.16)
+                oy = ny * side * (width * 0.5 - 0.16)
+                add_box(bm, (mid.x + ox, mid.y + oy, mid.z + parapet_h * 0.5), (horiz + 0.4, 0.30, parapet_h), rot_euler=(0, 0, ang))
+        else:
+            steps = max(12, int(abs(dz) / 0.38))
+            step_len = (horiz / steps) + 0.24
+            for si in range(steps):
+                t = (si + 0.5) / steps
+                sx = p0.x + delta.x * t
+                sy = p0.y + delta.y * t
+                sz = p0.z + dz * t
+                add_box(bm, (sx, sy, sz - 0.28), (step_len, width, 0.56), rot_euler=(0, 0, ang))
+                for side in (-1, 1):
+                    ox = nx * side * (width * 0.5 - 0.16)
+                    oy = ny * side * (width * 0.5 - 0.16)
+                    add_box(bm, (sx + ox, sy + oy, sz + parapet_h * 0.5), (step_len + 0.08, 0.28, parapet_h), rot_euler=(0, 0, ang))
+
+    # 7a. Tower-Base Connecting Galleries at Z = 14.5m linking ALL 12 Apostle Towers to the Emporen!
+    # East Nativity base gallery (connects all 4 Nativity spiral staircases at X = +31.5)
+    add_stepped_skybridge(bm_nativity_stone, Vector((31.5, -11.0, 14.5)), Vector((31.5, 11.0, 14.5)), width=3.2)
+    # West Passion Empore bridge + full 4-tower base gallery at X = -31.5
+    add_stepped_skybridge(bm_passion_stone, Vector((-21.0, -14.5, 14.5)), Vector((-31.5, -3.6, 14.5)), width=3.2)
+    add_stepped_skybridge(bm_passion_stone, Vector((-31.5, -11.0, 14.5)), Vector((-31.5, 11.0, 14.5)), width=3.2)
+    # South Choir Gallery -> Glory base connectors + full 4-tower base gallery at Y = -49.5
     for sx in (-3.8, 3.8):
-        add_box(bm_warm_stone, (sx, -46.5, 14.1), (3.4, 7.2, 0.8))
-        add_box(bm_warm_stone, (sx - 1.6, -46.5, 15.1), (0.32, 7.2, 1.2))
-        add_box(bm_warm_stone, (sx + 1.6, -46.5, 15.1), (0.32, 7.2, 1.2))
+        add_stepped_skybridge(bm_warm_stone, Vector((sx, -43.5, 14.5)), Vector((sx, -49.5, 14.5)), width=3.0)
+    add_stepped_skybridge(bm_warm_stone, Vector((-11.8, -49.5, 14.5)), Vector((11.8, -49.5, 14.5)), width=3.2)
+
+    # 7b. Upper Roof Skybridges (Z = 56.0m) from Jesus Crossing Gallery -> All 4 Evangelist Towers & Virgin Mary Tower!
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            p_start = Vector((sx * 4.8, sy * 4.8, 56.0))
+            p_end = Vector((sx * 11.5, sy * 11.5, 56.0))
+            add_stepped_skybridge(bm_warm_stone, p_start, p_end, width=2.5)
+            # Top panoramic observation deck at Z = 114.0m inside each Evangelist Tower
+            add_cylinder(bm_warm_stone, Vector((sx * 11.5, sy * 11.5, 113.3)), Vector((sx * 11.5, sy * 11.5, 114.0)), 3.6, 3.6, segments=12, cap=True)
+    # North Apse Roof Skybridge: Jesus Crossing (0, 6.2, 56m) -> Virgin Mary Tower (0, +22.5, 56m) + 118m Viewpoint!
+    add_stepped_skybridge(bm_warm_stone, Vector((0.0, 6.2, 56.0)), Vector((0.0, 22.5, 56.0)), width=2.8)
+    add_cylinder(bm_warm_stone, Vector((0.0, 22.5, 117.3)), Vector((0.0, 22.5, 118.0)), 4.6, 4.6, segments=14, cap=True)
+
+    # 7c. Stepped Stone Roof Stair-Bridges connecting Jesus Crossing (56m) <-> East/West (65m) & South Glory (72m)!
+    add_stepped_skybridge(bm_nativity_stone, Vector((6.8, 0.0, 56.0)), Vector((30.2, 0.0, 65.0)), width=2.8)
+    add_stepped_skybridge(bm_passion_stone, Vector((-6.8, 0.0, 56.0)), Vector((-30.2, 0.0, 65.0)), width=2.8)
+    add_stepped_skybridge(bm_warm_stone, Vector((0.0, -6.8, 56.0)), Vector((0.0, -48.2, 72.0)), width=3.0)
 
     finalize_bmesh_object(bm_nativity_stone, "Towers_Nativity", mats["nativity_stone"], smooth=True, uv_scale=0.14)
     finalize_bmesh_object(bm_passion_stone, "Towers_Passion", mats["passion_stone"], smooth=True, uv_scale=0.14)

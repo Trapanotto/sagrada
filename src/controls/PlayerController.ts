@@ -18,6 +18,7 @@ export class PlayerController {
   private pitch = 0;
   private velY = 0;
   private onGround = true;
+  private coyoteTime = 0;
   private bobPhase = 0;
   private isDragging = false;
   private lastDragX = 0;
@@ -69,9 +70,11 @@ export class PlayerController {
       this.keys.add(e.code);
       if (e.code === 'KeyF') {
         this.setFlyMode(!this.flyMode);
-      } else if (e.code === 'Space' && !this.flyMode && this.onGround) {
-        this.velY = 6.2;
+      } else if (e.code === 'Space' && !this.flyMode && (this.onGround || this.coyoteTime > 0)) {
+        // Crisp 1.65m jump impulse — effortlessly clears 1.15m stone balustrades & railings to leap down!
+        this.velY = 7.6;
         this.onGround = false;
+        this.coyoteTime = 0;
       }
     });
 
@@ -285,20 +288,32 @@ export class PlayerController {
     this.camera.position.x = resolved.clampedX;
     this.camera.position.z = resolved.clampedZ;
 
-    // Vertical gravity & smooth stair stepping
+    // Vertical gravity, leaping off high ledges/parapets & smooth stair stepping!
     const targetEyeY = resolved.groundY + this.collision.eyeHeight;
-    if (!this.onGround || this.camera.position.y > targetEyeY + 0.35) {
-      this.velY -= 16.0 * safeDt;
+    if (!this.onGround || this.camera.position.y > targetEyeY + 0.55) {
+      if (this.onGround) {
+        this.onGround = false;
+        this.coyoteTime = 0.14;
+      } else {
+        this.coyoteTime = Math.max(0, this.coyoteTime - safeDt);
+      }
+      this.velY = Math.max(this.velY - 17.5 * safeDt, -34.0);
       this.camera.position.y += this.velY * safeDt;
       if (this.camera.position.y <= targetEyeY) {
+        const impactSpeed = Math.abs(this.velY);
         this.camera.position.y = targetEyeY;
         this.velY = 0;
         this.onGround = true;
+        this.coyoteTime = 0.14;
+        if (impactSpeed > 4.5) {
+          this.onStep?.();
+        }
       }
     } else {
-      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeY, Math.min(1, safeDt * 14));
+      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeY, Math.min(1, safeDt * 15));
       this.velY = 0;
       this.onGround = true;
+      this.coyoteTime = 0.14;
     }
 
     // Subtle natural walking head-bob + footstep trigger
