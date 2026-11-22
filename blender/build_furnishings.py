@@ -307,8 +307,8 @@ def build_furnishings() -> None:
     ):
         add_holy_water_font(bm_marble, bm_gold, fx, fy)
 
-    # ── 5. 6 Carved Catalan Oak Confessionals along Outer East & West Nave Walls (leaving Y=-33.75 Cloister Doorway 100% OPEN!) ──
-    for cy_c in (-18.75, -26.25, -41.25):
+    # ── 5. 4 Carved Catalan Oak Confessionals along Outer East & West Nave Walls (leaving Cloister Doorway & Corner Stairs 100% OPEN!) ──
+    for cy_c in (-18.75, -26.25):
         add_confessional(bm_oak, bm_gold, bm_glow, 21.1, cy_c, facing_x=-1.0)
         add_confessional(bm_oak, bm_gold, bm_glow, -21.1, cy_c, facing_x=1.0)
 
@@ -365,9 +365,9 @@ def build_furnishings() -> None:
                 segments=6,
             )
 
-    # ── 8. Gaudí Exhibition Showcase in West Outer Aisle (-18.8, Y = -40..-35 & -22..-17) ──
-    # 8a. Iconic Inverted Hanging-Chain Funicular Model ("Hängemodell") at (-18.6, -39.5)
-    ex, ey = -18.6, -39.5
+    # ── 8. Gaudí Exhibition Showcase in West Outer Aisle (-18.6, Y = -37.2 & -18.5 — clear of West Corner Spiral Stair!) ──
+    # 8a. Iconic Inverted Hanging-Chain Funicular Model ("Hängemodell") at (-18.6, -37.2)
+    ex, ey = -18.6, -37.2
     add_box(bm_oak, (ex, ey, Z_NAVE + 0.45), (2.8, 2.8, 0.90))
     add_box(bm_glass, (ex, ey, Z_NAVE + 2.15), (2.6, 2.6, 2.50))
     # Corner brass vitrine frames + overhead mirror ceiling plate

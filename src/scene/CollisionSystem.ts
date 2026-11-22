@@ -57,31 +57,49 @@ interface WalkBridge {
 }
 
 const WALK_BRIDGES: WalkBridge[] = [
-  // Emporen (14.5m) -> All 12 Apostle Tower Base Galleries
-  { x0: 21.0, y0: 14.5, z0: 14.5, x1: 31.5, y1: 14.5, z1: 4.5, halfWidth: 2.1 },
-  { x0: 31.5, y0: 14.5, z0: -11.4, x1: 31.5, y1: 14.5, z1: 11.4, halfWidth: 2.0 },
-  { x0: -21.0, y0: 14.5, z0: 14.5, x1: -31.5, y1: 14.5, z1: 3.6, halfWidth: 2.1 },
-  { x0: -31.5, y0: 14.5, z0: -11.4, x1: -31.5, y1: 14.5, z1: 11.4, halfWidth: 2.0 },
-  { x0: -3.8, y0: 14.5, z0: 43.0, x1: -3.8, y1: 14.5, z1: 49.8, halfWidth: 1.9 },
-  { x0: 3.8, y0: 14.5, z0: 43.0, x1: 3.8, y1: 14.5, z1: 49.8, halfWidth: 1.9 },
-  { x0: -12.0, y0: 14.5, z0: 49.5, x1: 12.0, y1: 14.5, z1: 49.5, halfWidth: 2.0 },
+  // Emporen (14.5m) -> Between-Tower Base Gaps (14.5m)
+  { x0: 21.0, y0: 14.5, z0: 14.5, x1: 30.1, y1: 14.5, z1: 7.2, halfWidth: 1.75 },
+  { x0: -21.0, y0: 14.5, z0: 14.5, x1: -30.1, y1: 14.5, z1: 7.2, halfWidth: 1.75 },
+  { x0: -7.6, y0: 14.5, z0: 43.0, x1: -7.6, y1: 14.5, z1: 48.2, halfWidth: 1.65 },
+  { x0: 0.0, y0: 14.5, z0: 43.0, x1: 0.0, y1: 14.5, z1: 48.2, halfWidth: 1.65 },
+  { x0: 7.6, y0: 14.5, z0: 43.0, x1: 7.6, y1: 14.5, z1: 48.2, halfWidth: 1.65 },
 
-  // Upper Apostle Tower Skybridges (65m East/West & 72m South Glory)
-  { x0: 31.5, y0: 65.0, z0: -11.5, x1: 31.5, y1: 65.0, z1: 11.5, halfWidth: 2.0 },
-  { x0: -31.5, y0: 65.0, z0: -11.5, x1: -31.5, y1: 65.0, z1: 11.5, halfWidth: 2.0 },
-  { x0: -12.0, y0: 72.0, z0: 49.5, x1: 12.0, y1: 72.0, z1: 49.5, halfWidth: 2.0 },
+  // Segmented Between-Tower Galleries (14.5m) & Upper Skybridges (65m East/West & 72m South Glory)
+  // East Nativity gaps (Z = -8.9..-5.5, -1.7..+1.7, +5.5..+8.9)
+  { x0: 31.5, y0: 14.5, z0: 5.2, x1: 31.5, y1: 14.5, z1: 9.2, halfWidth: 1.65 },
+  { x0: 31.5, y0: 14.5, z0: -2.0, x1: 31.5, y1: 14.5, z1: 2.0, halfWidth: 1.65 },
+  { x0: 31.5, y0: 14.5, z0: -9.2, x1: 31.5, y1: 14.5, z1: -5.2, halfWidth: 1.65 },
+  { x0: 31.5, y0: 65.0, z0: 5.2, x1: 31.5, y1: 65.0, z1: 9.2, halfWidth: 1.65 },
+  { x0: 31.5, y0: 65.0, z0: -2.0, x1: 31.5, y1: 65.0, z1: 2.0, halfWidth: 1.65 },
+  { x0: 31.5, y0: 65.0, z0: -9.2, x1: 31.5, y1: 65.0, z1: -5.2, halfWidth: 1.65 },
+  // West Passion gaps
+  { x0: -31.5, y0: 14.5, z0: 5.2, x1: -31.5, y1: 14.5, z1: 9.2, halfWidth: 1.65 },
+  { x0: -31.5, y0: 14.5, z0: -2.0, x1: -31.5, y1: 14.5, z1: 2.0, halfWidth: 1.65 },
+  { x0: -31.5, y0: 14.5, z0: -9.2, x1: -31.5, y1: 14.5, z1: -5.2, halfWidth: 1.65 },
+  { x0: -31.5, y0: 65.0, z0: 5.2, x1: -31.5, y1: 65.0, z1: 9.2, halfWidth: 1.65 },
+  { x0: -31.5, y0: 65.0, z0: -2.0, x1: -31.5, y1: 65.0, z1: 2.0, halfWidth: 1.65 },
+  { x0: -31.5, y0: 65.0, z0: -9.2, x1: -31.5, y1: 65.0, z1: -5.2, halfWidth: 1.65 },
+  // South Glory gaps (X = -9.5..-5.7, -1.9..+1.9, +5.7..+9.5)
+  { x0: -9.8, y0: 14.5, z0: 49.5, x1: -5.4, y1: 14.5, z1: 49.5, halfWidth: 1.65 },
+  { x0: -2.2, y0: 14.5, z0: 49.5, x1: 2.2, y1: 14.5, z1: 49.5, halfWidth: 1.65 },
+  { x0: 5.4, y0: 14.5, z0: 49.5, x1: 9.8, y1: 14.5, z1: 49.5, halfWidth: 1.65 },
+  { x0: -9.8, y0: 72.0, z0: 49.5, x1: -5.4, y1: 72.0, z1: 49.5, halfWidth: 1.65 },
+  { x0: -2.2, y0: 72.0, z0: 49.5, x1: 2.2, y1: 72.0, z1: 49.5, halfWidth: 1.65 },
+  { x0: 5.4, y0: 72.0, z0: 49.5, x1: 9.8, y1: 72.0, z1: 49.5, halfWidth: 1.65 },
 
-  // Jesus Crossing Gallery (56m) -> All 4 Evangelist Towers & Virgin Mary Tower (56m)
-  { x0: 4.5, y0: 56.0, z0: 4.5, x1: 11.8, y1: 56.0, z1: 11.8, halfWidth: 1.7 },
-  { x0: -4.5, y0: 56.0, z0: 4.5, x1: -11.8, y1: 56.0, z1: 11.8, halfWidth: 1.7 },
-  { x0: 4.5, y0: 56.0, z0: -4.5, x1: 11.8, y1: 56.0, z1: -11.8, halfWidth: 1.7 },
-  { x0: -4.5, y0: 56.0, z0: -4.5, x1: -11.8, y1: 56.0, z1: -11.8, halfWidth: 1.7 },
-  { x0: 0.0, y0: 56.0, z0: -6.0, x1: 0.0, y1: 56.0, z1: -22.8, halfWidth: 1.85 },
+  // Jesus Crossing Gallery (56m) -> All 4 Evangelist Towers (56m)
+  { x0: 5.0, y0: 56.0, z0: 5.0, x1: 10.2, y1: 56.0, z1: 10.2, halfWidth: 1.55 },
+  { x0: -5.0, y0: 56.0, z0: 5.0, x1: -10.2, y1: 56.0, z1: 10.2, halfWidth: 1.55 },
+  { x0: 5.0, y0: 56.0, z0: -5.0, x1: 10.2, y1: 56.0, z1: -10.2, halfWidth: 1.55 },
+  { x0: -5.0, y0: 56.0, z0: -5.0, x1: -10.2, y1: 56.0, z1: -10.2, halfWidth: 1.55 },
+
+  // Horizontal 76.0m North Skybridge: Jesus Spiral (76m) <-> Virgin Mary Tower Entry (76m) ABOVE Apse Vault!
+  { x0: 0.0, y0: 76.0, z0: -3.5, x1: 0.0, y1: 76.0, z1: -19.8, halfWidth: 1.65 },
 
   // Stepped Roof Stair-Bridges connecting Jesus Crossing (56m) <-> East/West (65m) & South Glory (72m)
-  { x0: 6.6, y0: 56.0, z0: 0.0, x1: 30.4, y1: 65.0, z1: 0.0, halfWidth: 1.85 },
-  { x0: -6.6, y0: 56.0, z0: 0.0, x1: -30.4, y1: 65.0, z1: 0.0, halfWidth: 1.85 },
-  { x0: 0.0, y0: 56.0, z0: 6.6, x1: 0.0, y1: 72.0, z1: 48.5, halfWidth: 1.95 },
+  { x0: 7.0, y0: 56.0, z0: 0.0, x1: 30.2, y1: 65.0, z1: 0.0, halfWidth: 1.65 },
+  { x0: -7.0, y0: 56.0, z0: 0.0, x1: -30.2, y1: 65.0, z1: 0.0, halfWidth: 1.65 },
+  { x0: 0.0, y0: 56.0, z0: 7.0, x1: 0.0, y1: 72.0, z1: 48.1, halfWidth: 1.75 },
 
   // Nave (1.2m) <-> Subterranean Crypt (-5.5m) Straight Recessed Descending Staircase
   { x0: -21.0, y0: 1.2, z0: -13.8, x1: -11.2, y1: -5.5, z1: -13.8, halfWidth: 1.55 },
@@ -100,30 +118,34 @@ export interface TowerStairShaft {
 }
 
 export const TOWER_STAIR_SHAFTS: TowerStairShaft[] = [
-  { name: 'Wendeltreppe · Turm Jesu Christi', cx: 0.0, cz: 0.0, zStart: 56.0, zEnd: 136.0, rInner: 2.25, rOuter: 4.95, turnsPer10m: 1.1, clockwise: true },
-  { name: 'Wendeltreppe · Marien-Turm', cx: 0.0, cz: -22.5, zStart: 56.0, zEnd: 118.0, rInner: 1.85, rOuter: 3.85, turnsPer10m: 1.25, clockwise: true },
-  { name: 'Wendeltreppe · Evangelist Markus', cx: -11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.15, rOuter: 2.85, turnsPer10m: 1.35, clockwise: true },
-  { name: 'Wendeltreppe · Evangelist Lukas', cx: -11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.15, rOuter: 2.85, turnsPer10m: 1.35, clockwise: false },
-  { name: 'Wendeltreppe · Evangelist Matthäus', cx: 11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.15, rOuter: 2.85, turnsPer10m: 1.35, clockwise: false },
-  { name: 'Wendeltreppe · Evangelist Johannes', cx: 11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.15, rOuter: 2.85, turnsPer10m: 1.35, clockwise: true },
-  { name: 'Wendeltreppe · Geburtsturm SO', cx: 31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Geburtsturm Mitte-Süd', cx: 31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Geburtsturm Mitte-Nord', cx: 31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Geburtsturm NO', cx: 31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Passionsturm SW', cx: -31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Passionsturm Mitte-Süd', cx: -31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Passionsturm Mitte-Nord', cx: -31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Passionsturm NW', cx: -31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Glorienturm West', cx: -11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.90, rOuter: 2.65, turnsPer10m: 1.62, clockwise: false },
-  { name: 'Wendeltreppe · Glorienturm Mitte-West', cx: -3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.90, rOuter: 2.65, turnsPer10m: 1.62, clockwise: true },
-  { name: 'Wendeltreppe · Glorienturm Mitte-Ost', cx: 3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.90, rOuter: 2.65, turnsPer10m: 1.62, clockwise: false },
-  { name: 'Wendeltreppe · Glorienturm Ost', cx: 11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.90, rOuter: 2.65, turnsPer10m: 1.62, clockwise: true },
+  { name: 'Wendeltreppe · Turm Jesu Christi', cx: 0.0, cz: 0.0, zStart: 56.0, zEnd: 136.0, rInner: 2.35, rOuter: 4.15, turnsPer10m: 1.1, clockwise: true },
+  { name: 'Wendeltreppe · Marien-Turm', cx: 0.0, cz: -22.5, zStart: 76.0, zEnd: 118.0, rInner: 1.70, rOuter: 3.25, turnsPer10m: 1.25, clockwise: true },
+  { name: 'Wendeltreppe · Evangelist Markus', cx: -11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: true },
+  { name: 'Wendeltreppe · Evangelist Lukas', cx: -11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: false },
+  { name: 'Wendeltreppe · Evangelist Matthäus', cx: 11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: false },
+  { name: 'Wendeltreppe · Evangelist Johannes', cx: 11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: true },
+  { name: 'Wendeltreppe · Geburtsturm SO', cx: 31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
+  { name: 'Wendeltreppe · Geburtsturm Mitte-Süd', cx: 31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
+  { name: 'Wendeltreppe · Geburtsturm Mitte-Nord', cx: 31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
+  { name: 'Wendeltreppe · Geburtsturm NO', cx: 31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
+  { name: 'Wendeltreppe · Passionsturm SW', cx: -31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
+  { name: 'Wendeltreppe · Passionsturm Mitte-Süd', cx: -31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
+  { name: 'Wendeltreppe · Passionsturm Mitte-Nord', cx: -31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
+  { name: 'Wendeltreppe · Passionsturm NW', cx: -31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
+  { name: 'Wendeltreppe · Glorienturm West', cx: -11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: false },
+  { name: 'Wendeltreppe · Glorienturm Mitte-West', cx: -3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: true },
+  { name: 'Wendeltreppe · Glorienturm Mitte-Ost', cx: 3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: false },
+  { name: 'Wendeltreppe · Glorienturm Ost', cx: 11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: true },
 ];
 
-// Non-collidable visual-only meshes (floors, distant horizon, canopies, glow accents, analytical spiral stairs)
+// Non-collidable visual-only meshes (floors, stairs, distant horizon, canopies, glow accents)
 const NON_COLLIDABLE_SUBSTRINGS = [
   'Floor',
   'Carpet',
+  'CornerStairs',
+  'EntranceStairs',
+  'StairSteps',
+  'RoofStairs',
   'Streets',
   'Sidewalks',
   'ParkLawns',
@@ -451,16 +473,20 @@ export class CollisionSystem {
       consider(this.elevatorFloorY);
     }
 
-    // 2. Top Panoramic Observation Decks
+    // 2. Top Panoramic Observation Decks & Mary Tower 76m Entry Ring
     if (rCenter <= 6.5) {
       consider(136.0);
     }
-    if (Math.hypot(cx, cz - -22.5) <= 4.7) {
+    const dMary = Math.hypot(cx, cz - -22.5);
+    if (dMary <= 3.75) {
       consider(118.0);
+    }
+    if (dMary >= 1.70 && dMary <= 4.10) {
+      consider(76.0);
     }
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
-        if (Math.hypot(cx - sx * 11.5, cz - sz * 11.5) <= 3.7) {
+        if (Math.hypot(cx - sx * 11.5, cz - sz * 11.5) <= 2.75) {
           consider(114.0);
         }
       }
@@ -483,11 +509,11 @@ export class CollisionSystem {
       }
     }
 
-    // 5. All 18 Internal Tower Helical Spiral Staircases
+    // 5. All 18 Internal Tower Helical Spiral Staircases (seamless automatic climbing UP and DOWN!)
     for (const shaft of TOWER_STAIR_SHAFTS) {
-      if (feetY < shaft.zStart - 1.6 || feetY > shaft.zEnd + 1.8) continue;
+      if (feetY < shaft.zStart - 1.5 || feetY > shaft.zEnd + 1.5) continue;
       const dist = Math.hypot(cx - shaft.cx, cz - shaft.cz);
-      if (dist >= shaft.rInner - 0.15 && dist <= shaft.rOuter + 0.15) {
+      if (dist >= shaft.rInner && dist <= shaft.rOuter) {
         const dx = cx - shaft.cx;
         const dz = cz - shaft.cz;
         const ang = Math.atan2(-dz, dx);
@@ -496,13 +522,24 @@ export class CollisionSystem {
         const fracTurn = baseAngle / (Math.PI * 2);
         const pitchPerTurn = 10.0 / shaft.turnsPer10m;
         const estTurn = Math.round((feetY - shaft.zStart) / pitchPerTurn - fracTurn);
-        const spiralY = THREE.MathUtils.clamp(
-          shaft.zStart + (estTurn + fracTurn) * pitchPerTurn,
-          shaft.zStart,
-          shaft.zEnd
-        );
-        if (Math.abs(feetY - spiralY) < 2.2) {
-          consider(spiralY);
+        let bestSpiralY: number | null = null;
+        let bestDiff = Infinity;
+        for (const dt of [-1, 0, 1]) {
+          const candY = shaft.zStart + (estTurn + dt + fracTurn) * pitchPerTurn;
+          if (candY < shaft.zStart - 0.8 || candY > shaft.zEnd + 0.8) continue;
+          const clampedY = THREE.MathUtils.clamp(candY, shaft.zStart, shaft.zEnd);
+          const diff = clampedY - feetY;
+          if (diff <= 1.45 && diff >= -1.55 && Math.abs(diff) < bestDiff) {
+            bestDiff = Math.abs(diff);
+            bestSpiralY = clampedY;
+          }
+        }
+        if (bestSpiralY !== null) {
+          // While inside a spiral shaft mid-flight, return exact helix tread height so descending isn't blocked by floors below
+          if (bestSpiralY > shaft.zStart + 1.2 && bestSpiralY < shaft.zEnd - 1.2) {
+            return { groundY: bestSpiralY, clampedX: cx, clampedZ: cz };
+          }
+          consider(bestSpiralY);
         }
       }
     }
@@ -517,30 +554,47 @@ export class CollisionSystem {
       consider(45.0);
     }
 
-    // 7. 2 Walkable Gaudí Corner Helical Staircases: Nave Floor (1.2m) <-> Emporen Galleries (14.5m) at (±19.6, Z=+42.8)
+    // 7. 2 Walkable Gaudí Corner Helical Staircases: Nave Floor (1.2m) <-> Emporen Galleries (14.5m) at (±19.6, Z=+42.6)
     for (const sx of [-1, 1]) {
       const scx = sx * 19.6;
-      const scz = 42.8;
+      const scz = 42.6;
       const dCorner = Math.hypot(cx - scx, cz - scz);
-      if (dCorner >= 0.45 && dCorner <= 2.35 && feetY >= 0.5 && feetY <= 16.0) {
+      if (dCorner >= 0.36 && dCorner <= 1.92 && feetY >= 0.4 && feetY <= 15.8) {
         const ang = Math.atan2(-(cz - scz), cx - scx);
-        const signedAng = sx > 0 ? ang : -ang;
-        const baseFrac = (((signedAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
+        // Matches build_interior.py exact ang_offset (0.0 for East +X, PI for West -X) & turns = 2.5
+        const rawSigned = (ang - (sx > 0 ? 0 : Math.PI)) * sx;
+        const baseFrac = (((rawSigned % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
         const pitch = (14.5 - 1.2) / 2.5;
         const estTurn = Math.round((feetY - 1.2) / pitch - baseFrac);
-        const stairY = THREE.MathUtils.clamp(1.2 + (estTurn + baseFrac) * pitch, 1.2, 14.5);
-        if (Math.abs(feetY - stairY) < 2.2) {
-          consider(stairY);
+        let bestCornerY: number | null = null;
+        let bestDiff = Infinity;
+        for (const dt of [-1, 0, 1]) {
+          const candY = 1.2 + (estTurn + dt + baseFrac) * pitch;
+          if (candY < 0.8 || candY > 14.9) continue;
+          const clampedY = THREE.MathUtils.clamp(candY, 1.2, 14.5);
+          const diff = clampedY - feetY;
+          if (diff <= 1.45 && diff >= -1.55 && Math.abs(diff) < bestDiff) {
+            bestDiff = Math.abs(diff);
+            bestCornerY = clampedY;
+          }
+        }
+        if (bestCornerY !== null) {
+          return { groundY: bestCornerY, clampedX: cx, clampedZ: cz };
         }
       }
     }
 
-    // 8. Elevated Choir Galleries / Emporen (Y = 14.5m)
-    const onSouthEmpore = cz >= 40.6 && cz <= 45.4 && Math.abs(cx) <= 22.4;
-    const onEastEmpore = cx >= 16.8 && cx <= 22.4 && cz >= 13.8 && cz <= 45.4;
-    const onWestEmpore = cx <= -16.8 && cx >= -22.4 && cz >= 13.8 && cz <= 45.4;
-    if (onSouthEmpore || onEastEmpore || onWestEmpore) {
-      consider(14.5);
+    // 8. Elevated Choir Galleries / Emporen (Y = 14.5m) — exclude open corner spiral stairwell holes at (±19.6, Z=+42.6)!
+    const inCornerHole =
+      Math.hypot(cx - 19.6, cz - 42.6) < 1.82 ||
+      Math.hypot(cx + 19.6, cz - 42.6) < 1.82;
+    if (!inCornerHole) {
+      const onSouthEmpore = cz >= 40.6 && cz <= 45.4 && Math.abs(cx) <= 18.4;
+      const onEastEmpore = cx >= 16.8 && cx <= 22.4 && cz >= 13.8 && cz <= 40.8;
+      const onWestEmpore = cx <= -16.8 && cx >= -22.4 && cz >= 13.8 && cz <= 40.8;
+      if (onSouthEmpore || onEastEmpore || onWestEmpore) {
+        consider(14.5);
+      }
     }
 
     // 9. Eixample Apartment Rooftops (Y = 25.0m)
@@ -580,10 +634,15 @@ export class CollisionSystem {
       const t = 1.0 - (dAltar - 8.8) / 2.0;
       return 1.2 + t * 1.2;
     }
+    // Stepped Baptistery Dais in East Transept (+19.2, Z=+9.8)
+    const dBapt = Math.hypot(cx - 19.2, cz - 9.8);
+    if (dBapt < 1.95) return 1.64;
+    if (dBapt < 2.55) return 1.42;
+
     if (this.isOnBasilicaPodium(cx, cz)) {
       return 1.2;
     }
-    // Exterior entrance steps / ramps
+    // Exterior entrance steps / ramps (Nativity East, Passion West, Glory South, East/West Cloister Portals)
     if (cx > 31.8 && cx <= 37.0 && Math.abs(cz) <= 14.5) {
       return (1.0 - THREE.MathUtils.clamp((cx - 32.5) / 4.2, 0, 1)) * 1.2;
     }
@@ -592,6 +651,9 @@ export class CollisionSystem {
     }
     if (cz > 57.5 && cz <= 71.0 && Math.abs(cx) <= 19.0) {
       return (1.0 - THREE.MathUtils.clamp((cz - 58.0) / 12.5, 0, 1)) * 1.2;
+    }
+    if (Math.abs(cx) > 28.5 && Math.abs(cx) <= 31.2 && cz >= 25.0 && cz <= 31.2) {
+      return (1.0 - THREE.MathUtils.clamp((Math.abs(cx) - 28.8) / 2.2, 0, 1)) * 1.2;
     }
     return 0.0;
   }

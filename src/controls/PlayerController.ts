@@ -338,7 +338,7 @@ export class PlayerController {
         resolved = this.collision.resolveWalkPosition(curX + stepX, curFeet, curZ + stepZ);
         curX = resolved.clampedX;
         curZ = resolved.clampedZ;
-        if (this.onGround && resolved.groundY <= curFeet + 1.45) {
+        if (this.onGround && resolved.groundY <= curFeet + 1.45 && resolved.groundY >= curFeet - 0.95) {
           curFeet = resolved.groundY;
         }
       }
@@ -353,9 +353,9 @@ export class PlayerController {
       this.speedMps = 0;
     }
 
-    // Vertical gravity, leaping off high ledges/parapets, ceiling headroom & smooth stair stepping!
+    // Vertical gravity, leaping off high ledges/parapets, ceiling headroom & smooth automatic stair climbing!
     const targetEyeY = resolved.groundY + this.collision.eyeHeight;
-    if (!this.onGround || this.camera.position.y > targetEyeY + 0.55) {
+    if (!this.onGround || this.camera.position.y > targetEyeY + 0.85) {
       if (this.onGround) {
         this.onGround = false;
         this.coyoteTime = 0.14;
@@ -386,7 +386,7 @@ export class PlayerController {
         }
       }
     } else {
-      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeY, Math.min(1, safeDt * 15));
+      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeY, Math.min(1, safeDt * 24));
       this.velY = 0;
       this.onGround = true;
       this.coyoteTime = 0.14;

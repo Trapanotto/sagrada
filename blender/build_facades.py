@@ -150,6 +150,7 @@ def add_turtle_column_base(
 
 def build_nativity_facade(
     bm_nat: bmesh.types.BMesh,
+    bm_stairs_nat: bmesh.types.BMesh,
     bm_bronze: bmesh.types.BMesh,
     bm_cypress: bmesh.types.BMesh,
     bm_gold: bmesh.types.BMesh,
@@ -158,26 +159,26 @@ def build_nativity_facade(
     """East Nativity Facade (X = +31.5): organic sandstone, 3 gabled portals, Cypress Tree of Life."""
     fx = 31.5
 
-    # Entrance steps leading from Plaça de Gaudí (Z=0) cleanly up to Nave landing (Z=1.2) — ZERO buried steps!
+    # Entrance steps leading from Plaça de Gaudí (Z=0) cleanly up to Nave landing (Z=1.2) — dedicated stair mesh!
     for step in range(6):
         sz = (step + 1) * (Z_NAVE / 6.0)
-        add_box(bm_nat, (fx + 5.2 - step * 0.56, 0.0, sz * 0.5), (0.60, 28.0, sz))
-    add_box(bm_nat, (fx + 0.9, 0.0, Z_NAVE * 0.5), (2.4, 28.0, Z_NAVE))
+        add_box(bm_stairs_nat, (fx + 5.2 - step * 0.56, 0.0, sz * 0.5), (0.60, 28.0, sz))
+    add_box(bm_stairs_nat, (fx + 0.9, 0.0, Z_NAVE * 0.5), (2.4, 28.0, Z_NAVE))
 
-    # Massive sculpted piers flanking the 3 portals (split cleanly around Z=14.5..18.5m so the East 14.5m Tower-Base Gallery is 100% OPEN!)
+    # Massive sculpted piers flanking the 3 portals (lower tier Z=0..14.4m; upper tier strictly BETWEEN the 4 tower shafts!)
     pier_ys = (-14.2, -4.6, 4.6, 14.2)
     for py in pier_ys:
         add_box(bm_nat, (fx, py, 7.2), (4.2, 3.6, 14.4))
-        add_box(bm_nat, (fx, py, 24.4), (4.2, 3.6, 11.4))
-        # Organic dripping stalactite-like buttress projections
+        # Organic dripping stalactite-like buttress projections on exterior face (strictly outside tower shafts!)
         for k in range(5):
             zk = 5.0 + k * 4.5
             r = 1.45 - k * 0.16
-            add_cylinder(bm_nat, Vector((fx + 2.2, py, zk)), Vector((fx + 1.8, py, zk + 4.8)), r, r * 0.68, segments=10)
+            add_cylinder(bm_nat, Vector((fx + 3.0, py, zk)), Vector((fx + 2.6, py, zk + 4.8)), r, r * 0.68, segments=10)
 
-    # Upper facade wall split cleanly around Z = 14.5..18.5m so the East Tower-Base Gallery & Spiral Stairs are 100% OPEN!
+    # Upper facade wall split cleanly around Z = 14.5..18.5m AND strictly between the 4 tower spiral shafts (Y=±3.6, ±10.8)!
     add_box(bm_nat, (fx, 0.0, 12.2), (3.4, 29.0, 3.6))
-    add_box(bm_nat, (fx, 0.0, 24.4), (3.4, 29.0, 11.4))
+    for y_seg, span_y in ((-14.0, 2.0), (-7.2, 2.4), (0.0, 2.4), (7.2, 2.4), (14.0, 2.0)):
+        add_box(bm_nat, (fx, y_seg, 24.4), (3.4, span_y, 11.4))
     # Deep sculpted archivolts framing each portal
     for py, p_w, p_h, g_h in ((-9.2, 5.2, 8.6, 24.0), (0.0, 6.2, 10.4, 30.0), (9.2, 5.2, 8.6, 24.0)):
         # Stepped parabolic archivolt ribs projecting outward
@@ -198,8 +199,8 @@ def build_nativity_facade(
             # Pointed parabolic arch top
             add_cylinder(bm_nat, Vector((lx, py - lw * 0.35, lh)), Vector((lx, py, lh + 3.2)), 0.42, 0.36, segments=8)
             add_cylinder(bm_nat, Vector((lx, py + lw * 0.35, lh)), Vector((lx, py, lh + 3.2)), 0.42, 0.36, segments=8)
-        # Soaring organic triangular gable pinnacle above each portal
-        add_pointed_gable(bm_nat, (fx + 1.9, py), p_h + 2.6, p_w + 3.2, g_h, 2.2, facing="X+")
+        # Soaring organic triangular gable pinnacle above each portal (placed strictly outside tower spiral shafts!)
+        add_pointed_gable(bm_nat, (fx + 3.25, py), p_h + 2.6, p_w + 3.0, g_h, 1.8, facing="X+")
         # Deep sculpted rosette wheel medallion recessed inside each Nativity gable!
         rz = p_h + 5.6
         rr = 1.65 if py == 0.0 else 1.25
@@ -208,8 +209,8 @@ def build_nativity_facade(
             a1 = 2.0 * math.pi * (s + 1) / 12.0
             add_cylinder(
                 bm_nat,
-                Vector((fx + 3.15, py + rr * math.cos(a0), rz + rr * math.sin(a0))),
-                Vector((fx + 3.15, py + rr * math.cos(a1), rz + rr * math.sin(a1))),
+                Vector((fx + 4.15, py + rr * math.cos(a0), rz + rr * math.sin(a0))),
+                Vector((fx + 4.15, py + rr * math.cos(a1), rz + rr * math.sin(a1))),
                 0.20,
                 0.20,
                 segments=6,
@@ -217,16 +218,16 @@ def build_nativity_facade(
             if s % 2 == 0:
                 add_cylinder(
                     bm_gold,
-                    Vector((fx + 3.05, py, rz)),
-                    Vector((fx + 3.15, py + rr * math.cos(a0), rz + rr * math.sin(a0))),
+                    Vector((fx + 4.05, py, rz)),
+                    Vector((fx + 4.15, py + rr * math.cos(a0), rz + rr * math.sin(a0))),
                     0.09,
                     0.09,
                     segments=6,
                 )
         # Organic botanical pinnacles, Gothic crocket spires & sculpted tympanum figure reliefs flanking the gable!
         for sy in (-1, 1):
-            add_cylinder(bm_nat, Vector((fx + 2.9, py + sy * (p_w * 0.55), p_h + 1.2)), Vector((fx + 2.8, py + sy * (p_w * 0.52), p_h + 10.5)), 0.58, 0.12, segments=8)
-            add_cylinder(bm_nat, Vector((fx + 3.3, py + sy * (p_w * 0.36), p_h + 4.0)), Vector((fx + 3.1, py + sy * (p_w * 0.32), p_h + 14.5)), 0.42, 0.09, segments=7)
+            add_cylinder(bm_nat, Vector((fx + 3.9, py + sy * (p_w * 0.55), p_h + 1.2)), Vector((fx + 3.8, py + sy * (p_w * 0.52), p_h + 10.5)), 0.58, 0.12, segments=8)
+            add_cylinder(bm_nat, Vector((fx + 4.1, py + sy * (p_w * 0.36), p_h + 4.0)), Vector((fx + 3.9, py + sy * (p_w * 0.32), p_h + 14.5)), 0.42, 0.09, segments=7)
             # Carved sculptural niche canopy + figure silhouette beside each portal jamb
             add_cylinder(bm_nat, Vector((fx + 3.25, py + sy * (p_w * 0.52), Z_NAVE + 2.2)), Vector((fx + 3.25, py + sy * (p_w * 0.52), Z_NAVE + 5.0)), 0.42, 0.28, segments=8)
             add_cylinder(bm_white, Vector((fx + 3.45, py + sy * (p_w * 0.52), Z_NAVE + 2.4)), Vector((fx + 3.45, py + sy * (p_w * 0.52), Z_NAVE + 4.5)), 0.24, 0.16, segments=8)
@@ -244,7 +245,7 @@ def build_nativity_facade(
     add_turtle_column_base(bm_nat, fx + 2.65, 4.55, Z_NAVE, is_sea_turtle=False)
 
     # Luminous Golden Star of Bethlehem radiant medallion crowning the Charity Portal (Z = 29.8m)
-    star_x = fx + 3.35
+    star_x = fx + 4.30
     star_z = 29.8
     for k in range(8):
         ang = 2.0 * math.pi * k / 8.0
@@ -272,7 +273,7 @@ def build_nativity_facade(
 
     # Central Sculpted Cypress Tree of Life rising above Charity Gable (Z = 38 .. 49m)
     # Multi-tiered organically sculpted Venetian-green mosaic cypress foliage (never a smooth plastic cone!)
-    tree_x = fx + 2.0
+    tree_x = fx + 3.25
     for tier in range(8):
         t = tier / 7.0
         zt = 38.4 + t * 10.2
@@ -305,24 +306,25 @@ def build_nativity_facade(
 
 def build_passion_facade(
     bm_pas: bmesh.types.BMesh,
+    bm_stairs_pas: bmesh.types.BMesh,
     bm_bronze: bmesh.types.BMesh,
     bm_gold: bmesh.types.BMesh,
 ) -> None:
     """West Passion Facade (X = -31.5): 6 giant inclined bone columns, stark portico, Subirachs aesthetic."""
     fx = -31.5
 
-    # Entrance steps from Plaça de la Sagrada Família (Z=0) cleanly up to portico terrace (Z=1.2) — ZERO buried steps!
+    # Entrance steps from Plaça de la Sagrada Família (Z=0) cleanly up to portico terrace (Z=1.2) — dedicated stair mesh!
     for step in range(6):
         sz = (step + 1) * (Z_NAVE / 6.0)
-        add_box(bm_pas, (fx - 8.4 + step * 0.58, 0.0, sz * 0.5), (0.62, 30.0, sz))
-    add_box(bm_pas, (fx - 2.6, 0.0, Z_NAVE * 0.5), (5.2, 30.0, Z_NAVE))
+        add_box(bm_stairs_pas, (fx - 8.4 + step * 0.58, 0.0, sz * 0.5), (0.62, 30.0, sz))
+    add_box(bm_stairs_pas, (fx - 2.6, 0.0, Z_NAVE * 0.5), (5.2, 30.0, Z_NAVE))
 
-    # Inner recessed Passion wall split around Z = 14.5..18.5m so West Tower-Base Gallery & Spiral Stairs are 100% OPEN!
+    # Inner recessed Passion wall split around Z = 14.5..18.5m AND strictly between the 4 tower shafts (Y=±3.6, ±10.8)!
     for py in (-14.2, -5.2, 5.2, 14.2):
         add_box(bm_pas, (fx, py, 7.2), (3.4, 4.2, 14.4))
-        add_box(bm_pas, (fx, py, 24.4), (3.4, 4.2, 11.2))
     add_box(bm_pas, (fx, 0.0, 12.2), (3.2, 29.0, 3.6))
-    add_box(bm_pas, (fx, 0.0, 24.4), (3.2, 29.0, 11.4))
+    for y_seg, span_y in ((-14.0, 2.0), (-7.2, 2.4), (0.0, 2.4), (7.2, 2.4), (14.0, 2.0)):
+        add_box(bm_pas, (fx, y_seg, 24.4), (3.2, span_y, 11.4))
     # Bronze Gospel doors folded open at entrance jambs
     for sy in (-1, 1):
         add_box(bm_bronze, (fx + 0.5, sy * 2.8, Z_NAVE + 3.2), (2.4, 0.26, 6.4))
@@ -398,25 +400,27 @@ def build_passion_facade(
 
 def build_glory_facade(
     bm_warm: bmesh.types.BMesh,
+    bm_stairs_warm: bmesh.types.BMesh,
     bm_bronze: bmesh.types.BMesh,
     bm_gold: bmesh.types.BMesh,
 ) -> None:
     """South Glory Facade (Y = -49.5, Completed Design): 7 tall columns, cloud portico, monumental bridge staircase."""
     fy = -49.5
 
-    # Main facade wall split cleanly around Z = 14.5..18.5m so South Choir Gallery -> Glory Tower bridges are 100% OPEN!
+    # Main facade wall split cleanly around Z = 14.5..18.5m; upper wall placed strictly NORTH (fy+3.0 = -46.5, Y=-47.4..-45.6)
+    # so all 4 Glory Tower spiral staircases (at Y=-49.5, r<=1.9m -> -51.4..-47.6) stay 100% open & unobstructed!
     for px in (-21.0, -13.2, -6.2, 6.2, 13.2, 21.0):
-        add_box(bm_warm, (px, fy + 2.2, 7.2), (3.4, 3.6, 14.4))
-        add_box(bm_warm, (px, fy + 2.2, 25.4), (3.4, 3.6, 13.4))
-    add_box(bm_warm, (0.0, fy + 2.2, 12.2), (45.0, 3.2, 3.6))
-    add_box(bm_warm, (0.0, fy + 2.2, 26.8), (45.0, 3.2, 16.4))
+        add_box(bm_warm, (px, fy + 2.4, 7.2), (3.4, 3.2, 14.4))
+        add_box(bm_warm, (px, fy + 3.0, 25.4), (3.4, 1.8, 13.4))
+    add_box(bm_warm, (0.0, fy + 2.4, 12.2), (45.0, 2.8, 3.6))
+    add_box(bm_warm, (0.0, fy + 3.0, 26.8), (45.0, 1.8, 16.4))
 
     # Monumental Bronze Lord's Prayer Doors folded open at the center
     for sx in (-1, 1):
         add_box(bm_bronze, (sx * 4.2, fy + 3.2, Z_NAVE + 4.0), (0.32, 3.2, 8.0))
         add_box(bm_bronze, (sx * 9.8, fy + 2.2, Z_NAVE + 3.2), (3.6, 0.32, 6.4))
 
-    # 7 Monumental Fluted Lantern Columns of the Glory Portico (spanning X = -18..+18 at Y = -56.5)
+    # 7 Monumental Fluted Lantern Columns of the Glory Portico (spanning X = -18..+18 at Y = -56.3)
     for i in range(7):
         px = -18.0 + i * 6.0
         h_col = 26.0 + (4.5 - abs(i - 3) * 1.2)
@@ -434,22 +438,22 @@ def build_glory_facade(
             )
         # Sculpted gilded lantern crown atop each of the 7 columns
         add_cylinder(bm_gold, Vector((px, fy - 6.8, h_col)), Vector((px, fy - 6.8, h_col + 3.6)), 1.18, 0.35, segments=10)
-        # Parabolic vault ribs tying portico columns back into the facade
-        add_cylinder(bm_warm, Vector((px, fy - 6.8, h_col - 2.0)), Vector((px, fy + 1.0, h_col + 4.5)), 0.72, 0.65, segments=8)
+        # Parabolic vault ribs tying portico columns cleanly into the portico canopy (strictly south of Glory spirals!)
+        add_cylinder(bm_warm, Vector((px, fy - 6.8, h_col - 2.0)), Vector((px, fy - 2.6, h_col + 1.8)), 0.72, 0.65, segments=8)
 
-    # Sweeping sculptural "Cloud & Glory" vaulted portico roof canopy (Z = 27 .. 36m)
-    add_box(bm_warm, (0.0, fy - 2.8, 29.0), (42.0, 10.5, 4.2))
+    # Sweeping sculptural "Cloud & Glory" vaulted portico roof canopy strictly SOUTH of Glory tower spirals (Y = -57.5..-51.9)
+    add_box(bm_warm, (0.0, fy - 5.2, 29.0), (42.0, 5.6, 4.2))
     add_pointed_gable(bm_warm, (0.0, fy - 5.5), 30.5, 34.0, 18.0, 3.2, facing="Y-")
 
     # Monumental Ceremonial Terrace & Grand Staircase descending south over Carrer de Mallorca!
     # Wide flat podium terrace cleanly ending at Y = -58.0 (ZERO buried top steps!)
     add_box(bm_warm, (0.0, -52.5, Z_NAVE * 0.5), (44.0, 11.0, Z_NAVE))
-    # Grand terraced cascade stairs (Y = -58.6..-70.0, descending cleanly from Z = 1.2 down to asphalt Z = -0.14!)
+    # Grand terraced cascade stairs (Y = -58.6..-70.0, dedicated stair mesh so player climbs automatically!)
     for step in range(10):
         sz = (10 - step) * (Z_NAVE / 10.0) + 0.16
         sy = -58.65 - step * 1.18
         sw = 34.0 + step * 0.8
-        add_box(bm_warm, (0.0, sy, sz * 0.5 - 0.16), (sw, 1.24, sz))
+        add_box(bm_stairs_warm, (0.0, sy, sz * 0.5 - 0.16), (sw, 1.24, sz))
     # Ornamental flanking parapet walls with gilded light obelisks along the grand staircase
     for sx in (-1, 1):
         add_box(bm_warm, (sx * 19.5, -64.0, 1.2), (1.4, 13.5, 2.4))
@@ -524,9 +528,9 @@ def build_roofs_and_pinnacles(
     # 1. Smooth Parabolic Central Nave Roof (X: -8.2..+8.2, Y: -46..-7.5, Z: 46.5..55.5m)
     add_parabolic_roof_vault(bm_warm, bm_gold, (0.0, -26.8, Z_NAVE_VAULT + 0.2), 16.4, 38.6, 8.8, axis="Y", ribs=5)
 
-    # 2. Smooth Parabolic Transept Roofs (X: ±8..±30.2, Y: -8.2..+8.2)
+    # 2. Smooth Parabolic Transept Roofs (X: ±7.6..±28.8, Y: -8.2..+8.2 — clear of ±31.5m tower shafts!)
     for sx in (-1, 1):
-        add_parabolic_roof_vault(bm_warm, bm_gold, (sx * 19.0, 0.0, Z_NAVE_VAULT + 0.2), 16.4, 22.6, 8.8, axis="X", ribs=3)
+        add_parabolic_roof_vault(bm_warm, bm_gold, (sx * 18.2, 0.0, Z_NAVE_VAULT + 0.2), 16.4, 21.2, 8.8, axis="X", ribs=3)
 
     # 3. Side Aisles Exterior Sloped Roofs + True Pointed Gables + Detailed Fruit-Basket Pinnacles (Obstkörbe)!
     for sx in (-1, 1):
@@ -633,15 +637,18 @@ def build_facades() -> None:
     bm_nat = bmesh.new()
     bm_pas = bmesh.new()
     bm_warm = bmesh.new()
+    bm_stairs_nat = bmesh.new()
+    bm_stairs_pas = bmesh.new()
+    bm_stairs_warm = bmesh.new()
     bm_bronze = bmesh.new()
     bm_cypress = bmesh.new()
     bm_mosaic = bmesh.new()
     bm_gold = bmesh.new()
     bm_white = bmesh.new()
 
-    build_nativity_facade(bm_nat, bm_bronze, bm_cypress, bm_gold, bm_white)
-    build_passion_facade(bm_pas, bm_bronze, bm_gold)
-    build_glory_facade(bm_warm, bm_bronze, bm_gold)
+    build_nativity_facade(bm_nat, bm_stairs_nat, bm_bronze, bm_cypress, bm_gold, bm_white)
+    build_passion_facade(bm_pas, bm_stairs_pas, bm_bronze, bm_gold)
+    build_glory_facade(bm_warm, bm_stairs_warm, bm_bronze, bm_gold)
     build_roofs_and_pinnacles(bm_warm, bm_mosaic, bm_gold)
 
     # Organic 3D stalactite/botanical relief displacement on Nativity Facade + crisp stone edge bevels on Passion & Glory!
@@ -652,6 +659,9 @@ def build_facades() -> None:
     finalize_bmesh_object(bm_nat, "Facade_Nativity", mats["nativity_stone"], smooth=True, uv_scale=0.16)
     finalize_bmesh_object(bm_pas, "Facade_Passion", mats["passion_stone"], smooth=False, uv_scale=0.15)
     finalize_bmesh_object(bm_warm, "Facade_GloryAndRoofs", mats["sandstone_warm"], smooth=False, uv_scale=0.14)
+    finalize_bmesh_object(bm_stairs_nat, "Facade_EntranceStairs_Nativity", mats["nativity_stone"], smooth=False, uv_scale=0.16, bake_ao=False)
+    finalize_bmesh_object(bm_stairs_pas, "Facade_EntranceStairs_Passion", mats["passion_stone"], smooth=False, uv_scale=0.15, bake_ao=False)
+    finalize_bmesh_object(bm_stairs_warm, "Facade_EntranceStairs_Glory", mats["sandstone_warm"], smooth=False, uv_scale=0.14, bake_ao=False)
     finalize_bmesh_object(bm_bronze, "Facade_BronzeDoors", mats["bronze_door"], smooth=False, uv_scale=0.25)
     finalize_bmesh_object(bm_cypress, "Facade_CypressTree", mats["cypress_green"], smooth=True, uv_scale=0.30)
     finalize_bmesh_object(bm_mosaic, "Facade_FruitPinnacles", mats["trencadis"], smooth=True, uv_scale=0.35)

@@ -265,10 +265,10 @@ def build_interior() -> None:
         for bay in range(2, 6):
             add_box(bm_gal, (gx, -bay * GRID, Z_GALLERY - 0.9), (5.4, 0.65, 0.8))
 
-    # South Glory Choir Gallery bridging between the two open corner stairwells (X = -17.2 .. +17.2, Y = -40.6 .. -45.4)
-    add_box(bm_gal, (0.0, -43.0, Z_GALLERY - 0.35), (34.4, 4.8, 0.7))
+    # South Glory Choir Gallery bridging between the two open corner stairwells (X = -17.5 .. +17.5, Y = -40.6 .. -45.4)
+    add_box(bm_gal, (0.0, -43.0, Z_GALLERY - 0.35), (35.0, 4.8, 0.7))
     n_wave_s = 36
-    x_s0, x_s1 = -17.0, 17.0
+    x_s0, x_s1 = -17.4, 17.4
     pts_s: list[tuple[float, float]] = []
     for k in range(n_wave_s + 1):
         t = k / n_wave_s
@@ -286,39 +286,43 @@ def build_interior() -> None:
         add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY + 0.22)), Vector((x0, y0, Z_GALLERY + 1.04)), 0.065, 0.055, segments=6)
         add_cylinder(bm_gal, Vector((xm, ym, Z_GALLERY + 0.22)), Vector((xm, ym, Z_GALLERY + 1.04)), 0.055, 0.050, segments=6)
 
-    # 2 Walkable Gaudí Corner Helical Staircases emerging cleanly INWARD onto BOTH South Choir & Side Empore!
+    # 2 Walkable Gaudí Corner Helical Staircases (compact r=0.36..1.76m, ZERO overlap with columns, walls or gallery slabs!)
+    bm_corner_stairs = bmesh.new()
     for sx in (-1, 1):
-        scx, scy = sx * 19.6, -42.8
-        n_st = 62
+        scx, scy = sx * 19.6, -42.6
+        n_st = 64
         turns = 2.5
-        # Offset West spiral by pi so BOTH top steps finish pointing INWARD toward the South Choir Gallery (±17.2, -42.8)!
+        # Offset West spiral by pi so BOTH top steps finish pointing cleanly INWARD toward the South Choir Gallery (±17.5, -42.6)!
         ang_offset = 0.0 if sx > 0 else math.pi
-        add_cylinder(bm_gal, Vector((scx, scy, Z_NAVE)), Vector((scx, scy, Z_GALLERY + 1.15)), 0.48, 0.44, segments=12)
+        add_cylinder(bm_gal, Vector((scx, scy, Z_NAVE)), Vector((scx, scy, Z_GALLERY + 1.15)), 0.36, 0.34, segments=12)
         for si in range(n_st):
             t = si / (n_st - 1)
             ang = ang_offset + sx * t * turns * 2.0 * math.pi
             z_s = Z_NAVE + t * (Z_GALLERY - Z_NAVE)
             add_box(
-                bm_gal,
-                (scx + 1.24 * math.cos(ang), scy + 1.24 * math.sin(ang), z_s),
-                (1.62, 0.62, 0.24),
+                bm_corner_stairs,
+                (scx + 1.06 * math.cos(ang), scy + 1.06 * math.sin(ang), z_s),
+                (1.40, 0.56, 0.22),
                 rot_euler=(0.0, 0.0, ang),
             )
-        # Clean inner corner landing apron joining top step smoothly onto BOTH Side Empore & South Choir Gallery!
-        add_box(bm_gal, (sx * 17.6, -40.6, Z_GALLERY - 0.35), (2.4, 2.4, 0.7))
+        # Clean narrow top threshold landing bridging top step (X=±17.84, Y=-42.6, Z=14.5) to South Choir Gallery (X=±17.5)
+        add_box(bm_gal, (sx * 17.65, -42.6, Z_GALLERY - 0.35), (0.85, 1.45, 0.7))
+        # Narrow corner bridge joining East/West Empore (Y=-40.4) cleanly to South Choir Gallery (Y=-40.6) outside spiral radius
+        add_box(bm_gal, (sx * 17.2, -40.5, Z_GALLERY - 0.35), (0.95, 0.70, 0.7))
+    finalize_bmesh_object(bm_corner_stairs, "Interior_CornerStairs", mats["sandstone_warm"], smooth=False, uv_scale=0.18, bake_ao=False)
 
-    # Walkable Elevated Gallery Corridor connecting East Empore (22, -14.5, 14.5m) -> Nativity Spiral Staircase Base (31.5, -3.6, 14.5m)!
+    # Walkable Elevated Gallery Corridor connecting East Empore (21, -14.5, 14.5m) cleanly to Nativity Gap 0-1 (30.1, -7.2, 14.5m)!
     p_g0 = Vector((21.0, -14.5, Z_GALLERY - 0.35))
-    p_g1 = Vector((31.5, -4.5, Z_GALLERY - 0.35))
+    p_g1 = Vector((30.1, -7.2, Z_GALLERY - 0.35))
     g_mid = (p_g0 + p_g1) * 0.5
-    g_len = (p_g1 - p_g0).length + 1.6
+    g_len = (p_g1 - p_g0).length + 0.4
     g_ang = math.atan2(p_g1.y - p_g0.y, p_g1.x - p_g0.x)
-    add_box(bm_gal, (g_mid.x, g_mid.y, g_mid.z), (g_len, 3.2, 0.7), rot_euler=(0, 0, g_ang))
-    # Side stone parapets flanking the gallery-to-tower walkway
+    add_box(bm_gal, (g_mid.x, g_mid.y, g_mid.z), (g_len, 2.6, 0.7), rot_euler=(0, 0, g_ang))
+    # Side stone parapets flanking the gallery-to-tower walkway (stops before tower gap!)
     for side in (-1, 1):
-        nx = -math.sin(g_ang) * side * 1.45
-        ny = math.cos(g_ang) * side * 1.45
-        add_box(bm_gal, (g_mid.x + nx, g_mid.y + ny, Z_GALLERY + 0.55), (g_len, 0.32, 1.1), rot_euler=(0, 0, g_ang))
+        nx = -math.sin(g_ang) * side * 1.15
+        ny = math.cos(g_ang) * side * 1.15
+        add_box(bm_gal, (g_mid.x + nx, g_mid.y + ny, Z_GALLERY + 0.55), (g_len - 0.4, 0.28, 1.1), rot_euler=(0, 0, g_ang))
     # Apse Organ Gallery (curved balcony behind the altar)
     for i in range(10):
         a0 = math.pi * (0.1 + 0.8 * i / 10.0)
@@ -478,18 +482,19 @@ def build_interior() -> None:
             for cx_bay in (11.25, 18.75, 26.25):
                 add_box(bm_glass, (sx * cx_bay, sy * 7.6, 38.0), (5.4, 0.16, 9.2))
 
-    # Transept North & South Exterior Side Walls (strictly outside Nave X = ±22.8..±30.2 so Side Aisles & Emporen stay 100% OPEN!)
+    # Transept North & South Side Walls with wide ground-level Walkable Archways into East/West Cloisters & Sacristies!
     for sx, bm_glass in ((1, bm_glass_east), (-1, bm_glass_west)):
         for sy in (-1, 1):
             wy = sy * 15.2
             x_pos = sx * 26.4
             add_box(bm_walls, (sx * 22.8, wy, 16.0), (1.8, 1.6, 31.0))
             add_box(bm_walls, (sx * 30.0, wy, 16.0), (1.8, 1.6, 31.0))
-            add_box(bm_walls, (x_pos, wy, 1.8), (6.4, 1.2, 3.6))
+            # Open 4.6m tall doorway (Z = 1.2..5.6m) directly into South & North Cloisters -> lintel beam at Z = 6.2m!
+            add_box(bm_walls, (x_pos, wy, 6.2), (6.4, 1.2, 1.2))
             add_box(bm_walls, (x_pos, wy, 14.6), (6.4, 1.2, 2.4))
             add_box(bm_walls, (x_pos, wy, 30.2), (6.4, 1.4, 2.8))
-            add_box(bm_glass, (x_pos, wy, 8.5), (5.8, 0.16, 9.8))
-            add_gaudi_window_tracery(bm_walls, (x_pos, wy - sy * 0.22, 8.5), 5.8, 9.8, facing="Y")
+            add_box(bm_glass, (x_pos, wy, 10.1), (5.8, 0.16, 6.6))
+            add_gaudi_window_tracery(bm_walls, (x_pos, wy - sy * 0.22, 10.1), 5.8, 6.6, facing="Y")
             add_box(bm_glass, (x_pos, wy, 22.3), (5.8, 0.16, 13.0))
             add_gaudi_window_tracery(bm_walls, (x_pos, wy - sy * 0.22, 22.3), 5.8, 13.0, facing="Y")
 

@@ -32,6 +32,7 @@ def add_cloister_gallery_wing(
     y_end: float,
     width: float = 5.2,
     height: float = 9.0,
+    bm_stairs: bmesh.types.BMesh | None = None,
 ) -> None:
     """Walkable vaulted cloister arcade running along the outer side of the nave."""
     length = abs(y_end - y_start)
@@ -45,6 +46,7 @@ def add_cloister_gallery_wing(
     outer_x = x_center + (width * 0.48 if x_center > 0 else -width * 0.48)
     bays = max(4, int(length / 5.0))
     dy = (y_end - y_start) / bays
+    sx_out = 1.0 if x_center > 0 else -1.0
     for i in range(bays + 1):
         py = y_start + i * dy
         # Outer gothic tracery pier
@@ -56,6 +58,12 @@ def add_cloister_gallery_wing(
             # Low stone sill wall on exterior edge (leaving one middle bay open as exterior portal!)
             if i != bays // 2:
                 add_box(bm_stone, (outer_x, mid_y, Z_NAVE + 0.65), (0.55, abs(dy) - 0.8, 1.3))
+            elif bm_stairs is not None and length > 15.0:
+                # 4 exterior stone steps linking Panot street sidewalk (Z=0) seamlessly into the open cloister portal (Z=1.2)!
+                for st in range(4):
+                    sz = (4 - st) * (Z_NAVE / 4.0)
+                    st_x = outer_x + sx_out * (0.45 + st * 0.55)
+                    add_box(bm_stairs, (st_x, mid_y, sz * 0.5), (0.58, abs(dy) - 0.9, sz))
             # Pointed arch head above bay
             add_box(bm_stone, (outer_x, mid_y, Z_NAVE + height - 1.1), (0.68, abs(dy) - 0.6, 1.5))
 
@@ -85,8 +93,8 @@ def add_sacristy_pavilion(
         wx = cx + r_base * math.cos(am)
         wy = cy + r_base * math.sin(am)
         seg_w = 2.0 * r_base * math.sin(math.pi / sides)
-        # Keep the inward-south archway open so player can walk inside!
-        is_door = (math.sin(am) < -0.7)
+        # Keep the inward-south archway wide open so player walks straight from North Cloister into Sacristy!
+        is_door = (math.sin(am) < -0.60)
         if is_door:
             add_box(bm_stone, (wx, wy, Z_NAVE + 8.5), (seg_w, 0.9, 5.2), rot_euler=(0, 0, am - math.pi / 2.0))
         else:
@@ -145,6 +153,7 @@ def add_sacristy_pavilion(
 
 def build_crypt(
     bm_crypt: bmesh.types.BMesh,
+    bm_crypt_stairs: bmesh.types.BMesh,
     bm_floor: bmesh.types.BMesh,
     bm_gold: bmesh.types.BMesh,
     bm_marble: bmesh.types.BMesh,
@@ -281,8 +290,8 @@ def build_crypt(
     for s in range(num_steps):
         t = s / (num_steps - 1)
         pos = p_top.lerp(p_bot, t)
-        # Solid stone step tread + deep masonry sub-base
-        add_box(bm_crypt, (pos.x, pos.y, pos.z - 0.35), (0.52, tunnel_half_w * 2.0 + 0.2, 0.70))
+        # Solid stone step tread + deep masonry sub-base (in dedicated stair mesh so capsule climbs automatically!)
+        add_box(bm_crypt_stairs, (pos.x, pos.y, pos.z - 0.35), (0.52, tunnel_half_w * 2.0 + 0.2, 0.70))
         # Left & right underground stone tunnel walls terminate cleanly at outer crypt wall (x <= -13.6) so they never jut into Crypt!
         if pos.x <= -13.55:
             wall_bot = pos.z - 0.65
@@ -307,15 +316,17 @@ def build_cloister_and_crypt() -> None:
     bm_mosaic = bmesh.new()
     bm_gold = bmesh.new()
     bm_crypt = bmesh.new()
+    bm_crypt_stairs = bmesh.new()
+    bm_cloister_stairs = bmesh.new()
     bm_marble = bmesh.new()
     bm_candle = bmesh.new()
 
-    # ── 1. East & West Perimeter Cloister Galleries (walkable outer arcades) ──
-    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=26.2, y_start=-46.0, y_end=-15.2)
-    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=-26.2, y_start=-46.0, y_end=-15.2)
-    # North-East & North-West Cloister Connectors to the 2 Domed Sacristies
-    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=26.2, y_start=15.2, y_end=26.0)
-    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=-26.2, y_start=15.2, y_end=26.0)
+    # ── 1. East & West Perimeter Cloister Galleries (walkable outer arcades + exterior steps) ──
+    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=26.2, y_start=-46.0, y_end=-15.2, bm_stairs=bm_cloister_stairs)
+    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=-26.2, y_start=-46.0, y_end=-15.2, bm_stairs=bm_cloister_stairs)
+    # North-East & North-West Cloister Connectors ending cleanly at Sacristy drum edge (Y = 24.4, zero overlap!)
+    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=26.2, y_start=15.2, y_end=24.4)
+    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=-26.2, y_start=15.2, y_end=24.4)
 
     # ── 2. Two Monumental Domed Sacristies (NE & NW Corners) ──
     add_sacristy_pavilion(bm_stone, bm_floor, bm_mosaic, bm_gold, cx=27.5, cy=32.5)
@@ -323,13 +334,15 @@ def build_cloister_and_crypt() -> None:
 
     # ── 3. Subterranean Neo-Gothic Crypt & Gaudí's Tomb ──
     crypt_candle_anchors: list[tuple[float, float, float, float]] = []
-    build_crypt(bm_crypt, bm_floor, bm_gold, bm_marble, bm_candle, crypt_candle_anchors)
+    build_crypt(bm_crypt, bm_crypt_stairs, bm_floor, bm_gold, bm_marble, bm_candle, crypt_candle_anchors)
 
     finalize_bmesh_object(bm_stone, "Cloister_And_Sacristies", mats["sandstone_warm"], smooth=False, uv_scale=0.15)
     finalize_bmesh_object(bm_floor, "Cloister_And_Crypt_Floor", mats["floor_marble"], smooth=False, uv_scale=0.18)
     finalize_bmesh_object(bm_mosaic, "Sacristy_Trencadis", mats["trencadis"], smooth=True, uv_scale=0.35)
     finalize_bmesh_object(bm_gold, "Cloister_Gold", mats["gold_accent"], smooth=True, uv_scale=0.35)
     finalize_bmesh_object(bm_crypt, "Crypt_Architecture", mats["crypt_stone"], smooth=False, uv_scale=0.16)
+    finalize_bmesh_object(bm_crypt_stairs, "Crypt_StairSteps", mats["crypt_stone"], smooth=False, uv_scale=0.16, bake_ao=False)
+    finalize_bmesh_object(bm_cloister_stairs, "Cloister_EntranceStairs", mats["sandstone_warm"], smooth=False, uv_scale=0.16, bake_ao=False)
     finalize_bmesh_object(bm_marble, "Crypt_AltarAndGaudiTomb", mats["white_marble"], smooth=False, uv_scale=0.30)
     finalize_bmesh_object(bm_candle, "Crypt_VotiveCandles", mats["candle_glow"], smooth=True, uv_scale=0.50)
 

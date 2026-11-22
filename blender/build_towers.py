@@ -65,16 +65,27 @@ def add_parabolic_bell_tower(
         prev_ring = ring
         prev_z = z
 
-    # 2. Prominent vertical sculpted stone ribs running full height of the tower (slender catenary curve)
+    # 2. Prominent vertical sculpted stone ribs running full height of the tower (clean doorway gaps at skybridge level!)
+    is_glory = abs(cy + 49.5) < 1.0
     for k in range(ribs):
         ang = 2.0 * math.pi * k / ribs
         ca, sa = math.cos(ang), math.sin(ang)
+        is_bridge_rib = False
+        if is_glory:
+            if abs(ca) > 0.72 or (abs(cx) < 5.0 and sa > 0.72):
+                is_bridge_rib = True
+        else:
+            if abs(sa) > 0.72 or (abs(cy) < 5.0 and ((cx > 0 and ca < -0.72) or (cx < 0 and ca > 0.72))):
+                is_bridge_rib = True
         seg_count = 10
         for si in range(seg_count):
             t0 = si / seg_count
             t1 = (si + 1) / seg_count
             z0 = z_base + t0 * shaft_h
             z1 = z_base + t1 * shaft_h
+            mid_z_seg = 0.5 * (z0 + z1)
+            if is_bridge_rib and (skybridge_z - 0.5) <= mid_z_seg <= (skybridge_z + 3.8):
+                continue
             r0 = r_neck + (r_base - r_neck) * ((1.0 - t0) ** 0.62)
             r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.62)
             add_cylinder(
@@ -87,10 +98,12 @@ def add_parabolic_bell_tower(
                 cap=False,
             )
 
-    # 3. Horizontal acoustic louver rings + SANCTUS / HOSANNA ceramic trencadís collar bands!
+    # 3. Horizontal acoustic louver rings + SANCTUS / HOSANNA ceramic trencadís collar bands (clear of skybridge doorway!)
     for bi in range(louver_bands):
         t = (bi + 0.5) / louver_bands
         z = z_base + 4.0 + t * (shaft_h - 6.0)
+        if (skybridge_z - 0.6) <= z <= (skybridge_z + 3.6):
+            continue
         r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.62)) * 0.97
         if bi in (louver_bands - 3, louver_bands - 1):
             add_cylinder(bm_mosaic, Vector((cx, cy, z - 0.55)), Vector((cx, cy, z + 0.55)), r * 1.04, r * 1.02, segments=ribs, cap=False)
@@ -203,6 +216,7 @@ def add_jesus_christ_tower(
         r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.76)
         mid_z = 0.5 * (z0 + z1)
         is_open_level = mid_z < 60.5 or mid_z > 133.0
+        is_north_bridge_z = 74.0 <= mid_z <= 81.0
         for k in range(ribs):
             a0 = 2.0 * math.pi * k / ribs
             a1 = 2.0 * math.pi * ((k + 1) % ribs) / ribs
@@ -210,9 +224,10 @@ def add_jesus_christ_tower(
             p10 = Vector((r0 * math.cos(a1), r0 * math.sin(a1), z0))
             p01 = Vector((r1 * math.cos(a0), r1 * math.sin(a0), z1))
             p11 = Vector((r1 * math.cos(a1), r1 * math.sin(a1), z1))
-            # Vertical main corner buttress rib
-            add_cylinder(bm_stone, p00, p01, 0.58 * (1.0 - 0.30 * t0), 0.58 * (1.0 - 0.30 * t1), segments=6, cap=False)
-            if not is_open_level:
+            # Leave clean 76m North doorway arch to Virgin Mary Skybridge (skip k=3 north rib & k=2,3 lattice)
+            if not (is_north_bridge_z and k == 3):
+                add_cylinder(bm_stone, p00, p01, 0.58 * (1.0 - 0.30 * t0), 0.58 * (1.0 - 0.30 * t1), segments=6, cap=False)
+            if not is_open_level and not (is_north_bridge_z and k in (2, 3)):
                 # Iconic X-braced diagonal triangular window lattice ribs (creates genuine see-through triangular fenestration!)
                 add_cylinder(bm_stone, p00, p11, 0.32 * (1.0 - 0.25 * t0), 0.28 * (1.0 - 0.25 * t1), segments=5, cap=False)
                 add_cylinder(bm_stone, p10, p01, 0.32 * (1.0 - 0.25 * t0), 0.28 * (1.0 - 0.25 * t1), segments=5, cap=False)
@@ -325,7 +340,8 @@ def add_mary_tower(
         r0 = r_neck + (r_base - r_neck) * ((1.0 - t0) ** 0.72)
         r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.72)
         mid_z = 0.5 * (z0 + z1)
-        is_open = mid_z < 60.0 or mid_z > 116.5
+        is_open = mid_z < 60.0 or (75.0 <= mid_z <= 80.5) or mid_z > 116.5
+        is_south_door_z = 74.5 <= mid_z <= 81.0
         for k in range(ribs):
             a0 = 2.0 * math.pi * k / ribs
             a1 = 2.0 * math.pi * ((k + 1) % ribs) / ribs
@@ -333,7 +349,8 @@ def add_mary_tower(
             p10 = Vector((cx + r0 * math.cos(a1), cy + r0 * math.sin(a1), z0))
             p01 = Vector((cx + r1 * math.cos(a0), cy + r1 * math.sin(a0), z1))
             p11 = Vector((cx + r1 * math.cos(a1), cy + r1 * math.sin(a1), z1))
-            add_cylinder(bm_stone, p00, p01, 0.44 * (1.0 - 0.30 * t0), 0.44 * (1.0 - 0.30 * t1), segments=6, cap=False)
+            if not (is_south_door_z and k == 9):
+                add_cylinder(bm_stone, p00, p01, 0.44 * (1.0 - 0.30 * t0), 0.44 * (1.0 - 0.30 * t1), segments=6, cap=False)
             if not is_open:
                 # Diagonal diamond lattice framing blue-white starlight slits!
                 add_cylinder(bm_stone, p00, p11, 0.26 * (1.0 - 0.25 * t0), 0.22 * (1.0 - 0.25 * t1), segments=5, cap=False)
@@ -431,6 +448,7 @@ def build_towers() -> None:
     bm_warm_stone = bmesh.new()
     bm_internal_stairs = bmesh.new()
     bm_internal_rails = bmesh.new()
+    bm_roof_stairs = bmesh.new()
     bm_mosaic = bmesh.new()
     bm_gold = bmesh.new()
     bm_marble = bmesh.new()
@@ -440,18 +458,27 @@ def build_towers() -> None:
 
     # ── 1. Tower of Jesus Christ (172.5m) with Glass Panorama Elevator Shaft & Helical Staircase ──
     add_jesus_christ_tower(bm_warm_stone, bm_mosaic, bm_gold, bm_cross, bm_glass)
-    add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, 0.0, 0.0, 56.0, 136.0, r_mid=3.65, tread_w=1.85, turns_per_10m=1.1, step_rise=0.34, clockwise=True)
+    add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, 0.0, 0.0, 56.0, 136.0, r_mid=3.25, tread_w=1.55, turns_per_10m=1.1, step_rise=0.34, clockwise=True)
 
-    # ── 2. Tower of the Virgin Mary (138.0m) over Apse (0, +22.5) + Internal Spiral Staircase ──
+    # ── 2. Tower of the Virgin Mary (138.0m) over Apse (0, +22.5) + Internal Spiral Staircase (starts ABOVE 74.5m Apse Vault!) ──
     add_mary_tower(bm_warm_stone, bm_mosaic, bm_star)
-    add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, 0.0, 22.5, 56.0, 118.0, r_mid=2.85, tread_w=1.40, turns_per_10m=1.25, step_rise=0.34)
+    add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, 0.0, 22.5, 76.0, 118.0, r_mid=2.45, tread_w=1.25, turns_per_10m=1.25, step_rise=0.34)
+    # Mary Tower 76.0m annular entry landing (leaves inner 1.7m shaft eye open above the vault & stays strictly inside outer walls)
+    for k in range(16):
+        a0 = 2.0 * math.pi * k / 16.0
+        add_box(
+            bm_warm_stone,
+            (2.90 * math.cos(a0), 22.5 + 2.90 * math.sin(a0), 75.65),
+            (1.60, 2.20, 0.70),
+            rot_euler=(0.0, 0.0, a0 + math.pi * 0.5),
+        )
 
     # ── 3. Four Towers of the Evangelists (135.0m) at (±11.5, ±11.5) + Internal Spiral Staircases ──
     for sx in (-1, 1):
         for sy in (-1, 1):
             ang = math.atan2(sy, sx)
             add_evangelist_tower(bm_warm_stone, bm_marble, bm_gold, sx * 11.5, sy * 11.5, ang)
-            add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, sx * 11.5, sy * 11.5, 56.0, 114.0, r_mid=1.95, tread_w=1.22, turns_per_10m=1.35, step_rise=0.36, clockwise=(sx * sy > 0))
+            add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, sx * 11.5, sy * 11.5, 56.0, 114.0, r_mid=1.68, tread_w=1.04, turns_per_10m=1.35, step_rise=0.36, clockwise=(sx * sy > 0))
 
     # ── 4. Four Apostles Towers — Nativity Facade (East, X = +31.5) + ALL 4 Internal Spiral Staircases ──
     nativity_specs = [
@@ -464,12 +491,7 @@ def build_towers() -> None:
         add_parabolic_bell_tower(bm_nativity_stone, bm_mosaic, bm_gold, cx, cy, 26.0, z_top, r_b, 1.55)
         # Start closed tower drum at Z = 18.6m so the 14.5..18.6m Tower-Base Gallery doorway is 100% OPEN!
         add_cylinder(bm_nativity_stone, Vector((cx, cy, 18.6)), Vector((cx, cy, 27.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
-        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 65.0, r_mid=1.62, tread_w=1.28, turns_per_10m=1.68, step_rise=0.30 if idx == 1 else 0.34, clockwise=(idx % 2 == 1))
-
-    # Walkable Nativity Tower Skybridge connecting all East towers at Z = 65.0m!
-    add_box(bm_nativity_stone, (31.5, 0.0, 64.6), (3.4, 21.8, 0.8))
-    add_box(bm_nativity_stone, (33.1, 0.0, 65.45), (0.30, 21.8, 0.95))
-    add_box(bm_nativity_stone, (29.9, 0.0, 65.45), (0.30, 21.8, 0.95))
+        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 65.0, r_mid=1.38, tread_w=1.04, turns_per_10m=1.68, step_rise=0.30 if idx == 1 else 0.34, clockwise=(idx % 2 == 1))
 
     # ── 5. Four Apostles Towers — Passion Facade (West, X = -31.5) + ALL 4 Internal Spiral Staircases ──
     passion_specs = [
@@ -481,12 +503,7 @@ def build_towers() -> None:
     for idx, (cx, cy, z_top, r_b) in enumerate(passion_specs):
         add_parabolic_bell_tower(bm_passion_stone, bm_mosaic, bm_gold, cx, cy, 26.0, z_top, r_b, 1.60)
         add_cylinder(bm_passion_stone, Vector((cx, cy, 18.6)), Vector((cx, cy, 27.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
-        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 65.0, r_mid=1.65, tread_w=1.28, turns_per_10m=1.68, step_rise=0.30 if idx == 1 else 0.34, clockwise=(idx % 2 == 0))
-
-    # Walkable Passion Tower Skybridge connecting all West towers at Z = 65.0m!
-    add_box(bm_passion_stone, (-31.5, 0.0, 64.6), (3.4, 21.8, 0.8))
-    add_box(bm_passion_stone, (-33.1, 0.0, 65.45), (0.30, 21.8, 0.95))
-    add_box(bm_passion_stone, (-29.9, 0.0, 65.45), (0.30, 21.8, 0.95))
+        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 65.0, r_mid=1.38, tread_w=1.04, turns_per_10m=1.68, step_rise=0.30 if idx == 1 else 0.34, clockwise=(idx % 2 == 0))
 
     # ── 6. Four Apostles Towers — Glory Facade (South, Y = -49.5) + ALL 4 Internal Spiral Staircases ──
     glory_specs = [
@@ -498,22 +515,18 @@ def build_towers() -> None:
     for idx, (cx, cy, z_top, r_b) in enumerate(glory_specs):
         add_parabolic_bell_tower(bm_warm_stone, bm_mosaic, bm_gold, cx, cy, 28.0, z_top, r_b, 1.65)
         add_cylinder(bm_warm_stone, Vector((cx, cy, 18.6)), Vector((cx, cy, 29.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
-        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 72.0, r_mid=1.70, tread_w=1.30, turns_per_10m=1.62, step_rise=0.34, clockwise=(idx % 2 == 1))
+        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 72.0, r_mid=1.38, tread_w=1.04, turns_per_10m=1.62, step_rise=0.34, clockwise=(idx % 2 == 1))
 
-    # Walkable Glory Tower Skybridge at Z = 72.0m!
-    add_box(bm_warm_stone, (0.0, -49.5, 71.6), (22.8, 3.4, 0.8))
-    add_box(bm_warm_stone, (0.0, -47.9, 72.6), (22.8, 0.35, 1.3))
-    add_box(bm_warm_stone, (0.0, -51.1, 72.6), (22.8, 0.35, 1.3))
-
-    # ── 7. Complete Walkable Pedestrian Network: All 18 Towers, Base Galleries, Roof Stair-Bridges & Viewpoints! ──
+    # ── 7. Complete Walkable Pedestrian Network: All 18 Towers, Segmented Between-Tower Galleries, Roof Stair-Bridges & Viewpoints! ──
     def add_stepped_skybridge(
         bm: bmesh.types.BMesh,
         p0: Vector,
         p1: Vector,
-        width: float = 2.8,
+        width: float = 2.6,
         parapet_h: float = 1.15,
+        bm_stairs: bmesh.types.BMesh | None = None,
     ) -> None:
-        """Creates a walkable stone bridge or stepped roof staircase with side parapets between any two 3D points."""
+        """Creates a walkable stone bridge or stepped roof staircase with side parapets strictly between towers."""
         delta = p1 - p0
         horiz = math.hypot(delta.x, delta.y)
         ang = math.atan2(delta.y, delta.x)
@@ -523,58 +536,68 @@ def build_towers() -> None:
 
         if abs(dz) < 0.25:
             mid = (p0 + p1) * 0.5
-            add_box(bm, (mid.x, mid.y, mid.z - 0.35), (horiz + 0.6, width, 0.7), rot_euler=(0, 0, ang))
+            add_box(bm, (mid.x, mid.y, mid.z - 0.35), (horiz + 0.2, width, 0.7), rot_euler=(0, 0, ang))
             for side in (-1, 1):
                 ox = nx * side * (width * 0.5 - 0.16)
                 oy = ny * side * (width * 0.5 - 0.16)
-                add_box(bm, (mid.x + ox, mid.y + oy, mid.z + parapet_h * 0.5), (horiz + 0.4, 0.30, parapet_h), rot_euler=(0, 0, ang))
+                add_box(bm, (mid.x + ox, mid.y + oy, mid.z + parapet_h * 0.5), (horiz, 0.28, parapet_h), rot_euler=(0, 0, ang))
         else:
-            steps = max(12, int(abs(dz) / 0.38))
+            steps = max(12, int(abs(dz) / 0.36))
             step_len = (horiz / steps) + 0.24
+            target_stairs = bm_stairs if bm_stairs is not None else bm
             for si in range(steps):
                 t = (si + 0.5) / steps
                 sx = p0.x + delta.x * t
                 sy = p0.y + delta.y * t
                 sz = p0.z + dz * t
-                add_box(bm, (sx, sy, sz - 0.28), (step_len, width, 0.56), rot_euler=(0, 0, ang))
+                add_box(target_stairs, (sx, sy, sz - 0.28), (step_len, width, 0.56), rot_euler=(0, 0, ang))
                 for side in (-1, 1):
                     ox = nx * side * (width * 0.5 - 0.16)
                     oy = ny * side * (width * 0.5 - 0.16)
                     add_box(bm, (sx + ox, sy + oy, sz + parapet_h * 0.5), (step_len + 0.08, 0.28, parapet_h), rot_euler=(0, 0, ang))
 
-    # 7a. Tower-Base Connecting Galleries at Z = 14.5m linking ALL 12 Apostle Towers to the Emporen!
-    # East Nativity base gallery (connects all 4 Nativity spiral staircases at X = +31.5)
-    add_stepped_skybridge(bm_nativity_stone, Vector((31.5, -11.0, 14.5)), Vector((31.5, 11.0, 14.5)), width=3.2)
-    # West Passion Empore bridge + full 4-tower base gallery at X = -31.5
-    add_stepped_skybridge(bm_passion_stone, Vector((-21.0, -14.5, 14.5)), Vector((-31.5, -3.6, 14.5)), width=3.2)
-    add_stepped_skybridge(bm_passion_stone, Vector((-31.5, -11.0, 14.5)), Vector((-31.5, 11.0, 14.5)), width=3.2)
-    # South Choir Gallery -> Glory base connectors + full 4-tower base gallery at Y = -49.5
-    for sx in (-3.8, 3.8):
-        add_stepped_skybridge(bm_warm_stone, Vector((sx, -43.5, 14.5)), Vector((sx, -49.5, 14.5)), width=3.0)
-    add_stepped_skybridge(bm_warm_stone, Vector((-11.8, -49.5, 14.5)), Vector((11.8, -49.5, 14.5)), width=3.2)
+    # 7a. Tower-Base Connecting Galleries (Z = 14.5m) & Upper Skybridges (Z = 65m/72m) strictly BETWEEN the 4 tower shafts!
+    for tx, bm_side, z_sky in ((31.5, bm_nativity_stone, 65.0), (-31.5, bm_passion_stone, 65.0)):
+        for y_a, y_b in ((-8.9, -5.5), (-1.7, 1.7), (5.5, 8.9)):
+            add_stepped_skybridge(bm_side, Vector((tx, y_a, 14.5)), Vector((tx, y_b, 14.5)), width=2.6)
+            add_stepped_skybridge(bm_side, Vector((tx, y_a, z_sky)), Vector((tx, y_b, z_sky)), width=2.6)
 
-    # 7b. Upper Roof Skybridges (Z = 56.0m) from Jesus Crossing Gallery -> All 4 Evangelist Towers & Virgin Mary Tower!
+    for x_a, x_b in ((-9.5, -5.7), (-1.9, 1.9), (5.7, 9.5)):
+        add_stepped_skybridge(bm_warm_stone, Vector((x_a, -49.5, 14.5)), Vector((x_b, -49.5, 14.5)), width=2.6)
+        add_stepped_skybridge(bm_warm_stone, Vector((x_a, -49.5, 72.0)), Vector((x_b, -49.5, 72.0)), width=2.6)
+
+    # Entry stubs from Emporen / South Choir into the clear between-tower gaps (ZERO spiral intersection!)
+    add_stepped_skybridge(bm_passion_stone, Vector((-21.0, -14.5, 14.5)), Vector((-30.1, -7.2, 14.5)), width=2.6)
+    for sx_c in (-7.6, 0.0, 7.6):
+        add_stepped_skybridge(bm_warm_stone, Vector((sx_c, -43.5, 14.5)), Vector((sx_c, -48.0, 14.5)), width=2.6)
+
+    # 7b. Upper Roof Skybridges (Z = 56.0m) from Jesus Crossing Gallery -> All 4 Evangelist Towers (ends cleanly at tower rim!)
     for sx in (-1, 1):
         for sy in (-1, 1):
-            p_start = Vector((sx * 4.8, sy * 4.8, 56.0))
-            p_end = Vector((sx * 11.5, sy * 11.5, 56.0))
-            add_stepped_skybridge(bm_warm_stone, p_start, p_end, width=2.5)
-            # Top panoramic observation deck at Z = 114.0m inside each Evangelist Tower
-            add_cylinder(bm_warm_stone, Vector((sx * 11.5, sy * 11.5, 113.3)), Vector((sx * 11.5, sy * 11.5, 114.0)), 3.6, 3.6, segments=12, cap=True)
-    # North Apse Roof Skybridge: Jesus Crossing (0, 6.2, 56m) -> Virgin Mary Tower (0, +22.5, 56m) + 118m Viewpoint!
-    add_stepped_skybridge(bm_warm_stone, Vector((0.0, 6.2, 56.0)), Vector((0.0, 22.5, 56.0)), width=2.8)
-    add_cylinder(bm_warm_stone, Vector((0.0, 22.5, 117.3)), Vector((0.0, 22.5, 118.0)), 4.6, 4.6, segments=14, cap=True)
+            p_start = Vector((sx * 5.2, sy * 5.2, 56.0))
+            p_end = Vector((sx * 9.8, sy * 9.8, 56.0))
+            add_stepped_skybridge(bm_warm_stone, p_start, p_end, width=2.4)
+            # Top panoramic observation deck at Z = 114.0m seated cleanly INSIDE each Evangelist Tower (r = 2.65m < 2.96m!)
+            add_cylinder(bm_warm_stone, Vector((sx * 11.5, sy * 11.5, 113.3)), Vector((sx * 11.5, sy * 11.5, 114.0)), 2.65, 2.65, segments=12, cap=True)
 
-    # 7c. Stepped Stone Roof Stair-Bridges connecting Jesus Crossing (56m) <-> East/West (65m) & South Glory (72m)!
-    add_stepped_skybridge(bm_nativity_stone, Vector((6.8, 0.0, 56.0)), Vector((30.2, 0.0, 65.0)), width=2.8)
-    add_stepped_skybridge(bm_passion_stone, Vector((-6.8, 0.0, 56.0)), Vector((-30.2, 0.0, 65.0)), width=2.8)
-    add_stepped_skybridge(bm_warm_stone, Vector((0.0, -6.8, 56.0)), Vector((0.0, -48.2, 72.0)), width=3.0)
+    # Horizontal 76.0m North Skybridge: Jesus Tower Spiral outer edge (0, 4.05, 76m) -> Virgin Mary Tower (0, 19.5, 76m), 100% CLEAR ABOVE 74.5m Apse Vault!
+    add_box(bm_warm_stone, (0.0, 11.78, 75.65), (2.6, 15.45, 0.70))
+    for side in (-1, 1):
+        add_box(bm_warm_stone, (side * 1.15, 11.4, 76.55), (0.28, 13.8, 1.15))
+    # 118m observation deck seated cleanly INSIDE Mary Tower (r = 3.65m < 4.10m!)
+    add_cylinder(bm_warm_stone, Vector((0.0, 22.5, 117.3)), Vector((0.0, 22.5, 118.0)), 3.65, 3.65, segments=14, cap=True)
+
+    # 7c. Stepped Stone Roof Stair-Bridges connecting Jesus Crossing (56m) <-> East/West Gap 1-2 (65m) & South Glory Gap 1-2 (72m)!
+    add_stepped_skybridge(bm_nativity_stone, Vector((7.2, 0.0, 56.0)), Vector((30.1, 0.0, 65.0)), width=2.6, bm_stairs=bm_roof_stairs)
+    add_stepped_skybridge(bm_passion_stone, Vector((-7.2, 0.0, 56.0)), Vector((-30.1, 0.0, 65.0)), width=2.6, bm_stairs=bm_roof_stairs)
+    add_stepped_skybridge(bm_warm_stone, Vector((0.0, -7.2, 56.0)), Vector((0.0, -48.0, 72.0)), width=2.8, bm_stairs=bm_roof_stairs)
 
     finalize_bmesh_object(bm_nativity_stone, "Towers_Nativity", mats["nativity_stone"], smooth=True, uv_scale=0.14)
     finalize_bmesh_object(bm_passion_stone, "Towers_Passion", mats["passion_stone"], smooth=True, uv_scale=0.14)
     finalize_bmesh_object(bm_warm_stone, "Towers_CentralAndGlory", mats["sandstone_warm"], smooth=True, uv_scale=0.12)
     finalize_bmesh_object(bm_internal_stairs, "Towers_InternalStaircases", mats["sandstone_warm"], smooth=False, uv_scale=0.16, bake_ao=False)
     finalize_bmesh_object(bm_internal_rails, "Towers_InternalStairRails", mats["gold_accent"], smooth=True, uv_scale=0.35, bake_ao=False)
+    finalize_bmesh_object(bm_roof_stairs, "Towers_RoofStairs", mats["sandstone_warm"], smooth=False, uv_scale=0.16, bake_ao=False)
     finalize_bmesh_object(bm_mosaic, "Towers_TrencadisPinnacles", mats["trencadis"], smooth=True, uv_scale=0.35)
     finalize_bmesh_object(bm_gold, "Towers_GoldAccents", mats["gold_accent"], smooth=True, uv_scale=0.35)
     finalize_bmesh_object(bm_marble, "Towers_EvangelistSculptures", mats["white_marble"], smooth=True, uv_scale=0.25)
