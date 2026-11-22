@@ -69,7 +69,28 @@ export class PlayerController {
   private bindEvents(): void {
     window.addEventListener('keydown', (e) => {
       if (!this.enabled) return;
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const isTextInput =
+        (e.target instanceof HTMLInputElement && e.target.type !== 'range' && e.target.type !== 'button') ||
+        e.target instanceof HTMLTextAreaElement;
+      if (isTextInput) return;
+
+      const isNavKey =
+        e.code === 'ArrowUp' ||
+        e.code === 'ArrowDown' ||
+        e.code === 'ArrowLeft' ||
+        e.code === 'ArrowRight' ||
+        e.code === 'Space' ||
+        e.code === 'PageUp' ||
+        e.code === 'PageDown';
+
+      // If a range slider or HUD button still had focus, release focus on movement keys so arrows/Space always move the player
+      if (isNavKey) {
+        if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+          document.activeElement.blur();
+        }
+        e.preventDefault();
+      }
+
       this.keys.add(e.code);
       if (e.code === 'KeyF') {
         this.setFlyMode(!this.flyMode);
@@ -83,6 +104,10 @@ export class PlayerController {
 
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
+    });
+
+    window.addEventListener('blur', () => {
+      this.keys.clear();
     });
 
     // True Ego-Shooter FPS control: single left-click on canvas immediately locks mouse pointer!
@@ -267,8 +292,16 @@ export class PlayerController {
     const sprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint;
 
     if (this.flyMode) {
-      if (this.keys.has('KeyE') || this.keys.has('Space') || this.touchFlyY > 0.2) move.y += 1;
-      if (this.keys.has('KeyQ') || this.keys.has('ControlLeft') || this.touchFlyY < -0.2) move.y -= 1;
+      if (this.keys.has('KeyE') || this.keys.has('Space') || this.keys.has('PageUp') || this.touchFlyY > 0.2) move.y += 1;
+      if (
+        this.keys.has('KeyQ') ||
+        this.keys.has('ControlLeft') ||
+        this.keys.has('ControlRight') ||
+        this.keys.has('PageDown') ||
+        this.touchFlyY < -0.2
+      ) {
+        move.y -= 1;
+      }
 
       const flySpeed = sprinting ? 48.0 : 22.0;
       if (move.lengthSq() > 0) {

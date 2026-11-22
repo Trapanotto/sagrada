@@ -505,7 +505,10 @@ async function bootstrap(): Promise<void> {
   let entered = false;
   window.addEventListener('keydown', (e) => {
     if (!entered) return;
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    const isTextInput =
+      (e.target instanceof HTMLInputElement && e.target.type !== 'range' && e.target.type !== 'button') ||
+      e.target instanceof HTMLTextAreaElement;
+    if (isTextInput) return;
     if (e.code === 'KeyG') toggleGeometry();
     else if (e.code === 'KeyH') toggleHotspots();
     else if (e.code === 'KeyM') toggleMinimap();
@@ -516,7 +519,20 @@ async function bootstrap(): Promise<void> {
     else if (e.code === 'KeyP') setPhotoMode(!photoMode);
     else if (e.code === 'KeyL') sagrada.elevator.triggerAction(camera.position);
     else if (e.code === 'KeyV' && photoMode) setPhotoClean(!photoCleanCanvas);
-    else if (tour.active && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Escape'].includes(e.code)) tour.stop();
+    else if (
+      tour.active &&
+      ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Escape'].includes(e.code)
+    ) {
+      tour.stop();
+    }
+  });
+
+  // Release button/slider focus after pointer interaction so Arrow keys & Space always control walking immediately
+  document.addEventListener('pointerup', () => {
+    const active = document.activeElement;
+    if (active instanceof HTMLButtonElement || (active instanceof HTMLInputElement && active.type === 'range')) {
+      active.blur();
+    }
   });
 
   // Honest complete load: all 7 compact GLBs + shared PBR WebP textures + 3D BVH + HDRIs + shader & GPU warm-up!
@@ -655,6 +671,7 @@ async function bootstrap(): Promise<void> {
     if (entered) return;
     entered = true;
     player.enabled = true;
+    btnEnterBasilica.blur();
 
     // Unlock spatial Web Audio cleanly on the user gesture
     if (!audio.enabled) {
