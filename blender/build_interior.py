@@ -74,20 +74,26 @@ def build_interior() -> None:
     mats = get_materials()
 
     # ── 1. Marble Floor (Nave, Transepts, Apse Ambulatory, Presbytery Platform) ──
-    # Leaves a TRUE open rectangular stairwell cutout over the Crypt staircase (X: -22.2..-9.8, Y: +10.2..+18.2)!
+    # Exact axis-aligned rectangular cutout over the straight Crypt Stairwell (X: -21.0..-11.2, Y: +12.35..+15.25)!
     bm_floor = bmesh.new()
-    # Main 5-aisle nave floor south of Crypt cutout (X: -22.8..22.8, Y: -46..+10.2)
-    add_box(bm_floor, (0.0, -17.9, Z_NAVE - 0.35), (45.6, 56.2, 0.7))
-    # East half of north crossing & north nave (X: -9.8..+22.8, Y: +10.2..+16.5) — completely clears Crypt stairs!
-    add_box(bm_floor, (6.5, 13.35, Z_NAVE - 0.35), (32.6, 6.3, 0.7))
+    # Main 5-aisle nave floor south of Crypt cutout (X: -22.8..+22.8, Y: -46.0..+12.35)
+    add_box(bm_floor, (0.0, -16.825, Z_NAVE - 0.35), (45.6, 58.35, 0.7))
+    # East strip beside Crypt cutout (X: -11.2..+22.8, Y: +12.35..+16.5) — clears circular High Altar with 1.1m margin!
+    add_box(bm_floor, (5.8, 14.425, Z_NAVE - 0.35), (34.0, 4.15, 0.7))
+    # North strip behind Crypt cutout (X: -22.8..-11.2, Y: +15.25..+16.6)
+    add_box(bm_floor, (-17.0, 15.925, Z_NAVE - 0.35), (11.6, 1.35, 0.7))
+    # West strip right at top of Crypt stairs (X: -22.8..-21.0, Y: +12.35..+15.25)
+    add_box(bm_floor, (-21.9, 13.8, Z_NAVE - 0.35), (1.8, 2.9, 0.7))
     # East transept arm (X: +22.8..+31.2, Y: -15.2..+15.2)
     add_box(bm_floor, (27.0, 0.0, Z_NAVE - 0.35), (8.4, 30.4, 0.7))
-    # West transept arm south of Crypt cutout (X: -31.2..-22.8, Y: -15.2..+15.2)
+    # West transept arm (X: -31.2..-22.8, Y: -15.2..+15.2)
     add_box(bm_floor, (-27.0, 0.0, Z_NAVE - 0.35), (8.4, 30.4, 0.7))
-    # Low sculpted marble balustrade guarding the South & East edges of the open Crypt Stairwell Cutout!
-    add_box(bm_floor, (-16.0, 10.2, Z_NAVE + 0.52), (12.4, 0.32, 1.04))
-    add_box(bm_floor, (-9.8, 14.2, Z_NAVE + 0.52), (0.32, 8.0, 1.04))
-    # Semicircular apse ambulatory floor (clipped cleanly outside the West Crypt Stairwell Cutout!)
+    # Clean horizontal sculpted marble safety balustrade guarding South, North & East edges of the open Crypt Stairwell!
+    # (West side at X = -21.0 stays completely open as the walkable stair entrance!)
+    add_box(bm_floor, (-16.1, 12.2, Z_NAVE + 0.50), (10.1, 0.28, 1.0))
+    add_box(bm_floor, (-16.1, 15.4, Z_NAVE + 0.50), (10.1, 0.28, 1.0))
+    add_box(bm_floor, (-11.1, 13.8, Z_NAVE + 0.50), (0.28, 3.48, 1.0))
+    # Semicircular apse ambulatory floor (starts cleanly at Y >= 16.5, zero overlap with Crypt cutout!)
     apse_segs = 28
     top_v = []
     bot_v = []
@@ -96,9 +102,6 @@ def build_interior() -> None:
         r = APSE_RADIUS + 4.2
         px = r * math.cos(ang)
         py = APSE_CENTER_Y + r * math.sin(ang) - 6.0
-        # Keep the open stairwell entry at (-21.5, 16.5) unobstructed!
-        if px < -10.0 and py < 18.4:
-            py = 18.4
         top_v.append(bm_floor.verts.new((px, py, Z_NAVE)))
         bot_v.append(bm_floor.verts.new((px, py, Z_NAVE - 0.7)))
     c_top = bm_floor.verts.new((0.0, APSE_CENTER_Y - 6.0, Z_NAVE))
@@ -247,16 +250,17 @@ def build_interior() -> None:
         bx_s = -16.8 + k * (33.6 / 35.0)
         add_cylinder(bm_gal, Vector((bx_s, -40.75, Z_GALLERY + 0.25)), Vector((bx_s, -40.75, Z_GALLERY + 1.02)), 0.08, 0.07, segments=6)
 
-    # 2 Walkable Gaudí Corner Helical Staircases emerging cleanly into the open corner wells at (±19.6, -42.8)!
+    # 2 Walkable Gaudí Corner Helical Staircases emerging cleanly INWARD onto BOTH South Choir & Side Empore!
     for sx in (-1, 1):
         scx, scy = sx * 19.6, -42.8
         n_st = 62
         turns = 2.5
-        # Central stone spiral newel column
+        # Offset West spiral by pi so BOTH top steps finish pointing INWARD toward the South Choir Gallery (±17.2, -42.8)!
+        ang_offset = 0.0 if sx > 0 else math.pi
         add_cylinder(bm_gal, Vector((scx, scy, Z_NAVE)), Vector((scx, scy, Z_GALLERY + 1.15)), 0.48, 0.44, segments=12)
         for si in range(n_st):
             t = si / (n_st - 1)
-            ang = sx * t * turns * 2.0 * math.pi
+            ang = ang_offset + sx * t * turns * 2.0 * math.pi
             z_s = Z_NAVE + t * (Z_GALLERY - Z_NAVE)
             add_box(
                 bm_gal,
@@ -265,7 +269,7 @@ def build_interior() -> None:
                 rot_euler=(0.0, 0.0, ang),
             )
         # Clean inner corner landing apron joining top step smoothly onto BOTH Side Empore & South Choir Gallery!
-        add_box(bm_gal, (sx * 17.5, -40.6, Z_GALLERY - 0.35), (2.2, 2.2, 0.7))
+        add_box(bm_gal, (sx * 17.6, -40.6, Z_GALLERY - 0.35), (2.4, 2.4, 0.7))
 
     # Walkable Elevated Gallery Corridor connecting East Empore (22, -14.5, 14.5m) -> Nativity Spiral Staircase Base (31.5, -3.6, 14.5m)!
     p_g0 = Vector((21.0, -14.5, Z_GALLERY - 0.35))
@@ -365,7 +369,9 @@ def build_interior() -> None:
         add_box(bm_vault, (sx * 19.0, 11.25, Z_AISLE_VAULT + 0.35), (23.0, 8.2, 0.55))
         add_box(bm_vault, (sx * 19.0, -11.25, Z_AISLE_VAULT + 0.35), (23.0, 8.2, 0.55))
     add_box(bm_vault, (0.0, -26.8, Z_NAVE_VAULT + 0.45), (15.8, 39.2, 0.65))
-    add_box(bm_vault, (0.0, 0.0, Z_NAVE_VAULT + 0.45), (61.0, 15.8, 0.65))
+    # Split transept ceiling backing strictly OUTSIDE the central Crossing (X = ±7.6..±30.5) so the Glass Panorama Elevator rises 100% OPEN up through the 60m Crossing Vault Oculus!
+    add_box(bm_vault, (19.05, 0.0, Z_NAVE_VAULT + 0.45), (22.9, 15.8, 0.65))
+    add_box(bm_vault, (-19.05, 0.0, Z_NAVE_VAULT + 0.45), (22.9, 15.8, 0.65))
     # Continuous semicircular apse upper drum sealing Z = 40m -> 68m beneath Mary Tower
     drum_segs = 20
     for i in range(drum_segs):

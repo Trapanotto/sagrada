@@ -264,8 +264,11 @@ def add_jesus_christ_tower(
         add_cylinder(bm_gold, Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_base - 0.3)), Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_gallery + 4.5)), 0.11, 0.11, segments=6)
     add_cylinder(bm_glass, Vector((0, 0, z_base)), Vector((0, 0, z_gallery + 4.0)), 2.08, 2.08, segments=12, cap=False)
 
-    # 2. Walkable Panoramic Viewpoint Gallery Floor & Open Pierced Balustrade at Z = 136.0m!
-    add_cylinder(bm_stone, Vector((0, 0, z_gallery - 1.2)), Vector((0, 0, z_gallery)), 6.8, 6.8, segments=24, cap=True)
+    # 2. Walkable Panoramic Viewpoint Gallery Annular Ring Deck (r = 2.18..6.8m -> 100% OPEN central Elevator Shaft Opening!)
+    for k in range(24):
+        a0 = 2.0 * math.pi * k / 24.0
+        r_ring = 4.50
+        add_box(bm_stone, (r_ring * math.cos(a0), r_ring * math.sin(a0), z_gallery - 0.55), (1.95, 4.65, 1.1), rot_euler=(0, 0, a0 + math.pi / 2.0))
     # Low open pierced panoramic railing (0.90m high) — guarantees completely unobstructed 360° Barcelona views!
     for k in range(16):
         a0 = 2.0 * math.pi * k / 16.0

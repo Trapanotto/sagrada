@@ -543,6 +543,7 @@ async function bootstrap(): Promise<void> {
   // Main Animation Loop
   let lastTime = performance.now();
   let hudTick = 0;
+  let smoothIndoorFactor = collision.getIndoorFactor(camera.position);
 
   const animate = (now: number) => {
     requestAnimationFrame(animate);
@@ -571,7 +572,10 @@ async function bootstrap(): Promise<void> {
     } else {
       player.update(dt);
     }
-    const indoorFactor = collision.getIndoorFactor(camera.position);
+    const targetIndoor = collision.getIndoorFactor(camera.position);
+    // Smooth cinematic indoor/outdoor eye & lighting transition (~0.5s glide, ZERO sudden snap at doorway!)
+    smoothIndoorFactor = THREE.MathUtils.lerp(smoothIndoorFactor, targetIndoor, Math.min(1, dt * 2.8));
+    const indoorFactor = smoothIndoorFactor;
     // Physical camera Auto-Eye-Adaptation: stops down in bright Barcelona sun (0.73), opens subtly indoors (0.86) & crypt (0.95)!
     if (!photoMode) {
       const targetExp =

@@ -106,8 +106,8 @@ const WALK_BRIDGES: WalkBridge[] = [
   { x0: -6.6, y0: 56.0, z0: 0.0, x1: -30.4, y1: 65.0, z1: 0.0, halfWidth: 1.85 },
   { x0: 0.0, y0: 56.0, z0: 6.6, x1: 0.0, y1: 72.0, z1: 48.5, halfWidth: 1.95 },
 
-  // Nave (1.2m) <-> Subterranean Crypt (-5.5m) Descending Staircase
-  { x0: -21.5, y0: 1.2, z0: -16.5, x1: -10.5, y1: -5.5, z1: -12.0, halfWidth: 2.2 },
+  // Nave (1.2m) <-> Subterranean Crypt (-5.5m) Straight Recessed Descending Staircase (Blender Y=+13.8 -> Three Z=-13.8)
+  { x0: -21.0, y0: 1.2, z0: -13.8, x1: -11.2, y1: -5.5, z1: -13.8, halfWidth: 1.55 },
 ];
 
 export interface TowerStairShaft {
@@ -389,15 +389,38 @@ export class CollisionSystem {
     return false;
   }
 
+  /**
+   * Smooth spatial indoor factor (0.0 outdoors -> 1.0 deep indoors) with a 6m gradual ramp
+   * across all portals so lighting & stained glass glide naturally with ZERO sudden snap!
+   */
   public getIndoorFactor(pos: THREE.Vector3): number {
     if (pos.y < -1.0) return 1.0;
-    if (Math.hypot(pos.x, pos.z) < 8.5 && pos.y >= 1.0 && pos.y < 134.0) return 0.92;
-    if (pos.y > 44.0) return 0.0;
-    const inNave = Math.abs(pos.x) < 22.8 && pos.z > -15.0 && pos.z < 47.0;
-    const inTransept = Math.abs(pos.x) < 31.0 && Math.abs(pos.z) < 15.0;
-    const inApse = Math.hypot(pos.x, pos.z - -16.5) < 18.8 && pos.z <= -14.0;
-    if (inNave || inTransept || inApse) return 1.0;
-    if (Math.abs(pos.x) < 29.5 && pos.z > -38.0 && pos.z < 47.0 && pos.y < 12.0) return 0.65;
+    const rCenter = Math.hypot(pos.x, pos.z);
+    if (rCenter < 8.5 && pos.y >= 1.0 && pos.y < 134.0) {
+      return THREE.MathUtils.smoothstep(134.0 - pos.y, 0.0, 6.0) * 0.92;
+    }
+    if (pos.y > 46.0) return 0.0;
+
+    // Smooth signed-distance ramp inside Nave, Transepts & Apse (feathers smoothly over 6m at portals!)
+    const naveX = THREE.MathUtils.smoothstep(25.5 - Math.abs(pos.x), 0.0, 5.5);
+    const naveZ =
+      THREE.MathUtils.smoothstep(pos.z - -18.0, 0.0, 5.0) *
+      THREE.MathUtils.smoothstep(50.0 - pos.z, 0.0, 6.0);
+    const fNave = naveX * naveZ;
+
+    const tranX = THREE.MathUtils.smoothstep(33.5 - Math.abs(pos.x), 0.0, 6.0);
+    const tranZ = THREE.MathUtils.smoothstep(16.5 - Math.abs(pos.z), 0.0, 4.0);
+    const fTransept = tranX * tranZ;
+
+    const fApse =
+      THREE.MathUtils.smoothstep(21.0 - Math.hypot(pos.x, pos.z - -16.5), 0.0, 5.0) *
+      THREE.MathUtils.smoothstep(-12.0 - pos.z, 0.0, 4.0);
+
+    const fMain = Math.max(fNave, fTransept, fApse);
+    if (fMain > 0.01) return Math.min(1.0, fMain);
+
+    // Semi-sheltered Cloister / Sacristies
+    if (Math.abs(pos.x) < 29.5 && pos.z > -38.0 && pos.z < 47.0 && pos.y < 12.0) return 0.55;
     return 0.0;
   }
 

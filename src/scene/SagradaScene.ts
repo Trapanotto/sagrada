@@ -516,10 +516,18 @@ export class SagradaScene {
       })
     );
 
-    // Pre-warm ALL core WebGL shaders asynchronously before revealing scene -> ZERO freeze when entering portals!
+    // Pre-warm ALL core + indoor/weather WebGL shaders BEFORE revealing scene -> ZERO freeze when entering portals!
     onProgress(0.94, 'Shader-Pre-Warming (kein Ruckeln beim Eintreten)…');
     this.lighting.requestShadowUpdate(true);
+    const prewarmObjs: Array<[THREE.Object3D, boolean]> = [
+      [this.candles.group, this.candles.group.visible],
+      [this.glassCarpets.group, this.glassCarpets.group.visible],
+      [this.lighting.particles.points, this.lighting.particles.points.visible],
+      ...this.internalStairMeshes.map((o): [THREE.Object3D, boolean] => [o, o.visible]),
+    ];
+    for (const [obj] of prewarmObjs) obj.visible = true;
     await this.renderer.compileAsync(this.scene, camera);
+    for (const [obj, wasVis] of prewarmObjs) obj.visible = wasVis;
     onProgress(1.0, 'Bereit!');
 
     // ── PHASE 2 (SILENT BACKGROUND STREAMING): Furnishings, Crypt, Plaza Furniture & Cycles Lightmaps ──
@@ -577,9 +585,10 @@ export class SagradaScene {
     this.pondReflector.visible = pondVisible;
     this.reflectorActive = pondVisible;
 
-    // Smart 55k-tri Interior Tower Staircase Culling: hide internal helical stairs when outdoors far from towers!
+    // Smart 55k-tri Interior Tower Staircase Culling: ONLY show high tower spiral stairs when up on Emporen/Towers (Y > 10.5m)
+    // Never pops in when simply walking through ground-level cathedral portals!
     const distBasilica = Math.hypot(cameraPos.x, cameraPos.z - 8.0);
-    const showInternalStairs = indoorFactor > 0.2 || (cameraPos.y > 10.5 && distBasilica < 66.0);
+    const showInternalStairs = cameraPos.y > 10.5 && distBasilica < 68.0;
     for (const sm of this.internalStairMeshes) {
       sm.visible = showInternalStairs;
     }

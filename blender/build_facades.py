@@ -60,11 +60,11 @@ def build_nativity_facade(
     """East Nativity Facade (X = +31.5): organic sandstone, 3 gabled portals, Cypress Tree of Life."""
     fx = 31.5
 
-    # Entrance steps leading from Plaça de Gaudí (Z=0) up to Nave floor (Z=1.2)
+    # Entrance steps leading from Plaça de Gaudí (Z=0) cleanly up to Nave landing (Z=1.2) — ZERO buried steps!
     for step in range(6):
         sz = (step + 1) * (Z_NAVE / 6.0)
-        add_box(bm_nat, (fx + 4.8 - step * 0.55, 0.0, sz * 0.5), (0.65, 28.0, sz))
-    add_box(bm_nat, (fx + 1.4, 0.0, Z_NAVE * 0.5), (3.4, 28.0, Z_NAVE))
+        add_box(bm_nat, (fx + 5.2 - step * 0.56, 0.0, sz * 0.5), (0.60, 28.0, sz))
+    add_box(bm_nat, (fx + 0.9, 0.0, Z_NAVE * 0.5), (2.4, 28.0, Z_NAVE))
 
     # Massive sculpted piers flanking the 3 portals (split cleanly around Z=14.5..18.5m so the East 14.5m Tower-Base Gallery is 100% OPEN!)
     pier_ys = (-14.2, -4.6, 4.6, 14.2)

@@ -187,8 +187,8 @@ def build_crypt(
     # Outer circular Neo-Gothic crypt wall (watertight 360° masonry with exact arched doorway to staircase tunnel!)
     wall_h = z_wall_top - Z_CRYPT + 0.35
     segs = 24
-    # Exact doorway direction from Crypt center (0, 21) toward staircase bottom (-10.5, 12.0): atan2(-9, -10.5) ≈ 3.85 rad
-    door_ang = math.atan2(12.0 - cy, -10.5 - cx) % (2.0 * math.pi)
+    # Exact doorway direction from Crypt center (0, 21) toward straight E-W staircase bottom (-11.2, 13.8):
+    door_ang = math.atan2(13.8 - cy, -11.2 - cx) % (2.0 * math.pi)
     for k in range(segs):
         a0 = 2.0 * math.pi * k / segs
         a1 = 2.0 * math.pi * (k + 1) / segs
@@ -261,30 +261,30 @@ def build_crypt(
             segments=8,
         )
 
-    # Watertight Enclosed Stone Stairwell Tunnel: West Apse Cloister (-21.5, +16.5, Z=1.2) -> Crypt Entry (-10.5, +12.0, Z=-5.5)
+    # Watertight UNDERGROUND Stone Stairwell Tunnel: (-21.0, +13.8, Z=1.2) -> Crypt Entry (-11.2, +13.8, Z=-5.5)
+    # CRITICAL: Every underground tunnel wall & ceiling stays strictly BELOW Z = Z_NAVE (1.2m) so NOTHING protrudes above the Nave floor!
     num_steps = 28
-    p_top = Vector((-21.5, 16.5, Z_NAVE))
-    p_bot = Vector((-10.5, 12.0, Z_CRYPT))
-    stair_dir = (p_bot - p_top)
-    stair_ang = math.atan2(stair_dir.y, stair_dir.x)
-    nx = -math.sin(stair_ang)
-    ny = math.cos(stair_ang)
-    tunnel_half_w = 1.95
+    p_top = Vector((-21.0, 13.8, Z_NAVE))
+    p_bot = Vector((-11.2, 13.8, Z_CRYPT))
+    tunnel_half_w = 1.45
+    z_floor_cap = Z_NAVE - 0.04  # Strictly flush beneath the Nave marble floor!
     for s in range(num_steps):
         t = s / (num_steps - 1)
         pos = p_top.lerp(p_bot, t)
-        # Solid stone step + masonry sub-base
-        add_box(bm_crypt, (pos.x, pos.y, pos.z - 0.45), (0.85, tunnel_half_w * 2.0 + 0.4, 0.90), rot_euler=(0, 0, stair_ang))
-        # Left & right watertight stone tunnel walls sealing the stairwell completely from the underground void!
+        # Solid stone step tread + deep masonry sub-base
+        add_box(bm_crypt, (pos.x, pos.y, pos.z - 0.35), (0.52, tunnel_half_w * 2.0 + 0.2, 0.70))
+        # Left & right underground stone tunnel walls capped STRICTLY at Z <= Z_NAVE (zero blocks sticking into Nave!)
+        wall_bot = pos.z - 0.65
+        wall_top = z_floor_cap
+        wall_ht = max(0.35, wall_top - wall_bot)
         for side in (-1, 1):
-            wx = pos.x + nx * side * tunnel_half_w
-            wy = pos.y + ny * side * tunnel_half_w
-            add_box(bm_crypt, (wx, wy, pos.z + 1.85), (0.95, 0.55, 4.4), rot_euler=(0, 0, stair_ang))
-        # Sloped vaulted stone tunnel ceiling (stops near top entrance so player walks cleanly up into Nave!)
-        if t > 0.22:
-            add_box(bm_crypt, (pos.x, pos.y, pos.z + 3.65), (0.95, tunnel_half_w * 2.0 + 0.8, 0.55), rot_euler=(0, 0, stair_ang))
-    # Rear stone backing wall sealing the upper vestibule entrance behind the top step
-    add_box(bm_crypt, (p_top.x - math.cos(stair_ang) * 0.9, p_top.y - math.sin(stair_ang) * 0.9, p_top.z + 1.4), (0.55, tunnel_half_w * 2.0 + 0.8, 3.8), rot_euler=(0, 0, stair_ang))
+            wy = pos.y + side * (tunnel_half_w + 0.22)
+            add_box(bm_crypt, (pos.x, wy, wall_bot + wall_ht * 0.5), (0.62, 0.44, wall_ht))
+        # Sloped underground ceiling ONLY where headroom (pos.z + 3.1) is below the Nave floor!
+        if pos.z + 3.05 < z_floor_cap:
+            add_box(bm_crypt, (pos.x, pos.y, pos.z + 3.15), (0.65, tunnel_half_w * 2.0 + 0.9, 0.45))
+    # Underground end-wall sealing beneath the very top step (strictly below Nave floor Z=1.2!)
+    add_box(bm_crypt, (p_top.x - 0.35, p_top.y, Z_NAVE - 0.65), (0.45, tunnel_half_w * 2.0 + 0.9, 1.25))
 
 
 def build_cloister_and_crypt() -> None:
