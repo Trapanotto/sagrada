@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Basílica de la Sagrada Família — Begehbares 3D-Architekturmodell</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene-canvas"></canvas>
+
+      <!-- Loading screen -->
+      <div id="loading-screen">
+        <div class="loading-card">
+          <div class="loading-crest">✦</div>
+          <h1>Basílica de la Sagrada Família</h1>
+          <p class="loading-subtitle">
+            Vollständiger Entwurf · Alle 18 Türme · Innenraum, Krypta, Kreuzgang &amp; Eixample
+          </p>
+          <div class="loading-bar-track">
+            <div id="loading-bar-fill"></div>
+          </div>
+          <div id="loading-status">Initialisiere Architektur-Module…</div>
+        </div>
+      </div>
+
+      <!-- Pointer lock crosshair -->
+      <div id="crosshair" class="hidden"></div>
+
+      <!-- Top bar -->
+      <header id="hud-top" class="hud-panel hidden">
+        <div class="hud-brand">
+          <span class="brand-title">SAGRADA FAMÍLIA</span>
+          <span id="zone-badge" class="zone-badge">Plaça de Gaudí · Ost</span>
+        </div>
+        <div class="hud-compass-wrap">
+          <span id="compass-dir">N</span>
+          <span id="altitude-readout">H: 1.7 m</span>
+          <span id="mode-badge" class="mode-badge">Gehen</span>
+          <button id="perf-fps-pill" class="fps-pill" data-state="good" title="Performance-Diagnose ein-/ausblenden (O)">
+            60 FPS
+          </button>
+        </div>
+        <div class="hud-actions">
+          <button id="btn-walk-mode" class="hud-btn active" title="Gehen / Flugmodus (F)">
+            Gehen [F]
+          </button>
+          <button id="btn-geometry" class="hud-btn" title="Gaudí Geometrie-Overlay (G)">
+            Geometrie [G]
+          </button>
+          <button id="btn-hotspots" class="hud-btn active" title="Architektur-Hotspots (H)">
+            Infos [H]
+          </button>
+          <button id="btn-minimap" class="hud-btn active" title="Grundriss-Minimap (M)">
+            Plan [M]
+          </button>
+          <button id="btn-graphics" class="hud-btn active" title="Grafik-Stufe wechseln (AAA / Hoch / Basis)">
+            Grafik: AAA
+          </button>
+          <button id="btn-tour" class="hud-btn" title="Cinematic Kamerafahrt starten/stoppen (T)">
+            Tour [T]
+          </button>
+          <button id="btn-photo" class="hud-btn" title="Pro Foto-Modus: Brennweite, DoF & PNG-Export (P)">
+            Foto [P]
+          </button>
+          <button id="btn-audio" class="hud-btn" title="Raumakustik & Atmosphäre (U)">
+            Audio: Aus
+          </button>
+        </div>
+      </header>
+
+      <!-- Bottom-left: Tabbed Time-of-Day & Historical Construction Timelapse (1882 -> Final) -->
+      <aside id="hud-time" class="hud-panel hidden">
+        <div class="card-tabs">
+          <button id="tab-sun" class="card-tab active">Sonnenstand</button>
+          <button id="tab-history" class="card-tab">Bauzeit 1882–2034</button>
+        </div>
+
+        <div id="pane-sun" class="card-pane">
+          <div class="panel-header">
+            <span>Barcelona 41,4° N</span>
+            <span id="time-display" class="mono-val">10:30</span>
+          </div>
+          <input id="time-slider" type="range" min="0" max="24" step="0.05" value="10.5" />
+          <div class="time-presets">
+            <button class="chip-btn" data-time="8.2">Morgenlicht</button>
+            <button class="chip-btn" data-time="12.5">Mittag</button>
+            <button class="chip-btn" data-time="17.8">Abendrot</button>
+            <button class="chip-btn" data-time="22.0">Nacht</button>
+          </div>
+        </div>
+
+        <div id="pane-history" class="card-pane hidden">
+          <div class="panel-header">
+            <span id="timeline-year-display" class="mono-val">Finaler Entwurf</span>
+            <button id="timeline-play-btn" class="chip-btn">▶ Zeitraffer</button>
+          </div>
+          <input id="timeline-slider" type="range" min="1882" max="2034" step="0.2" value="2034" />
+          <div class="timeline-chips">
+            <button class="chip-btn" data-year="1889">1889</button>
+            <button class="chip-btn" data-year="1926">1926</button>
+            <button class="chip-btn" data-year="1976">1976</button>
+            <button class="chip-btn" data-year="2010">2010</button>
+            <button class="chip-btn" data-year="2026">2026</button>
+            <button class="chip-btn active" data-year="2034">Final</button>
+          </div>
+          <div id="timeline-caption" class="timeline-caption">
+            Finaler Entwurf · Vollendete Glorienfassade, 4 Südtürme &amp; Große Freitreppe
+          </div>
+        </div>
+
+        <div class="audio-row">
+          <label for="audio-volume">Lautstärke</label>
+          <input id="audio-volume" type="range" min="0" max="1" step="0.02" value="0.45" />
+        </div>
+      </aside>
+
+      <!-- Bottom-center: Teleport bar -->
+      <nav id="hud-teleports" class="hud-panel hidden" aria-label="Schnell-Teleports"></nav>
+
+      <!-- Bottom-right: Interactive Architectural Minimap -->
+      <aside id="hud-minimap" class="hud-panel hidden">
+        <div class="panel-header">
+          <span>Grundriss</span>
+          <div class="level-tabs" id="minimap-levels">
+            <button class="level-tab" data-level="crypt">Krypta</button>
+            <button class="level-tab active" data-level="ground">EG</button>
+            <button class="level-tab" data-level="gallery">Empore</button>
+            <button class="level-tab" data-level="towers">Türme</button>
+          </div>
+        </div>
+        <canvas id="minimap-canvas" width="230" height="230"></canvas>
+        <div class="minimap-hint">Klick auf den Plan zum Teleportieren</div>
+      </aside>
+
+      <!-- Collapsible Performance Diagnostics Overlay ([O]) -->
+      <aside id="perf-card" class="hud-panel hidden">
+        <div class="panel-header">
+          <span>Performance-Diagnose [O]</span>
+          <span class="mono-val">AAA Engine</span>
+        </div>
+        <div id="perf-body" class="perf-body"></div>
+      </aside>
+
+      <!-- 3D projected hotspot markers layer -->
+      <div id="hotspot-markers"></div>
+
+      <!-- Hotspot detail drawer -->
+      <aside id="hotspot-drawer" class="hud-panel hidden">
+        <button id="hotspot-close" class="drawer-close" aria-label="Schließen">×</button>
+        <div id="hotspot-category" class="drawer-category">Architektur</div>
+        <h2 id="hotspot-title">Titel</h2>
+        <div id="hotspot-metrics" class="drawer-metrics"></div>
+        <p id="hotspot-body"></p>
+        <button id="hotspot-flyto" class="hud-btn active">Dorthin bewegen</button>
+      </aside>
+
+      <!-- Start / Pointer lock prompt -->
+      <div id="controls-banner" class="hud-panel hidden">
+        <span
+          ><strong>Klick &amp; Ziehen</strong> / <strong>Doppelklick</strong> Mausblick · <strong>WASD</strong> Bewegen ·
+          <strong>F</strong> Flugmodus · <strong>T</strong> Cinematic Tour · <strong>P</strong> Foto-Studio</span
+        >
+      </div>
+
+      <!-- Cinematic Tour Overlay Bar -->
+      <div id="tour-bar" class="hud-panel hidden">
+        <div class="tour-meta">
+          <div id="tour-chapter-title" class="tour-title">I · Geburtsfassade im Morgenlicht</div>
+          <div id="tour-chapter-sub" class="tour-sub">Plaça de Gaudí · Spiegelteich &amp; Lebensbaum-Zypresse</div>
+        </div>
+        <div class="tour-progress-track">
+          <div id="tour-progress-fill"></div>
+        </div>
+        <div class="tour-controls">
+          <button id="tour-pause-btn" class="hud-btn">Pause</button>
+          <button id="tour-next-btn" class="hud-btn">Weiter →</button>
+          <button id="tour-stop-btn" class="hud-btn active">Beenden [T]</button>
+        </div>
+      </div>
+
+      <!-- Pro Photo Studio Panel (Focal length, DoF Focus/Aperture, Exposure, 1-Click PNG Screenshot) -->
+      <div id="photo-studio" class="hud-panel hidden">
+        <div class="photo-grid">
+          <label class="photo-ctrl">
+            <span>Brennweite <strong id="photo-focal-val" class="mono-val">35 mm</strong></span>
+            <input id="photo-fov" type="range" min="24" max="86" step="1" value="62" />
+          </label>
+          <label class="photo-ctrl">
+            <span>Belichtung <strong id="photo-exp-val" class="mono-val">1.06</strong></span>
+            <input id="photo-exposure" type="range" min="0.55" max="1.65" step="0.02" value="1.06" />
+          </label>
+          <label class="photo-ctrl">
+            <span>DoF Fokus <strong id="photo-focus-val" class="mono-val">26 m</strong></span>
+            <input id="photo-focus" type="range" min="3" max="140" step="1" value="26" />
+          </label>
+          <label class="photo-ctrl">
+            <span>Blende (Bokeh) <strong id="photo-aperture-val" class="mono-val">Aus</strong></span>
+            <input id="photo-aperture" type="range" min="0" max="0.00055" step="0.00001" value="0" />
+          </label>
+        </div>
+        <div class="photo-actions">
+          <button id="photo-capture-btn" class="hud-btn active">Screenshot speichern (PNG)</button>
+          <button id="photo-clean-btn" class="hud-btn">Nur Bild [V]</button>
+          <button id="photo-reset-btn" class="hud-btn">Reset</button>
+          <button id="photo-exit-btn" class="hud-btn">Schließen [P]</button>
+        </div>
+      </div>
+
+      <!-- Mobile & Tablet Multi-Touch Controls (auto-shown on touch screens) -->
+      <div id="touch-controls" class="hidden">
+        <div id="touch-joy-zone" aria-label="Virtueller Joystick">
+          <div class="touch-joy-ring">
+            <div id="touch-joy-knob"></div>
+          </div>
+        </div>
+        <div id="touch-fly-btns" class="hidden">
+          <button id="touch-fly-up" class="touch-fly-btn" aria-label="Hochfliegen">▲</button>
+          <button id="touch-fly-down" class="touch-fly-btn" aria-label="Runterfliegen">▼</button>
+        </div>
+      </div>
+
+      <!-- Subtle clean-canvas restore pill when V hides the Photo Studio bar -->
+      <button id="photo-exit-pill" class="hud-panel hidden" title="Foto-Studio anzeigen (V) oder beenden (P)">
+        Reines Bild · [V] Studio · [P] Beenden
+      </button>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
