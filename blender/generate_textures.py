@@ -467,6 +467,51 @@ def generate_carved_oak(size: int = 512) -> None:
     save_gray_png("wood_oak_roughness.png", roughness)
 
 
+def generate_foliage_canopy(size: int = 512) -> None:
+    """Lush seamless 3D foliage PBR map (albedo, normal, roughness) for solid sculpted Mediterranean tree canopies."""
+    rng = np.random.default_rng(819)
+    n_macro = tileable_fbm(size, octaves=4, base_freq=6, seed=820)
+    yy, xx = np.mgrid[0:size, 0:size] / float(size)
+
+    # Dark shadowy interior foliage base
+    albedo = np.zeros((size, size, 3), dtype=np.float32)
+    albedo[..., 0] = 0.08 + 0.05 * n_macro
+    albedo[..., 1] = 0.17 + 0.08 * n_macro
+    albedo[..., 2] = 0.06 + 0.03 * n_macro
+    height = np.full((size, size), 0.18, dtype=np.float32)
+
+    # Stamp 260 overlapping organic Mediterranean leaves periodically across tile
+    for i in range(260):
+        cx = rng.random()
+        cy = rng.random()
+        rad = rng.uniform(0.038, 0.072)
+        rot = rng.uniform(0, math.pi * 2.0)
+        ca, sa = math.cos(rot), math.sin(rot)
+        dx = ((xx - cx + 0.5) % 1.0) - 0.5
+        dy = ((yy - cy + 0.5) % 1.0) - 0.5
+        lx = dx * ca - dy * sa
+        ly = dx * sa + dy * ca
+        r = np.sqrt(lx * lx + ly * ly)
+        ang = np.arctan2(ly, lx)
+        lobe = rad * (0.74 + 0.26 * np.abs(np.cos(ang * 2.5)))
+        mask = r < lobe
+        if not np.any(mask):
+            continue
+        layer_h = 0.30 + 0.70 * (i / 260.0)
+        shade = rng.uniform(0.75, 1.22) * (0.72 + 0.35 * layer_h)
+        albedo[mask, 0] = np.clip(0.15 * shade, 0.05, 0.45)
+        albedo[mask, 1] = np.clip(0.35 * shade, 0.12, 0.68)
+        albedo[mask, 2] = np.clip(0.11 * shade, 0.04, 0.30)
+        height[mask] = layer_h * (1.0 - 0.25 * (r[mask] / max(rad, 1e-4)))
+
+    normal = height_to_normal(height, strength=4.2)
+    roughness = np.clip(0.78 - height * 0.24, 0.42, 0.92)
+
+    save_rgb_png("foliage_canopy_albedo.png", albedo, colorspace="sRGB")
+    save_rgb_png("foliage_canopy_normal.png", normal, colorspace="Non-Color")
+    save_gray_png("foliage_canopy_roughness.png", roughness)
+
+
 def generate_plane_leaves_rgba(size: int = 512) -> None:
     """Crisp 512x512 RGBA alpha-cutout cluster of Mediterranean London Plane leaves on twigs."""
     rng = np.random.default_rng(812)
@@ -615,7 +660,7 @@ def generate_all_textures() -> None:
     generate_patinated_bronze()
     generate_crimson_carpet()
     generate_carved_oak()
-    generate_plane_leaves_rgba()
+    generate_foliage_canopy()
     generate_marble_floor()
     generate_trencadis_mosaic()
     generate_panot_barcelona()

@@ -81,66 +81,57 @@ def add_chamfered_eixample_block(
         bm_roof.faces.new((rob[i], rob[ni], rib[ni], rib[i]))
 
 
-def _add_leaf_card(bm: bmesh.types.BMesh, uv_layer, center: Vector, size: float, yaw: float, pitch: float) -> None:
-    """Create a crossed pair of double-sided alpha foliage cards with crisp 0..1 UVs."""
-    hs = size * 0.5
-    for cross_off in (0.0, math.pi * 0.5):
-        cy = math.cos(yaw + cross_off)
-        sy = math.sin(yaw + cross_off)
-        cp = math.cos(pitch)
-        sp = math.sin(pitch)
-        # Local X (width) and local Z (tilted up) vectors
-        ux = Vector((cy, sy, 0.0)) * hs
-        uz = Vector((-sy * sp, cy * sp, cp)) * hs
-        v0 = bm.verts.new(center - ux - uz)
-        v1 = bm.verts.new(center + ux - uz)
-        v2 = bm.verts.new(center + ux + uz)
-        v3 = bm.verts.new(center - ux + uz)
-        f = bm.faces.new((v0, v1, v2, v3))
-        uvs = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
-        for loop, uv in zip(f.loops, uvs):
-            loop[uv_layer].uv = uv
+def _add_organic_canopy_lobe(bm: bmesh.types.BMesh, center: Vector, rx: float, ry: float, rz: float, seed: float) -> None:
+    """Solid organically sculpted leafy foliage cluster (zero broken paper-thin alpha quads!)."""
+    ret = bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0)
+    for v in ret["verts"]:
+        p = v.co
+        # Multi-frequency organic botanical clump wobble so canopy reads as real irregular leaves, never smooth balls!
+        bump = (
+            1.0
+            + 0.22 * math.sin(p.x * 4.2 + seed) * math.cos(p.y * 3.9 - seed * 0.7)
+            + 0.14 * math.sin(p.z * 5.1 + p.x * 3.3 + seed * 1.3)
+        )
+        v.co = Vector((center.x + p.x * rx * bump, center.y + p.y * ry * bump, center.z + p.z * rz * bump))
 
 
 def create_tree_mesh(name: str, trunk_mat: bpy.types.Material, leaf_mat: bpy.types.Material, cypress: bool = False) -> tuple[bpy.types.Mesh, bpy.types.Mesh]:
-    """Authentic branched Mediterranean London Plane & Cypress trees with real CC0 bark + alpha leaf-card clusters."""
+    """Lush solid sculpted Mediterranean London Plane & Cypress trees with real CC0 bark + leafy PBR clusters."""
     bm_t = bmesh.new()
     bm_l = bmesh.new()
-    uv_l = bm_l.loops.layers.uv.verify()
 
     if cypress:
-        add_cylinder(bm_t, Vector((0, 0, 0)), Vector((0, 0, 3.0)), 0.24, 0.14, segments=8)
-        # Tall tapered organic cypress column composed of layered crossed alpha leaf-cards!
-        for tier in range(11):
-            t = tier / 10.0
-            z = 2.0 + t * 9.8
-            r = 1.45 * (1.0 - t * 0.82) * (0.7 + 0.3 * math.sin(t * math.pi))
-            card_s = 2.4 * (1.0 - t * 0.55)
-            for k in range(3):
-                ang = k * (2.0 * math.pi / 3.0) + tier * 0.7
-                c = Vector((r * 0.55 * math.cos(ang), r * 0.55 * math.sin(ang), z))
-                _add_leaf_card(bm_l, uv_l, c, card_s, ang, 0.25)
+        add_cylinder(bm_t, Vector((0, 0, 0)), Vector((0, 0, 2.8)), 0.24, 0.14, segments=8)
+        # Sculpted tapered organic Mediterranean Cypress silhouette (7 overlapping fluted foliage tiers)
+        for tier in range(7):
+            t = tier / 6.0
+            z = 2.4 + t * 8.8
+            r = 1.38 * (1.0 - t * 0.78) * (0.78 + 0.22 * math.sin(t * math.pi))
+            _add_organic_canopy_lobe(bm_l, Vector((0, 0, z)), r, r, 1.55 * (1.0 - t * 0.35), seed=tier * 2.1)
     else:
-        # Authentic Barcelona London Plane tree: main trunk splitting into 5 sculpted crooked boughs!
-        add_cylinder(bm_t, Vector((0, 0, 0)), Vector((0.08, -0.05, 3.6)), 0.38, 0.27, segments=9)
+        # Authentic Barcelona London Plane tree: curved trunk splitting into 5 visible boughs + rich multi-cluster crown!
+        add_cylinder(bm_t, Vector((0, 0, 0)), Vector((0.08, -0.05, 3.6)), 0.38, 0.26, segments=9)
         boughs = [
-            (Vector((0.08, -0.05, 3.3)), Vector((2.1, 0.9, 6.2)), 0.18, 0.08),
-            (Vector((0.08, -0.05, 3.4)), Vector((-2.0, 1.2, 6.4)), 0.18, 0.08),
-            (Vector((0.08, -0.05, 3.5)), Vector((0.6, -2.2, 6.0)), 0.17, 0.08),
-            (Vector((0.08, -0.05, 3.2)), Vector((-1.4, -1.6, 5.8)), 0.16, 0.07),
-            (Vector((0.08, -0.05, 3.5)), Vector((0.1, 0.3, 7.6)), 0.19, 0.07),
+            (Vector((0.08, -0.05, 3.3)), Vector((2.1, 0.9, 6.0)), 0.18, 0.08, 2.25, 1.85),
+            (Vector((0.08, -0.05, 3.4)), Vector((-2.0, 1.2, 6.2)), 0.18, 0.08, 2.35, 1.90),
+            (Vector((0.08, -0.05, 3.5)), Vector((0.6, -2.1, 5.8)), 0.17, 0.08, 2.20, 1.80),
+            (Vector((0.08, -0.05, 3.2)), Vector((-1.4, -1.6, 5.7)), 0.16, 0.07, 2.05, 1.75),
+            (Vector((0.08, -0.05, 3.5)), Vector((0.1, 0.2, 7.3)), 0.19, 0.08, 2.55, 2.05),
         ]
-        for bi, (p0, p1, r0, r1) in enumerate(boughs):
+        for bi, (p0, p1, r0, r1, rw, rh) in enumerate(boughs):
             add_cylinder(bm_t, p0, p1, r0, r1, segments=7)
-            # Secondary twigs + dense overlapping alpha leaf-card canopy clusters around each bough tip!
-            for k in range(5):
-                ang = bi * 1.3 + k * (2.0 * math.pi / 5.0)
-                rad = 0.8 + (k % 2) * 0.95
-                center = p1 + Vector((math.cos(ang) * rad, math.sin(ang) * rad, (k - 2) * 0.48))
-                _add_leaf_card(bm_l, uv_l, center, 2.55 + (k % 3) * 0.42, ang, 0.32 * ((k % 3) - 1))
+            _add_organic_canopy_lobe(bm_l, p1 + Vector((0, 0, 0.65)), rw, rw * 0.94, rh, seed=bi * 3.7 + 1.1)
+            # Secondary smaller sub-lobe for rich dappled silhouette
+            off = Vector((math.cos(bi * 1.9) * 1.1, math.sin(bi * 1.9) * 1.1, 0.15))
+            _add_organic_canopy_lobe(bm_l, p1 + off, rw * 0.68, rw * 0.68, rh * 0.72, seed=bi * 5.1)
 
     apply_box_uv(bm_t, scale=0.45)
     bake_bvh_vertex_ao(bm_t, max_dist=2.2, min_ao=0.52)
+
+    bmesh.ops.recalc_face_normals(bm_l, faces=bm_l.faces)
+    bm_l.normal_update()
+    apply_box_uv(bm_l, scale=0.42)
+    bake_bvh_vertex_ao(bm_l, max_dist=3.5, min_ao=0.42)
 
     mt = bpy.data.meshes.new(name + "_Trunk")
     ml = bpy.data.meshes.new(name + "_Leaves")
@@ -149,6 +140,7 @@ def create_tree_mesh(name: str, trunk_mat: bpy.types.Material, leaf_mat: bpy.typ
     bm_t.free()
     bm_l.free()
     mt.polygons.foreach_set("use_smooth", [True] * len(mt.polygons))
+    ml.polygons.foreach_set("use_smooth", [True] * len(ml.polygons))
     mt.materials.append(trunk_mat)
     ml.materials.append(leaf_mat)
     return mt, ml
@@ -260,7 +252,7 @@ def build_eixample() -> None:
 
     # ── 6. Instanced Park Trees (Plane Trees & Cypresses) + Barcelona Street Lamps ──
     m_plane_t, m_plane_l = create_tree_mesh("Tree_Plane", mats["tree_bark"], mats["foliage_park"], cypress=False)
-    m_cyp_t, m_cyp_l = create_tree_mesh("Tree_Cypress", mats["tree_bark"], mats["foliage_park"], cypress=True)
+    m_cyp_t, m_cyp_l = create_tree_mesh("Tree_Cypress", mats["tree_bark"], mats["foliage_cypress"], cypress=True)
     m_lamp_p, m_lamp_g = create_lamp_mesh(mats["iron_dark"], mats["candle_glow"])
 
     plane_positions = [

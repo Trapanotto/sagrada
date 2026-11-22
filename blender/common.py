@@ -380,10 +380,19 @@ def get_materials() -> dict[str, bpy.types.Material]:
         ),
         "foliage_park": make_pbr_material(
             "Mat_FoliagePark",
-            albedo_tex="plane_leaves_rgba.png",
-            roughness=0.66,
-            alpha_tex=True,
-            double_sided=True,
+            albedo_tex="foliage_canopy_albedo.png",
+            normal_tex="foliage_canopy_normal.png",
+            rough_tex="foliage_canopy_roughness.png",
+            normal_strength=1.25,
+        ),
+        "foliage_cypress": make_pbr_material(
+            "Mat_FoliageCypress",
+            albedo_tex="foliage_canopy_albedo.png",
+            normal_tex="foliage_canopy_normal.png",
+            rough_tex="foliage_canopy_roughness.png",
+            normal_strength=1.35,
+            tint_color=(0.55, 0.72, 0.56, 1.0),
+            tint_factor=0.65,
         ),
         "tree_bark": make_pbr_material(
             "Mat_TreeBark",

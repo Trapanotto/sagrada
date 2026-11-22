@@ -18,9 +18,7 @@ interface BoxObstacle {
 }
 
 const EXTERIOR_OBSTACLES: BoxObstacle[] = [
-  // Plaça de Gaudí Pond basin (walk around the stone rim, don't walk into water!)
-  { minX: 67.4, maxX: 97.6, minZ: -17.6, maxZ: 17.6, maxY: 2.0 },
-  // Eixample apartment blocks (center ±36m)
+  // Eixample apartment blocks (center ±36m) — Plaça de Gaudí Pond is now fully jumpable & wadeable!
   { minX: -131, maxX: -59, minZ: -144, maxZ: -72, maxY: 25 },
   { minX: -36, maxX: 36, minZ: -144, maxZ: -72, maxY: 25 },
   { minX: 59, maxX: 131, minZ: -144, maxZ: -72, maxY: 25 },
@@ -89,19 +87,36 @@ export class CollisionSystem {
       return { groundY: 65.0, clampedX: cx, clampedZ: cz };
     }
 
-    // 3. Elevated Choir Galleries / Emporen (Y ≈ 14.5m)
+    // 3b. 2 Walkable Gaudí Corner Helical Staircases: Nave Floor (1.2m) <-> Emporen Galleries (14.5m) at (±19.6, Z=+42.8)!
+    for (const sx of [-1, 1]) {
+      const scx = sx * 19.6;
+      const scz = 42.8;
+      const dCorner = Math.hypot(cx - scx, cz - scz);
+      if (dCorner < 2.25 && feetY >= 0.8 && feetY <= 16.0) {
+        const ang = Math.atan2(-(cz - scz), cx - scx);
+        const signedAng = sx > 0 ? ang : -ang;
+        const baseFrac = (((signedAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
+        const pitch = (14.5 - 1.2) / 2.5;
+        const estTurn = Math.round((feetY - 1.2) / pitch - baseFrac);
+        const stairY = THREE.MathUtils.clamp(1.2 + (estTurn + baseFrac) * pitch, 1.2, 14.5);
+        return { groundY: stairY, clampedX: cx, clampedZ: cz };
+      }
+    }
+
+    // 4. Elevated Choir Galleries / Emporen (Y ≈ 14.5m) + East Gallery-to-Tower Passage!
     if (feetY > 9.0) {
-      // Keep on East gallery, West gallery, South choir bridge, or Apse organ balcony
+      // Walkable bridge from East Empore (21, 14.5) to Nativity Spiral Staircase Base (31.5, 3.6)
+      const onTowerBridge = cx >= 20.0 && cx <= 33.0 && cz >= 2.0 && cz <= 16.0;
       const onSouth = cz >= 40.8 && cz <= 45.2 && Math.abs(cx) <= 21.8;
-      const onEast = cx >= 17.1 && cx <= 22.1 && cz >= 14.5 && cz <= 45.2;
+      const onEast = cx >= 17.1 && cx <= 22.1 && cz >= 14.0 && cz <= 45.2;
       const onWest = cx <= -17.1 && cx >= -22.1 && cz >= 14.5 && cz <= 45.2;
-      if (!onSouth && !onEast && !onWest) {
+      if (!onTowerBridge && !onSouth && !onEast && !onWest) {
         if (cz > 39.0) {
           cz = THREE.MathUtils.clamp(cz, 41.0, 45.0);
           cx = THREE.MathUtils.clamp(cx, -21.6, 21.6);
         } else if (cx >= 0) {
           cx = THREE.MathUtils.clamp(cx, 17.2, 22.0);
-          cz = THREE.MathUtils.clamp(cz, 14.8, 45.0);
+          cz = THREE.MathUtils.clamp(cz, 14.2, 45.0);
         } else {
           cx = THREE.MathUtils.clamp(cx, -22.0, -17.2);
           cz = THREE.MathUtils.clamp(cz, 14.8, 45.0);
@@ -149,6 +164,21 @@ export class CollisionSystem {
     }
 
     let groundY = 0.0;
+
+    // Plaça de Gaudí Reflective Pond (jump right over the +0.36m coping rim into the -0.45m water basin!)
+    const inPondOuter = cx >= 67.4 && cx <= 97.6 && cz >= -17.6 && cz <= 17.6;
+    const inPondWater = cx >= 68.4 && cx <= 96.6 && cz >= -16.6 && cz <= 16.6;
+    if (inPondWater) {
+      const distFountain = Math.hypot(cx - 82.5, cz);
+      if (distFountain < 2.65) {
+        // Climb onto the stone fountain base pedestal inside the pond!
+        groundY = 0.35;
+      } else {
+        groundY = -0.45;
+      }
+    } else if (inPondOuter) {
+      groundY = 0.36;
+    }
 
     // Presbytery High Altar stepped platform (center X=0, Z=-17.5)
     const dAltar = Math.hypot(cx, cz - -17.5);
@@ -233,6 +263,9 @@ export class CollisionSystem {
     if (Math.abs(pos.x) < 31 && Math.abs(pos.z) < 15 && pos.y < 46) return 'Querschiff';
     if (Math.hypot(Math.abs(pos.x) - 27.5, pos.z - -32.5) < 9.5) return 'Sakristei-Kuppel';
     if (Math.abs(pos.x) >= 22.8 && Math.abs(pos.x) <= 29.5 && pos.z > -30 && pos.z < 47) return 'Umlaufender Kreuzgang';
+    if (pos.x >= 68.4 && pos.x <= 96.6 && Math.abs(pos.z) <= 16.6 && pos.y < 2.2) {
+      return 'Plaça de Gaudí · Im Spiegelteich';
+    }
     if (pos.x > 52 && Math.abs(pos.z) < 48) return 'Plaça de Gaudí · Spiegelteich (Ost)';
     if (pos.x > 31 && Math.abs(pos.z) < 22) return 'Vorplatz Geburtsfassade (Ost)';
     if (pos.x < -52 && Math.abs(pos.z) < 48) return 'Plaça de la Sagrada Família (West)';

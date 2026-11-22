@@ -234,6 +234,37 @@ def build_interior() -> None:
     for k in range(44):
         bx_s = -21.5 + k * (43.0 / 43.0)
         add_cylinder(bm_gal, Vector((bx_s, -40.75, Z_GALLERY + 0.25)), Vector((bx_s, -40.75, Z_GALLERY + 1.02)), 0.08, 0.07, segments=6)
+
+    # 2 Walkable Gaudí Corner Helical Staircases connecting Nave Floor (1.2m) -> Emporen Galleries (14.5m)!
+    for sx in (-1, 1):
+        scx, scy = sx * 19.6, -42.8
+        n_st = 46
+        turns = 2.5
+        # Central stone spiral newel column
+        add_cylinder(bm_gal, Vector((scx, scy, Z_NAVE)), Vector((scx, scy, Z_GALLERY + 1.1)), 0.48, 0.44, segments=12)
+        for si in range(n_st):
+            t = si / (n_st - 1)
+            ang = sx * t * turns * 2.0 * math.pi
+            z_s = Z_NAVE + t * (Z_GALLERY - Z_NAVE)
+            add_box(
+                bm_gal,
+                (scx + 1.18 * math.cos(ang), scy + 1.18 * math.sin(ang), z_s),
+                (1.45, 0.56, 0.22),
+                rot_euler=(0.0, 0.0, ang),
+            )
+
+    # Walkable Elevated Gallery Corridor connecting East Empore (22, -14.5, 14.5m) -> Nativity Spiral Staircase Base (31.5, -3.6, 14.5m)!
+    p_g0 = Vector((21.0, -14.5, Z_GALLERY - 0.35))
+    p_g1 = Vector((31.5, -4.5, Z_GALLERY - 0.35))
+    g_mid = (p_g0 + p_g1) * 0.5
+    g_len = (p_g1 - p_g0).length + 1.6
+    g_ang = math.atan2(p_g1.y - p_g0.y, p_g1.x - p_g0.x)
+    add_box(bm_gal, (g_mid.x, g_mid.y, g_mid.z), (g_len, 3.2, 0.7), rot_euler=(0, 0, g_ang))
+    # Side stone parapets flanking the gallery-to-tower walkway
+    for side in (-1, 1):
+        nx = -math.sin(g_ang) * side * 1.45
+        ny = math.cos(g_ang) * side * 1.45
+        add_box(bm_gal, (g_mid.x + nx, g_mid.y + ny, Z_GALLERY + 0.55), (g_len, 0.32, 1.1), rot_euler=(0, 0, g_ang))
     # Apse Organ Gallery (curved balcony behind the altar)
     for i in range(10):
         a0 = math.pi * (0.1 + 0.8 * i / 10.0)
@@ -356,17 +387,26 @@ def build_interior() -> None:
             add_box(bm_walls, (wx, y_center - 3.75, 16.0), (1.4, 2.1, 31.0))
             if bay_idx == 0:
                 add_box(bm_walls, (wx, y_center + 3.75, 16.0), (1.4, 2.1, 31.0))
-            # Lower stone dado (Z = 0..3.6), gallery spandrel (Z = 13.5..15.8), cornice (Z = 29..32)
-            add_box(bm_walls, (wx, y_center, 1.8), (1.2, 5.6, 3.6))
-            add_box(bm_walls, (wx, y_center, 14.6), (1.2, 5.6, 2.4))
-            add_box(bm_walls, (wx, y_center, 30.2), (1.4, 5.6, 2.8))
+            # Leave bay_idx == 2 open as a tall sculpted direct doorway from the Nave into the East & West Cloisters!
+            if bay_idx == 2:
+                add_box(bm_walls, (wx, y_center, 9.6), (1.2, 5.6, 7.6))
+                add_box(bm_walls, (wx, y_center, 14.6), (1.2, 5.6, 2.4))
+                add_box(bm_walls, (wx, y_center, 30.2), (1.4, 5.6, 2.8))
+                # Upper stained glass lancet window above the cloister doorway
+                add_box(bm_glass, (wx, y_center, 22.3), (0.16, 5.2, 13.0))
+                add_gaudi_window_tracery(bm_walls, (wx - sx * 0.22, y_center, 22.3), 5.2, 13.0, facing="X")
+            else:
+                # Lower stone dado (Z = 0..3.6), gallery spandrel (Z = 13.5..15.8), cornice (Z = 29..32)
+                add_box(bm_walls, (wx, y_center, 1.8), (1.2, 5.6, 3.6))
+                add_box(bm_walls, (wx, y_center, 14.6), (1.2, 5.6, 2.4))
+                add_box(bm_walls, (wx, y_center, 30.2), (1.4, 5.6, 2.8))
 
-            # Lower tall stained glass lancet window (Z = 3.6 .. 13.4) + 3D Gaudí stone tracery
-            add_box(bm_glass, (wx, y_center, 8.5), (0.16, 5.2, 9.8))
-            add_gaudi_window_tracery(bm_walls, (wx - sx * 0.22, y_center, 8.5), 5.2, 9.8, facing="X")
-            # Upper tall stained glass lancet window (Z = 15.8 .. 28.8) + 3D Gaudí stone tracery
-            add_box(bm_glass, (wx, y_center, 22.3), (0.16, 5.2, 13.0))
-            add_gaudi_window_tracery(bm_walls, (wx - sx * 0.22, y_center, 22.3), 5.2, 13.0, facing="X")
+                # Lower tall stained glass lancet window (Z = 3.6 .. 13.4) + 3D Gaudí stone tracery
+                add_box(bm_glass, (wx, y_center, 8.5), (0.16, 5.2, 9.8))
+                add_gaudi_window_tracery(bm_walls, (wx - sx * 0.22, y_center, 8.5), 5.2, 9.8, facing="X")
+                # Upper tall stained glass lancet window (Z = 15.8 .. 28.8) + 3D Gaudí stone tracery
+                add_box(bm_glass, (wx, y_center, 22.3), (0.16, 5.2, 13.0))
+                add_gaudi_window_tracery(bm_walls, (wx - sx * 0.22, y_center, 22.3), 5.2, 13.0, facing="X")
 
             # Clerestory stained glass at X = ±7.6 (Z = 33..42.2)
             add_box(bm_glass, (sx * 7.6, y_center, 37.6), (0.14, 5.1, 9.2))

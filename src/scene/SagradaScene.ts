@@ -361,7 +361,7 @@ export class SagradaScene {
           obj.name.includes('Sidewalks') ||
           obj.name.includes('ParkLawns');
         const isGlassCase = obj.name.includes('GlassCases') || matName.includes('GlassCase');
-        const isFoliageCard = matName.includes('FoliagePark');
+        const isFoliage = matName.includes('FoliagePark') || matName.includes('FoliageCypress');
 
         obj.castShadow = !isStainedGlass && !isGroundOrFloor && !isGlassCase;
         obj.receiveShadow = !isStainedGlass && !isGlassCase;
@@ -420,10 +420,7 @@ export class SagradaScene {
             obj.material.emissiveIntensity = 0.0;
             this.eixampleNightMats.push(obj.material);
           }
-          if (isFoliageCard) {
-            obj.material.transparent = false;
-            obj.material.alphaTest = 0.42;
-            obj.material.side = THREE.DoubleSide;
+          if (isFoliage) {
             this.injectTreeWindSway(obj.material);
           }
         }
