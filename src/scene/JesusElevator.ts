@@ -157,9 +157,9 @@ export class JesusElevator {
     return null;
   }
 
-  public getPromptText(playerPos: THREE.Vector3): string | null {
+  public getPromptText(playerPos: THREE.Vector3, isMobile = false): string | null {
     const r = Math.hypot(playerPos.x, playerPos.z);
-    if (r > 6.2) return null;
+    if (r > 6.8) return null;
     const feetY = playerPos.y - 1.75;
 
     if (this.isPlayerInside(playerPos)) {
@@ -167,15 +167,21 @@ export class JesusElevator {
       if (this.isMoving) {
         return `Panorama-Aufzug (${this.currentY.toFixed(0)} m) → ${ELEVATOR_FLOORS[this.targetFloorIdx].label}`;
       }
-      return `Panorama-Aufzug · <strong>[L]</strong> Fahren zu ${nextFloor.label}`;
+      return isMobile
+        ? `Aufzug · Tippen → ${nextFloor.label}`
+        : `Panorama-Aufzug · <strong>[L]</strong> Fahren zu ${nextFloor.label}`;
     }
 
     const nearIdx = this.getNearestFloorIndex(feetY);
     if (Math.abs(feetY - ELEVATOR_FLOORS[nearIdx].y) < 3.0) {
       if (Math.abs(this.currentY - ELEVATOR_FLOORS[nearIdx].y) < 0.8) {
-        return `Glas-Aufzug Jesu Christi bereit · Einsteigen &amp; <strong>[L]</strong> drücken`;
+        return isMobile
+          ? `Glas-Aufzug bereit · Einsteigen &amp; <strong>Aufzug</strong> tippen`
+          : `Glas-Aufzug Jesu Christi bereit · Einsteigen &amp; <strong>[L]</strong> drücken`;
       }
-      return `Glas-Aufzug auf ${this.currentY.toFixed(0)} m · <strong>[L]</strong> Aufzug rufen`;
+      return isMobile
+        ? `Aufzug auf ${this.currentY.toFixed(0)} m · Tippen zum Rufen`
+        : `Glas-Aufzug auf ${this.currentY.toFixed(0)} m · <strong>[L]</strong> Aufzug rufen`;
     }
     return null;
   }

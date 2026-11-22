@@ -988,32 +988,33 @@ body,
   }
 
   .zone-badge {
-    max-width: 42vw;
+    max-width: 44vw;
     font-size: 11px;
     padding: 3px 8px;
   }
 
   .hud-compass-wrap {
-    gap: 6px;
+    gap: 5px;
     font-size: 11px;
   }
 
   .mobile-top-toggles {
     display: flex;
+    flex-shrink: 0;
   }
 
   .mobile-only-btn {
-    padding: 5px 10px;
+    padding: 4px 9px;
     font-size: 14px;
-    min-width: 36px;
-    min-height: 32px;
+    min-width: 34px;
+    min-height: 30px;
   }
 
-  /* Collapsible Mobile Top Action Drawer (keeps >90% of screen completely open!) */
+  /* Collapsible Mobile Top Action Drawer (sits cleanly below single-row top bar!) */
   #hud-actions-menu {
     display: none;
     position: fixed;
-    top: calc(54px + env(safe-area-inset-top, 0px));
+    top: calc(58px + env(safe-area-inset-top, 0px));
     right: calc(8px + env(safe-area-inset-right, 0px));
     width: 196px;
     padding: 8px;
@@ -1037,10 +1038,10 @@ body,
     text-align: left;
   }
 
-  /* Sun/Weather/Timeline card starts hidden on mobile & opens via the ☀ button! */
+  /* Sun/Weather/Timeline card starts hidden on mobile & opens via ☀ cleanly below top bar! */
   #hud-time {
     display: none;
-    top: calc(54px + env(safe-area-inset-top, 0px));
+    top: calc(58px + env(safe-area-inset-top, 0px));
     left: calc(8px + env(safe-area-inset-left, 0px));
     bottom: auto;
     width: min(290px, calc(100vw - 16px));
@@ -1073,13 +1074,25 @@ body,
     flex-shrink: 0;
   }
 
+  /* Move elevator status pill cleanly to top-center on phones so it NEVER overlaps thumbstick or buttons! */
   #elevator-prompt {
-    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+    top: calc(58px + env(safe-area-inset-top, 0px));
+    bottom: auto;
     font-size: 11px;
-    padding: 7px 12px;
+    padding: 6px 12px;
     max-width: calc(100vw - 24px);
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+}
+
+@media (max-width: 540px) {
+  #compass-dir,
+  #altitude-readout {
+    display: none !important;
+  }
+  .zone-badge {
+    max-width: 48vw;
   }
 }
 

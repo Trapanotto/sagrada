@@ -548,7 +548,7 @@ async function bootstrap(): Promise<void> {
   loadingScreen.classList.add('fade-out');
   setTimeout(() => loadingScreen.classList.add('hidden'), 650);
   hudPanels.forEach((p) => p.classList.remove('hidden'));
-  if (!isTouchDevice() && !isMobileDevice()) {
+  if (!isTouchDevice() && !isMobileDevice() && window.innerWidth > 900) {
     fpsStartOverlay.classList.remove('hidden');
   }
 
@@ -633,7 +633,10 @@ async function bootstrap(): Promise<void> {
       altitudeReadout.textContent = `H: ${camera.position.y.toFixed(1)} m`;
       audio.updateSpatial(0.08, indoorFactor, camera.position, sagrada.weather.rainFactor);
 
-      const elevMsg = !tour.active && !photoMode ? sagrada.elevator.getPromptText(camera.position) : null;
+      const elevMsg =
+        !tour.active && !photoMode
+          ? sagrada.elevator.getPromptText(camera.position, isMobileDevice() || window.innerWidth <= 900)
+          : null;
       touchControls.setElevatorAvailable(!!elevMsg);
       if (elevMsg) {
         elevatorPrompt.innerHTML = elevMsg;
