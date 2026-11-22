@@ -18,7 +18,7 @@ export class LightingSystem {
   public readonly particles: AtmosphericParticles;
   public readonly sunDir = new THREE.Vector3(0.6, 0.7, 0.2);
 
-  public timeHours = 18.1;
+  public timeHours = 17.55;
   public dayFactor = 1.0;
   public nightFactor = 0.0;
   public eastSunHit = 0.0;
@@ -121,41 +121,78 @@ export class LightingSystem {
         uniform sampler2D uHdriNight;
         varying vec3 vWorldDir;
 
-        vec2 dirToEquirectUv(vec3 dir, float rotY) {
-          float phi = atan(dir.z, dir.x) + rotY;
-          float theta = asin(clamp(dir.y, -1.0, 1.0));
-          return vec2(fract(phi / (2.0 * PI) + 0.5), theta / PI + 0.5);
+        float hash21(vec2 p) {
+          p = fract(p * vec2(234.34, 435.345));
+          p += dot(p, p + 34.23);
+          return fract(p.x * p.y);
+        }
+
+        float noise2(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(hash21(i + vec2(0.0, 0.0)), hash21(i + vec2(1.0, 0.0)), u.x),
+            mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x),
+            u.y
+          );
+        }
+
+        float fbmCloud(vec2 p) {
+          float v = 0.0;
+          float a = 0.52;
+          mat2 rot = mat2(0.80, 0.60, -0.60, 0.80);
+          for (int i = 0; i < 4; i++) {
+            v += a * noise2(p);
+            p = rot * p * 2.08 + vec2(13.1, 7.7);
+            a *= 0.48;
+          }
+          return v;
         }
 
         void main() {
           vec3 dir = normalize(vWorldDir);
           vec3 sunN = normalize(uSunDir);
           float h = clamp(dir.y, 0.0, 1.0);
+          float sunAmt = max(dot(dir, sunN), 0.0);
 
-          vec3 col;
-          if (uUseHdri > 0.5) {
-            // Ultra-slow Mediterranean cloud drift via gentle sky azimuth rotation
-            float drift = uTime * 0.0012;
-            vec2 uv = dirToEquirectUv(dir, drift);
-            vec3 cDay = texture2D(uHdriDay, uv).rgb * 0.60;
-            vec3 cSun = texture2D(uHdriSunset, uv).rgb * 0.66;
-            vec3 cNight = texture2D(uHdriNight, uv).rgb * 0.36;
+          // Crisp Physically-Inspired Mediterranean Rayleigh + Mie Atmospheric Sky (zero muddy overcast HDRI blur!)
+          vec3 zenith = uTopColor;
+          vec3 horizon = uHorizonColor;
+          vec3 col = mix(horizon, zenith, pow(h, 0.50));
 
-            // Smooth photographic crossfade: Day -> Golden Sunset -> Starry Night
-            vec3 daySun = mix(cDay, cSun, clamp(uGoldenFactor * 1.15, 0.0, 1.0));
-            col = mix(daySun, cNight, clamp(uNightFactor, 0.0, 1.0));
-          } else {
-            col = mix(uHorizonColor, uTopColor, pow(h, 0.54)) * 0.78;
+          // Warm Mie forward-scattering glow around the sun near the horizon (authentic Barcelona Golden Hour!)
+          float horizonBand = exp(-h * 4.2);
+          col += uSunColor * pow(sunAmt, 4.0) * (0.34 + 0.55 * uGoldenFactor) * (0.45 + 0.55 * horizonBand) * (1.0 - uNightFactor);
+          col += uSunColor * pow(sunAmt, 24.0) * 0.42 * (1.0 - uNightFactor * 0.96);
+          col += uSunColor * smoothstep(0.9988, 0.9996, sunAmt) * 2.6 * (1.0 - uNightFactor);
+
+          // High-altitude sunlit Mediterranean cirrus/cumulus cloud wisps (lit warmly on sun-facing edges!)
+          if (dir.y > 0.025) {
+            vec2 skyUv = dir.xz / (dir.y + 0.18) * 1.45 + vec2(uTime * 0.0045, uTime * 0.0022);
+            float c1 = fbmCloud(skyUv);
+            float c2 = fbmCloud(skyUv * 2.3 - vec2(uTime * 0.006, 0.0));
+            float cloudMask = smoothstep(0.49, 0.78, c1 * 0.72 + c2 * 0.28) * smoothstep(0.025, 0.24, dir.y);
+            vec3 cloudLit = mix(vec3(0.96, 0.96, 0.98), vec3(1.0, 0.72, 0.44), uGoldenFactor);
+            vec3 cloudShade = mix(vec3(0.62, 0.70, 0.82), vec3(0.46, 0.40, 0.54), uGoldenFactor);
+            vec3 cloudCol = mix(cloudShade, cloudLit, smoothstep(0.2, 0.85, sunAmt * 0.7 + c2 * 0.45));
+            cloudCol = mix(cloudCol, vec3(0.06, 0.09, 0.16), uNightFactor * 0.92);
+            col = mix(col, cloudCol, cloudMask * (0.62 - uNightFactor * 0.35));
           }
 
-          // Crisp HDR solar glow & sun disk aligned to Barcelona solar ephemeris
-          float sunAmt = max(dot(dir, sunN), 0.0);
-          col += uSunColor * pow(sunAmt, 20.0) * 0.24 * (1.0 - uNightFactor * 0.94);
-          col += uSunColor * smoothstep(0.9988, 0.9997, sunAmt) * 2.1 * (1.0 - uNightFactor);
+          // Crisp twinkling Mediterranean night stars when dark
+          if (uNightFactor > 0.15 && dir.y > 0.06) {
+            vec2 starCell = floor(dir.xz / (dir.y + 0.35) * 145.0);
+            float s = hash21(starCell);
+            if (s > 0.9945) {
+              float tw = 0.65 + 0.35 * sin(uTime * 2.8 + s * 600.0);
+              col += vec3(0.85, 0.92, 1.0) * tw * uNightFactor * smoothstep(0.06, 0.30, dir.y) * 1.3;
+            }
+          }
 
-          // Ground horizon haze below eye horizon
+          // Soft ground horizon mist below eye level
           if (dir.y < 0.0) {
-            col = mix(col, uHorizonColor * 0.42, clamp(-dir.y * 5.0, 0.0, 1.0));
+            col = mix(col, horizon * 0.58, clamp(-dir.y * 5.0, 0.0, 1.0));
           }
           gl_FragColor = vec4(col, 1.0);
         }
@@ -402,8 +439,10 @@ export class LightingSystem {
           varying vec3 vNormalV;
           varying vec3 vViewDir;
           void main() {
-            float vertFade = smoothstep(0.0, 0.30, vUv.y) * smoothstep(1.0, 0.70, vUv.y);
-            float edgeFade = pow(abs(dot(normalize(vNormalV), normalize(vViewDir))), 1.85);
+            // Ultra-soft feathered volumetric light shaft (zero hard geometric cylinder edges!)
+            float vertFade = smoothstep(0.0, 0.40, vUv.y) * smoothstep(1.0, 0.56, vUv.y);
+            float ndv = abs(dot(normalize(vNormalV), normalize(vViewDir)));
+            float edgeFade = pow(smoothstep(0.18, 0.96, ndv), 2.8);
             gl_FragColor = vec4(uColor, vertFade * edgeFade * uOpacity);
           }
         `,
@@ -468,16 +507,16 @@ export class LightingSystem {
     this.dayFactor = dayFactor;
     this.nightFactor = nightFactor;
 
-    const topDay = new THREE.Color('#1d5ca8');
-    const topGolden = new THREE.Color('#354374');
-    const topNight = new THREE.Color('#050914');
-    const horDay = new THREE.Color('#c8dff5');
-    const horGolden = new THREE.Color('#f4924e');
-    const horNight = new THREE.Color('#10192e');
+    const topDay = new THREE.Color('#1654a8');
+    const topGolden = new THREE.Color('#254684');
+    const topNight = new THREE.Color('#040814');
+    const horDay = new THREE.Color('#b6d6f4');
+    const horGolden = new THREE.Color('#f49a52');
+    const horNight = new THREE.Color('#0e172c');
 
-    const topCol = topNight.clone().lerp(topDay, dayFactor).lerp(topGolden, goldenFactor * 0.68);
-    const horCol = horNight.clone().lerp(horDay, dayFactor).lerp(horGolden, goldenFactor * 0.88);
-    const sunCol = new THREE.Color('#fff5e0').lerp(new THREE.Color('#ff8e3c'), goldenFactor * 0.88);
+    const topCol = topNight.clone().lerp(topDay, dayFactor).lerp(topGolden, goldenFactor * 0.62);
+    const horCol = horNight.clone().lerp(horDay, dayFactor).lerp(horGolden, goldenFactor * 0.85);
+    const sunCol = new THREE.Color('#fff5df').lerp(new THREE.Color('#ff9642'), goldenFactor * 0.85);
 
     this.skyUniforms.uSunDir.value.copy(this.sunDir);
     this.skyUniforms.uTopColor.value.copy(topCol);
@@ -567,11 +606,12 @@ export class LightingSystem {
     this.apseGlassLight.intensity = this.baseApseInt;
 
     const ambientGlass = 0.24 * dayFactor + 0.12;
-    const eastGlow = ambientGlass + eastSunHit * 2.1;
-    const westGlow = ambientGlass + westSunHit * 2.3;
-    for (const m of this.trackedMats.east) m.emissiveIntensity = eastGlow;
-    for (const m of this.trackedMats.west) m.emissiveIntensity = westGlow;
-    for (const m of this.trackedMats.apse) m.emissiveIntensity = 0.55 + dayFactor * 1.05;
+    this.baseEastGlassGlow = ambientGlass + eastSunHit * 2.1;
+    this.baseWestGlassGlow = ambientGlass + westSunHit * 2.3;
+    this.baseApseGlassGlow = 0.55 + dayFactor * 1.05;
+    for (const m of this.trackedMats.east) m.emissiveIntensity = this.baseEastGlassGlow;
+    for (const m of this.trackedMats.west) m.emissiveIntensity = this.baseWestGlassGlow;
+    for (const m of this.trackedMats.apse) m.emissiveIntensity = this.baseApseGlassGlow;
 
     // Realistic stone basilica Chiaroscuro: restrained ambient fill so stained glass & candles define the space!
     this.baseInteriorInt = THREE.MathUtils.lerp(13, 28, nightFactor);
@@ -610,6 +650,9 @@ export class LightingSystem {
   private baseApseInt = 0;
   private baseInteriorInt = 16;
   private baseNightInt = 0;
+  private baseEastGlassGlow = 1.2;
+  private baseWestGlassGlow = 1.2;
+  private baseApseGlassGlow = 1.0;
 
   public updateZoneCulling(cameraPos: THREE.Vector3, indoorFactor: number): void {
     // CRITICAL ANTI-STUTTER FIX:
@@ -623,6 +666,24 @@ export class LightingSystem {
       cameraPos.z > -50 &&
       cameraPos.z < 68;
     const needNightFloods = this.nightFactor > 0.04 && indoorFactor < 0.92;
+
+    // REALISTIC STAINED GLASS: From OUTSIDE in daylight, stained glass is dark reflective leaded cathedral glass
+    // (NOT glowing RGB LED billboards!). From INSIDE or AT NIGHT, it glows richly with transmitted jewel light!
+    const glassTransmittance = Math.max(indoorFactor, THREE.MathUtils.smoothstep(this.nightFactor, 0.25, 0.85) * 0.72);
+    const glassScale = THREE.MathUtils.lerp(0.02, 1.0, glassTransmittance);
+    const diffuseShade = THREE.MathUtils.lerp(0.24, 1.0, glassTransmittance);
+    for (const m of this.trackedMats.east) {
+      m.emissiveIntensity = this.baseEastGlassGlow * glassScale;
+      m.color.setScalar(diffuseShade);
+    }
+    for (const m of this.trackedMats.west) {
+      m.emissiveIntensity = this.baseWestGlassGlow * glassScale;
+      m.color.setScalar(diffuseShade);
+    }
+    for (const m of this.trackedMats.apse) {
+      m.emissiveIntensity = this.baseApseGlassGlow * glassScale;
+      m.color.setScalar(diffuseShade);
+    }
 
     // Physical outdoor-sky occlusion inside stone cathedral walls:
     // Dramatically reduce outdoor sky IBL & hemisphere fill indoors so stone vaults have real depth & contrast!

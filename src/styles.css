@@ -137,48 +137,61 @@ body,
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
 
-/* Top Bar */
+/* Top Bar — strict single-row AAA layout (zero wrapping or overlapping at 1280x800!) */
 #hud-top {
-  top: 14px;
-  left: 14px;
-  right: 14px;
+  top: 12px;
+  left: 12px;
+  right: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 9px 14px;
+  gap: 10px;
+  padding: 7px 12px;
+  flex-wrap: nowrap;
 }
 
 .hud-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .brand-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   color: var(--accent-gold);
+  white-space: nowrap;
 }
 
 .zone-badge {
-  font-size: 12px;
-  padding: 3px 10px;
+  font-size: 11px;
+  padding: 3px 9px;
   border-radius: 99px;
   background: rgba(217, 174, 103, 0.14);
   color: var(--text-main);
   border: 1px solid rgba(217, 174, 103, 0.25);
   white-space: nowrap;
+  max-width: 215px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hud-compass-wrap {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#altitude-readout {
+  white-space: nowrap;
 }
 
 #compass-dir {
@@ -261,18 +274,20 @@ body,
 .hud-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 4px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 
 .hud-btn {
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-main);
-  padding: 6px 11px;
-  border-radius: 8px;
-  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 11px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
@@ -398,18 +413,34 @@ input[type='range'] {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Bottom-Center: Teleport Bar */
+/* Bottom-Center: Compact Single-Row Scrollable Teleport Dock (clean margins between left & right cards!) */
 #hud-teleports {
   left: 50%;
-  bottom: 14px;
+  bottom: 12px;
   transform: translateX(-50%);
-  max-width: calc(100vw - 550px);
-  padding: 7px 10px;
+  max-width: calc(100vw - 590px);
+  padding: 5px 8px;
   display: flex;
   align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-  justify-content: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+#hud-teleports::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keep controls banner safely positioned right above bottom teleport bar (NEVER colliding with top bar!) */
+#controls-banner {
+  top: auto !important;
+  bottom: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  font-size: 10.5px;
+  opacity: 0.78;
 }
 
 .tp-btn {

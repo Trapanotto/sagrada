@@ -46,8 +46,13 @@ def reset_scene() -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def _load_image(filename: str, colorspace: str = "sRGB") -> bpy.types.Image | None:
-    # Prefer authentic CC0 Poly Haven photoscan textures (.jpg/.png in public/textures/cc0/) when available!
+def _load_image(
+    filename: str,
+    colorspace: str = "sRGB",
+    target_mean_rgb: tuple[float, float, float] | None = None,
+    cache_tag: str = "",
+) -> bpy.types.Image | None:
+    """Load texture (preferring real CC0 photoscans) and optionally bake Catalan color calibration into pixels so glTF keeps it!"""
     stem = os.path.splitext(filename)[0]
     candidates = [
         os.path.join(CC0_DIR, stem + ".jpg"),
@@ -58,6 +63,36 @@ def _load_image(filename: str, colorspace: str = "sRGB") -> bpy.types.Image | No
     path = next((p for p in candidates if os.path.exists(p)), None)
     if not path:
         return None
+
+    if target_mean_rgb is not None and colorspace == "sRGB":
+        import numpy as np
+
+        cal_name = f"_cal_{cache_tag or stem}.png"
+        cal_path = os.path.join(SRC_TEX_DIR, cal_name)
+        existing = bpy.data.images.get(cal_name)
+        if existing is not None:
+            return existing
+        # Bake authentic Catalan stone / foliage color calibration directly into pixel data
+        # (fixes Blender glTF exporter dropping chained ShaderNodeMix tint nodes!)
+        src_img = bpy.data.images.load(path, check_existing=True)
+        w, h = src_img.size[0], src_img.size[1]
+        arr = np.array(src_img.pixels[:], dtype=np.float32).reshape((h, w, 4))
+        rgb = arr[..., :3]
+        # Preserve 100% of photoscan micro-contrast while aligning mean hue & luminance smoothly
+        cur_mean = np.maximum(rgb.mean(axis=(0, 1)), 1e-4)
+        target = np.array(target_mean_rgb, dtype=np.float32)
+        ratio = target / cur_mean
+        # Gentle blend keeps authentic photoscan texture grain while unifying Catalan stone palette
+        cal_rgb = np.clip(rgb * ratio[None, None, :], 0.02, 0.96)
+        arr[..., :3] = cal_rgb
+        cal_img = bpy.data.images.new(cal_name, width=w, height=h, alpha=False)
+        cal_img.colorspace_settings.name = "sRGB"
+        cal_img.pixels.foreach_set(arr.ravel())
+        cal_img.filepath_raw = cal_path
+        cal_img.file_format = "PNG"
+        cal_img.save()
+        return cal_img
+
     cache_key = os.path.basename(path)
     existing = bpy.data.images.get(cache_key)
     if existing is not None:
@@ -82,9 +117,8 @@ def make_pbr_material(
     alpha: float = 1.0,
     alpha_tex: bool = False,
     coat_weight: float = 0.0,
-    coat_roughness: float = 0.15,
-    tint_color: tuple[float, float, float, float] | None = None,
-    tint_factor: float = 0.0,
+    coat_roughness: float = 0.25,
+    target_mean_rgb: tuple[float, float, float] | None = None,
     uv_scale: float = 1.0,
     double_sided: bool = False,
 ) -> bpy.types.Material:
@@ -126,7 +160,7 @@ def make_pbr_material(
     links.new(tex_coord.outputs["UV"], mapping.inputs["Vector"])
 
     if albedo_tex:
-        img = _load_image(albedo_tex, "sRGB")
+        img = _load_image(albedo_tex, "sRGB", target_mean_rgb=target_mean_rgb, cache_tag=name.lower())
         if img:
             tex = nodes.new("ShaderNodeTexImage")
             tex.image = img
@@ -136,18 +170,7 @@ def make_pbr_material(
             if alpha_tex:
                 links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
 
-            # Optional warm architectural tint (aligns real CC0 stone photoscans to Gaudí's exact Catalan palette)
-            if tint_color is not None and tint_factor > 0.0:
-                mix_tint = nodes.new("ShaderNodeMix")
-                mix_tint.data_type = "RGBA"
-                mix_tint.blend_type = "MULTIPLY"
-                mix_tint.inputs["Factor"].default_value = tint_factor
-                mix_tint.inputs[7].default_value = tint_color
-                mix_tint.location = (-100, 290)
-                links.new(color_out, mix_tint.inputs[6])
-                color_out = mix_tint.outputs[2]
-
-            # Multiply baked geometric BVH Ambient Occlusion (COLOR_0) into Base Color for glTF export!
+            # Single clean Multiply with baked geometric BVH Ambient Occlusion (COLOR_0) -> 100% glTF preserved!
             if emission_strength == 0.0 and not alpha_tex:
                 vcol = nodes.new("ShaderNodeVertexColor")
                 vcol.layer_name = "AO_Bake"
@@ -192,16 +215,16 @@ def make_pbr_material(
 
 
 def get_materials() -> dict[str, bpy.types.Material]:
-    """Return the complete shared architectural PBR material library."""
+    """Return the complete shared architectural PBR material library (unified Catalan stone palette + micro-normals!)."""
     return {
+        # Unified Montjuïc Catalan Sandstone Palette (fixes dark charcoal towers & abrupt stone seams!)
         "sandstone_warm": make_pbr_material(
             "Mat_SandstoneWarm",
             albedo_tex="sandstone_warm_albedo.png",
             normal_tex="sandstone_warm_normal.png",
             rough_tex="sandstone_warm_roughness.png",
-            normal_strength=1.05,
-            tint_color=(1.0, 0.93, 0.80, 1.0),
-            tint_factor=0.32,
+            normal_strength=1.10,
+            target_mean_rgb=(0.68, 0.58, 0.45),
         ),
         "nativity_stone": make_pbr_material(
             "Mat_NativityStone",
@@ -209,24 +232,23 @@ def get_materials() -> dict[str, bpy.types.Material]:
             normal_tex="nativity_stone_normal.png",
             rough_tex="nativity_stone_roughness.png",
             normal_strength=1.35,
-            tint_color=(0.92, 0.80, 0.62, 1.0),
-            tint_factor=0.45,
+            target_mean_rgb=(0.59, 0.49, 0.37),
         ),
         "passion_stone": make_pbr_material(
             "Mat_PassionStone",
             albedo_tex="passion_stone_albedo.png",
             normal_tex="passion_stone_normal.png",
             rough_tex="passion_stone_roughness.png",
-            normal_strength=0.95,
-            tint_color=(0.96, 0.95, 0.92, 1.0),
-            tint_factor=0.20,
+            normal_strength=1.00,
+            target_mean_rgb=(0.73, 0.68, 0.60),
         ),
         "vault_stone": make_pbr_material(
             "Mat_VaultStone",
             albedo_tex="vault_stone_albedo.png",
             normal_tex="vault_stone_normal.png",
             rough_tex="vault_stone_roughness.png",
-            normal_strength=0.65,
+            normal_strength=0.70,
+            target_mean_rgb=(0.76, 0.70, 0.60),
             double_sided=True,
         ),
         "crypt_stone": make_pbr_material(
@@ -235,45 +257,45 @@ def get_materials() -> dict[str, bpy.types.Material]:
             normal_tex="crypt_stone_normal.png",
             rough_tex="crypt_stone_roughness.png",
             normal_strength=1.15,
-            tint_color=(0.86, 0.79, 0.70, 1.0),
-            tint_factor=0.35,
+            target_mean_rgb=(0.56, 0.49, 0.40),
             double_sided=True,
         ),
+        # Honed Mineral Structural Columns (natural satin stone polish — ZERO lacquered plastic sheen!)
         "porphyry_red": make_pbr_material(
             "Mat_PorphyryRed",
             albedo_tex="porphyry_red_albedo.png",
             normal_tex="porphyry_red_normal.png",
             rough_tex="porphyry_red_roughness.png",
-            normal_strength=0.5,
-            coat_weight=0.72,
-            coat_roughness=0.10,
+            normal_strength=0.65,
+            coat_weight=0.18,
+            coat_roughness=0.34,
         ),
         "basalt_dark": make_pbr_material(
             "Mat_BasaltDark",
             albedo_tex="basalt_dark_albedo.png",
             normal_tex="basalt_dark_normal.png",
             rough_tex="basalt_dark_roughness.png",
-            normal_strength=0.55,
-            coat_weight=0.40,
-            coat_roughness=0.18,
+            normal_strength=0.70,
+            coat_weight=0.10,
+            coat_roughness=0.42,
         ),
         "granite_grey": make_pbr_material(
             "Mat_GraniteGrey",
             albedo_tex="granite_grey_albedo.png",
             normal_tex="granite_grey_normal.png",
             rough_tex="granite_grey_roughness.png",
-            normal_strength=0.6,
-            coat_weight=0.32,
-            coat_roughness=0.22,
+            normal_strength=0.72,
+            coat_weight=0.08,
+            coat_roughness=0.45,
         ),
         "floor_marble": make_pbr_material(
             "Mat_FloorMarble",
             albedo_tex="floor_marble_albedo.png",
             normal_tex="floor_marble_normal.png",
             rough_tex="floor_marble_roughness.png",
-            normal_strength=0.45,
-            coat_weight=0.82,
-            coat_roughness=0.12,
+            normal_strength=0.50,
+            coat_weight=0.34,
+            coat_roughness=0.26,
         ),
         "trencadis": make_pbr_material(
             "Mat_Trencadis",
@@ -281,14 +303,17 @@ def get_materials() -> dict[str, bpy.types.Material]:
             normal_tex="trencadis_normal.png",
             rough_tex="trencadis_roughness.png",
             normal_strength=1.0,
-            coat_weight=0.90,
-            coat_roughness=0.07,
+            coat_weight=0.65,
+            coat_roughness=0.12,
         ),
         "gold_accent": make_pbr_material(
             "Mat_GoldAccent",
-            base_color=(0.88, 0.69, 0.24, 1.0),
-            roughness=0.22,
+            base_color=(0.86, 0.67, 0.25, 1.0),
+            normal_tex="metal_micro_normal.png",
+            rough_tex="metal_micro_roughness.png",
+            roughness=0.28,
             metallic=0.88,
+            normal_strength=0.45,
         ),
         "bronze_door": make_pbr_material(
             "Mat_BronzeDoor",
@@ -314,32 +339,36 @@ def get_materials() -> dict[str, bpy.types.Material]:
         ),
         "glass_case": make_pbr_material(
             "Mat_GlassCase",
-            base_color=(0.86, 0.94, 0.96, 1.0),
-            roughness=0.06,
-            metallic=0.1,
-            alpha=0.26,
+            base_color=(0.84, 0.92, 0.95, 1.0),
+            roughness=0.08,
+            metallic=0.12,
+            alpha=0.24,
             double_sided=True,
         ),
         "kiosk_green": make_pbr_material(
             "Mat_KioskGreen",
             base_color=(0.11, 0.24, 0.18, 1.0),
-            roughness=0.38,
-            metallic=0.55,
+            normal_tex="metal_micro_normal.png",
+            roughness=0.40,
+            metallic=0.52,
+            normal_strength=0.35,
         ),
         "road_white": make_pbr_material(
             "Mat_RoadWhite",
-            base_color=(0.90, 0.89, 0.86, 1.0),
-            roughness=0.75,
+            base_color=(0.86, 0.85, 0.82, 1.0),
+            roughness=0.82,
         ),
         "white_marble": make_pbr_material(
             "Mat_WhiteMarble",
-            base_color=(0.94, 0.92, 0.88, 1.0),
-            roughness=0.20,
+            albedo_tex="white_marble_albedo.png",
+            normal_tex="white_marble_normal.png",
+            rough_tex="white_marble_roughness.png",
+            normal_strength=0.65,
         ),
         "luminous_star": make_pbr_material(
             "Mat_LuminousStar",
             base_color=(1.0, 0.96, 0.85, 1.0),
-            roughness=0.12,
+            roughness=0.14,
             metallic=0.2,
             emission_color=(1.0, 0.94, 0.78, 1.0),
             emission_strength=2.2,
@@ -347,7 +376,7 @@ def get_materials() -> dict[str, bpy.types.Material]:
         "luminous_cross": make_pbr_material(
             "Mat_LuminousCross",
             base_color=(0.98, 0.97, 0.94, 1.0),
-            roughness=0.14,
+            roughness=0.16,
             metallic=0.25,
             emission_color=(1.0, 0.96, 0.88, 1.0),
             emission_strength=1.6,
@@ -355,28 +384,37 @@ def get_materials() -> dict[str, bpy.types.Material]:
         "stained_glass_east": make_pbr_material(
             "Mat_StainedGlassEast",
             albedo_tex="stained_glass_east.png",
-            roughness=0.12,
-            emission_strength=1.35,
+            normal_tex="stained_glass_normal.png",
+            roughness=0.14,
+            normal_strength=0.85,
+            emission_strength=1.25,
             double_sided=True,
         ),
         "stained_glass_west": make_pbr_material(
             "Mat_StainedGlassWest",
             albedo_tex="stained_glass_west.png",
-            roughness=0.12,
-            emission_strength=1.35,
+            normal_tex="stained_glass_normal.png",
+            roughness=0.14,
+            normal_strength=0.85,
+            emission_strength=1.25,
             double_sided=True,
         ),
         "stained_glass_apse": make_pbr_material(
             "Mat_StainedGlassApse",
             albedo_tex="stained_glass_apse.png",
-            roughness=0.12,
-            emission_strength=1.25,
+            normal_tex="stained_glass_normal.png",
+            roughness=0.14,
+            normal_strength=0.85,
+            emission_strength=1.15,
             double_sided=True,
         ),
         "cypress_green": make_pbr_material(
             "Mat_CypressGreen",
-            base_color=(0.14, 0.34, 0.18, 1.0),
-            roughness=0.72,
+            albedo_tex="foliage_canopy_albedo.png",
+            normal_tex="foliage_canopy_normal.png",
+            rough_tex="foliage_canopy_roughness.png",
+            normal_strength=1.30,
+            target_mean_rgb=(0.14, 0.27, 0.14),
         ),
         "foliage_park": make_pbr_material(
             "Mat_FoliagePark",
@@ -384,6 +422,7 @@ def get_materials() -> dict[str, bpy.types.Material]:
             normal_tex="foliage_canopy_normal.png",
             rough_tex="foliage_canopy_roughness.png",
             normal_strength=1.25,
+            target_mean_rgb=(0.20, 0.34, 0.15),
         ),
         "foliage_cypress": make_pbr_material(
             "Mat_FoliageCypress",
@@ -391,8 +430,7 @@ def get_materials() -> dict[str, bpy.types.Material]:
             normal_tex="foliage_canopy_normal.png",
             rough_tex="foliage_canopy_roughness.png",
             normal_strength=1.35,
-            tint_color=(0.55, 0.72, 0.56, 1.0),
-            tint_factor=0.65,
+            target_mean_rgb=(0.12, 0.23, 0.13),
         ),
         "tree_bark": make_pbr_material(
             "Mat_TreeBark",
@@ -427,24 +465,53 @@ def get_materials() -> dict[str, bpy.types.Material]:
             albedo_tex="eixample_facade_albedo.png",
             normal_tex="eixample_facade_normal.png",
             rough_tex="eixample_facade_roughness.png",
-            normal_strength=0.8,
+            normal_strength=0.85,
+        ),
+        "eixample_facade_terra": make_pbr_material(
+            "Mat_EixampleFacadeTerra",
+            albedo_tex="eixample_terracotta_albedo.png",
+            normal_tex="eixample_terracotta_normal.png",
+            rough_tex="eixample_terracotta_roughness.png",
+            normal_strength=0.85,
+        ),
+        "eixample_facade_cream": make_pbr_material(
+            "Mat_EixampleFacadeCream",
+            albedo_tex="eixample_cream_albedo.png",
+            normal_tex="eixample_cream_normal.png",
+            rough_tex="eixample_cream_roughness.png",
+            normal_strength=0.85,
         ),
         "eixample_terracotta": make_pbr_material(
             "Mat_EixampleTerracotta",
-            base_color=(0.73, 0.50, 0.36, 1.0),
-            roughness=0.78,
+            albedo_tex="terracotta_albedo.png",
+            normal_tex="terracotta_normal.png",
+            rough_tex="terracotta_roughness.png",
+            normal_strength=1.10,
+        ),
+        "horizon_hills": make_pbr_material(
+            "Mat_HorizonHills",
+            base_color=(0.30, 0.36, 0.31, 1.0),
+            roughness=0.95,
+        ),
+        "mediterranean_sea": make_pbr_material(
+            "Mat_MediterraneanSea",
+            base_color=(0.07, 0.25, 0.42, 1.0),
+            roughness=0.22,
+            metallic=0.05,
         ),
         "iron_dark": make_pbr_material(
             "Mat_IronDark",
             base_color=(0.13, 0.15, 0.16, 1.0),
-            roughness=0.45,
-            metallic=0.75,
+            normal_tex="metal_micro_normal.png",
+            roughness=0.44,
+            metallic=0.72,
+            normal_strength=0.45,
         ),
         "candle_glow": make_pbr_material(
             "Mat_CandleGlow",
             base_color=(1.0, 0.85, 0.45, 1.0),
             emission_color=(1.0, 0.72, 0.25, 1.0),
-            emission_strength=4.0,
+            emission_strength=3.6,
             roughness=0.3,
         ),
     }

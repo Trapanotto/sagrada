@@ -106,8 +106,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
     label: 'Glas-Panorama-Aufzug (Turm Jesu Christi)',
     shortLabel: 'Aufzug [L]',
     level: 'ground',
-    position: [0.0, 2.95, 3.8],
-    lookAt: [0.0, 12.0, 0.0],
+    position: [0.0, 2.95, 6.2],
+    lookAt: [0.0, 3.35, 0.0],
     flyMode: false,
   },
   {
@@ -115,8 +115,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
     label: 'Turm-Brücke Ost (65 m)',
     shortLabel: 'Turm-Brücke',
     level: 'towers',
-    position: [31.5, 66.75, 0],
-    lookAt: [95, 14, 0],
+    position: [31.5, 66.85, 0.0],
+    lookAt: [95, 22, 0],
     flyMode: false,
   },
   {
@@ -124,8 +124,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
     label: 'Jesus-Turm Aussicht (136 m)',
     shortLabel: 'Jesus-Turm',
     level: 'towers',
-    position: [4.5, 137.75, 2.8],
-    lookAt: [0, 130, -22.5],
+    position: [3.6, 137.9, -3.6],
+    lookAt: [0, 122, -48],
     flyMode: false,
   },
   {

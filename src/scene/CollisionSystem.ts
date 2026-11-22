@@ -29,6 +29,42 @@ const EXTERIOR_OBSTACLES: BoxObstacle[] = [
   { minX: -214, maxX: -142, minZ: -144, maxZ: 144, maxY: 25 },
 ];
 
+// Ground-level facade wall piers leaving wide open walkthrough portals (Nativity, Passion & Glory!)
+const FACADE_WALL_PIERS: BoxObstacle[] = [
+  // East Nativity Facade piers (portals open at Z = -9.2, 0, +9.2)
+  { minX: 29.4, maxX: 33.6, minZ: -16.0, maxZ: -12.2, maxY: 10 },
+  { minX: 29.4, maxX: 33.6, minZ: -6.4, maxZ: -2.9, maxY: 10 },
+  { minX: 29.4, maxX: 33.6, minZ: 2.9, maxZ: 6.4, maxY: 10 },
+  { minX: 29.4, maxX: 33.6, minZ: 12.2, maxZ: 16.0, maxY: 10 },
+  // West Passion Facade piers (portals open at Z = -9.2, 0, +9.2)
+  { minX: -33.2, maxX: -29.8, minZ: -16.0, maxZ: -12.0, maxY: 10 },
+  { minX: -33.2, maxX: -29.8, minZ: -7.2, maxZ: -3.0, maxY: 10 },
+  { minX: -33.2, maxX: -29.8, minZ: 3.0, maxZ: 7.2, maxY: 10 },
+  { minX: -33.2, maxX: -29.8, minZ: 12.0, maxZ: 16.0, maxY: 10 },
+  // South Glory Facade piers (portals open at X = -9.2, 0, +9.2)
+  { minX: -22.5, maxX: -12.4, minZ: 47.4, maxZ: 51.6, maxY: 10 },
+  { minX: -6.4, maxX: -3.2, minZ: 47.4, maxZ: 51.6, maxY: 10 },
+  { minX: 3.2, maxX: 6.4, minZ: 47.4, maxZ: 51.6, maxY: 10 },
+  { minX: 12.4, maxX: 22.5, minZ: 47.4, maxZ: 51.6, maxY: 10 },
+];
+
+// Structural columns (smooth circular push-out so player walks realistically AROUND columns instead of through them!)
+const INTERIOR_COLUMNS: Array<[number, number, number]> = [
+  // 4 giant crossing porphyry columns (±7.5, ±7.5)
+  [-7.5, -7.5, 1.38], [7.5, -7.5, 1.38], [-7.5, 7.5, 1.38], [7.5, 7.5, 1.38],
+  // 10 central nave basalt columns (±7.5, Z = 15..45)
+  [-7.5, 15.0, 1.05], [7.5, 15.0, 1.05], [-7.5, 22.5, 1.05], [7.5, 22.5, 1.05],
+  [-7.5, 30.0, 1.05], [7.5, 30.0, 1.05], [-7.5, 37.5, 1.05], [7.5, 37.5, 1.05],
+  [-7.5, 45.0, 1.05], [7.5, 45.0, 1.05],
+  // Side aisle granite columns (±15.0, Z = 15..45)
+  [-15.0, 15.0, 0.88], [15.0, 15.0, 0.88], [-15.0, 22.5, 0.88], [15.0, 22.5, 0.88],
+  [-15.0, 30.0, 0.88], [15.0, 30.0, 0.88], [-15.0, 37.5, 0.88], [15.0, 37.5, 0.88],
+  [-15.0, 45.0, 0.88], [15.0, 45.0, 0.88],
+  // Transept granite columns (±15.0, ±7.5) and (±22.5, ±7.5)
+  [-15.0, -7.5, 0.88], [15.0, -7.5, 0.88], [-15.0, 7.5, 0.88], [15.0, 7.5, 0.88],
+  [-22.5, -7.5, 0.88], [22.5, -7.5, 0.88], [-22.5, 7.5, 0.88], [22.5, 7.5, 0.88],
+];
+
 interface WalkBridge {
   x0: number;
   y0: number;
@@ -143,18 +179,35 @@ export class CollisionSystem {
     const maxStepY = feetY + STEP_UP_MAX;
 
     // Only collide horizontally with Eixample apartment blocks when below their 25m rooftop!
+    const pushOutBox = (obs: BoxObstacle) => {
+      if (cx > obs.minX && cx < obs.maxX && cz > obs.minZ && cz < obs.maxZ) {
+        const dL = Math.abs(cx - obs.minX);
+        const dR = Math.abs(obs.maxX - cx);
+        const dT = Math.abs(cz - obs.minZ);
+        const dB = Math.abs(obs.maxZ - cz);
+        const m = Math.min(dL, dR, dT, dB);
+        if (m === dL) cx = obs.minX;
+        else if (m === dR) cx = obs.maxX;
+        else if (m === dT) cz = obs.minZ;
+        else cz = obs.maxZ;
+      }
+    };
     if (feetY < 24.0) {
-      for (const obs of EXTERIOR_OBSTACLES) {
-        if (cx > obs.minX && cx < obs.maxX && cz > obs.minZ && cz < obs.maxZ) {
-          const dL = Math.abs(cx - obs.minX);
-          const dR = Math.abs(obs.maxX - cx);
-          const dT = Math.abs(cz - obs.minZ);
-          const dB = Math.abs(obs.maxZ - cz);
-          const m = Math.min(dL, dR, dT, dB);
-          if (m === dL) cx = obs.minX;
-          else if (m === dR) cx = obs.maxX;
-          else if (m === dT) cz = obs.minZ;
-          else cz = obs.maxZ;
+      for (const obs of EXTERIOR_OBSTACLES) pushOutBox(obs);
+    }
+    // Solid Facade Wall Piers on ground level (open portals remain 100% freely walkable!)
+    if (feetY >= -0.5 && feetY < 9.5) {
+      for (const pier of FACADE_WALL_PIERS) pushOutBox(pier);
+    }
+    // Solid Interior Structural Columns (smooth circular push-out — never clip through porphyry/basalt columns!)
+    if (feetY >= 0.0 && feetY < 22.0) {
+      for (const [colX, colZ, colR] of INTERIOR_COLUMNS) {
+        const dx = cx - colX;
+        const dz = cz - colZ;
+        const dist = Math.hypot(dx, dz);
+        if (dist < colR && dist > 1e-4) {
+          cx = colX + (dx / dist) * colR;
+          cz = colZ + (dz / dist) * colR;
         }
       }
     }

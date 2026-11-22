@@ -310,11 +310,12 @@ def generate_trencadis_mosaic(size: int = 1024) -> None:
 
 
 def generate_stained_glass(name: str, stops: list[tuple[float, tuple[float, float, float]]], size: int = 1024, seed: int = 400) -> None:
-    """Rich 1024px Joan Vila-Grau stained glass with leaded geometric ellipses, rose medallions & crystal panes."""
+    """Authentic 1024px Joan Vila-Grau organic irregular shard stained-glass mosaic + leaded-glass normal map."""
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[0:size, 0:size] / float(size)
     t = 1.0 - yy
 
+    # Smooth base vertical color progression (Gaudí's chromatic ascent from deep earth/sea tones to bright heaven!)
     rgb = np.zeros((size, size, 3), dtype=np.float32)
     for i in range(len(stops) - 1):
         t0, c0 = stops[i]
@@ -324,40 +325,61 @@ def generate_stained_glass(name: str, stops: list[tuple[float, tuple[float, floa
         for ch in range(3):
             rgb[..., ch] = np.where(mask, c0[ch] * (1.0 - f) + c1[ch] * f, rgb[..., ch])
 
-    # Fine faceted crystal glass panes with jewel-like color shifts
-    rows, cols = 28, 14
-    r_idx = np.floor(yy * rows).astype(np.int32) % rows
-    c_idx = np.floor(xx * cols).astype(np.int32) % cols
-    jitter = rng.uniform(-0.15, 0.16, size=(rows, cols, 3)).astype(np.float32)
-    rgb = np.clip(rgb + jitter[r_idx, c_idx], 0.04, 1.0)
+    # Organic Joan Vila-Grau irregular faceted glass shards via fast jittered grid Voronoi (zero repetitive bullseyes!)
+    gx_n, gy_n = 12, 24
+    pts_x = (np.arange(gx_n)[None, :] + rng.uniform(0.18, 0.82, size=(gy_n, gx_n))) / gx_n
+    pts_y = (np.arange(gy_n)[:, None] + rng.uniform(0.18, 0.82, size=(gy_n, gx_n))) / gy_n
+    cell_jitter = rng.uniform(-0.18, 0.20, size=(gy_n, gx_n, 3)).astype(np.float32)
+    cell_lum = rng.uniform(0.76, 1.24, size=(gy_n, gx_n)).astype(np.float32)
 
-    # Diagonal crystal diamond facets inside panes
-    diag = np.abs(((xx * cols + yy * rows) % 1.0) - 0.5)
-    rgb = np.clip(rgb * (0.90 + 0.22 * diag[..., None]), 0.04, 1.0)
+    cx_idx = np.floor(xx * gx_n).astype(np.int32)
+    cy_idx = np.floor(yy * gy_n).astype(np.int32)
+    d1 = np.full((size, size), 1e9, dtype=np.float32)
+    d2 = np.full((size, size), 1e9, dtype=np.float32)
+    best_gx = np.zeros((size, size), dtype=np.int32)
+    best_gy = np.zeros((size, size), dtype=np.int32)
 
-    # Lead cames + Gaudí elliptical stone-like tracery medallions!
-    fy = (yy * rows) - np.floor(yy * rows)
-    fx = (xx * cols) - np.floor(xx * cols)
-    lead = ((fy < 0.055) | (fy > 0.945) | (fx < 0.055) | (fx > 0.945)).astype(np.float32)
+    for oy in (-1, 0, 1):
+        for ox in (-1, 0, 1):
+            nx = (cx_idx + ox) % gx_n
+            ny = (cy_idx + oy) % gy_n
+            px = pts_x[ny, nx]
+            py = pts_y[ny, nx]
+            dx = ((xx - px + 0.5) % 1.0) - 0.5
+            dy = ((yy - py + 0.5) % 1.0) - 0.5
+            # Slightly taller vertical shards like authentic Vila-Grau glasswork
+            dist = np.sqrt((dx * 1.15) ** 2 + (dy * 0.88) ** 2)
+            better = dist < d1
+            d2 = np.where(better, d1, np.minimum(d2, dist))
+            d1 = np.where(better, dist, d1)
+            best_gx = np.where(better, nx, best_gx)
+            best_gy = np.where(better, ny, best_gy)
+
+    # Crisp thin dark lead cames separating organic polygonal shards
+    shard_edge = np.clip((d2 - d1) / 0.0052, 0.0, 1.0)
+    rgb = np.clip(rgb * cell_lum[best_gy, best_gx, None] + cell_jitter[best_gy, best_gx], 0.03, 1.0)
+
+    # Subtle hand-blown glass internal texture + slender Gothic vertical mullions
+    n_glass = tileable_fbm(size, octaves=3, base_freq=18, seed=seed + 17)
+    rgb = np.clip(rgb * (0.90 + 0.20 * n_glass[..., None]), 0.03, 1.0)
+
     mullion = (
-        (np.abs(xx - 0.333) < 0.016)
-        | (np.abs(xx - 0.667) < 0.016)
-        | (xx < 0.022)
-        | (xx > 0.978)
+        (np.abs(xx - 0.333) < 0.015)
+        | (np.abs(xx - 0.667) < 0.015)
+        | (xx < 0.020)
+        | (xx > 0.980)
+        | (np.abs((yy * 4.0) % 1.0 - 0.5) > 0.486)
     ).astype(np.float32)
 
-    # Iconic stacked circular/elliptical rose medallions down the center of each lancet
-    rose = np.zeros((size, size), dtype=np.float32)
-    for cy_r in (0.18, 0.42, 0.66, 0.86):
-        dx = (xx - 0.5) * 1.15
-        dy = (yy - cy_r) * 2.1
-        rad = np.sqrt(dx * dx + dy * dy)
-        ring = (np.abs(rad - 0.24) < 0.024) | (np.abs(rad - 0.11) < 0.016)
-        rose = np.maximum(rose, ring.astype(np.float32))
-
-    frame = np.maximum(np.maximum(lead * 0.68, mullion * 0.94), rose * 0.90)
-    albedo = rgb * (1.0 - frame[..., None]) + np.array([0.07, 0.06, 0.06], dtype=np.float32) * frame[..., None]
+    lead_mask = np.maximum((1.0 - shard_edge) * 0.85, mullion * 0.95)
+    albedo = rgb * (1.0 - lead_mask[..., None]) + np.array([0.05, 0.045, 0.045], dtype=np.float32) * lead_mask[..., None]
     save_rgb_png(f"{name}.png", albedo, colorspace="sRGB")
+
+    # Save shared leaded stained-glass normal map once so glass catches rich architectural specular glints!
+    if name == "stained_glass_east":
+        glass_h = np.clip(shard_edge * 0.72 + n_glass * 0.28 - mullion * 0.6, 0.0, 1.0)
+        normal = height_to_normal(glass_h, strength=2.4)
+        save_rgb_png("stained_glass_normal.png", normal, colorspace="Non-Color")
 
 
 def generate_panot_barcelona(size: int = 512) -> None:
@@ -386,8 +408,14 @@ def generate_panot_barcelona(size: int = 512) -> None:
     save_gray_png("panot_roughness.png", roughness)
 
 
-def generate_eixample_facade(size: int = 512) -> None:
-    n = tileable_fbm(size, octaves=4, base_freq=8, seed=601)
+def generate_eixample_facade(
+    prefix: str = "eixample_facade",
+    stucco_rgb: tuple[float, float, float] = (0.82, 0.71, 0.56),
+    shutter_rgb: tuple[float, float, float] = (0.24, 0.36, 0.27),
+    seed: int = 601,
+    size: int = 512,
+) -> None:
+    n = tileable_fbm(size, octaves=4, base_freq=8, seed=seed)
     yy, xx = np.mgrid[0:size, 0:size] / float(size)
     floors = 5
     bays = 4
@@ -395,31 +423,59 @@ def generate_eixample_facade(size: int = 512) -> None:
     fx = (xx * bays) % 1.0
 
     albedo = np.zeros((size, size, 3), dtype=np.float32)
-    stucco = np.array([0.82, 0.71, 0.56], dtype=np.float32)
-    albedo[..., :] = stucco[None, None, :] * (0.90 + 0.16 * n[..., None])
+    stucco = np.array(stucco_rgb, dtype=np.float32)
+    albedo[..., :] = stucco[None, None, :] * (0.88 + 0.20 * n[..., None])
 
     cornice = ((fy < 0.09) | (fy > 0.93)).astype(np.float32)
-    albedo = albedo * (1.0 - cornice[..., None] * 0.14) + np.array([0.88, 0.82, 0.72]) * (cornice[..., None] * 0.14)
+    albedo = albedo * (1.0 - cornice[..., None] * 0.16) + np.array([0.90, 0.85, 0.76]) * (cornice[..., None] * 0.16)
 
     in_win = (fx > 0.28) & (fx < 0.72) & (fy > 0.18) & (fy < 0.84)
     in_shutter = (((fx > 0.16) & (fx <= 0.28)) | ((fx >= 0.72) & (fx < 0.84))) & (fy > 0.18) & (fy < 0.84)
     in_balcony = (fx > 0.12) & (fx < 0.88) & (fy > 0.68) & (fy < 0.88)
     bar = ((np.floor(fx * 28) % 2) == 0) & in_balcony
 
-    albedo[in_win] = np.array([0.14, 0.18, 0.23], dtype=np.float32)
-    albedo[in_shutter] = np.array([0.24, 0.36, 0.27], dtype=np.float32)
+    albedo[in_win] = np.array([0.11, 0.15, 0.21], dtype=np.float32)
+    albedo[in_shutter] = np.array(shutter_rgb, dtype=np.float32)
     albedo[bar] = np.array([0.11, 0.12, 0.13], dtype=np.float32)
 
     height = np.ones((size, size), dtype=np.float32) * 0.75 + cornice * 0.20
     height[in_win] = 0.20
     height[in_shutter] = 0.88
-    normal = height_to_normal(height, strength=2.6)
+    normal = height_to_normal(height, strength=2.8)
     roughness = np.full((size, size), 0.78, dtype=np.float32)
     roughness[in_win] = 0.14
 
-    save_rgb_png("eixample_facade_albedo.png", albedo, colorspace="sRGB")
-    save_rgb_png("eixample_facade_normal.png", normal, colorspace="Non-Color")
-    save_gray_png("eixample_facade_roughness.png", roughness)
+    save_rgb_png(f"{prefix}_albedo.png", albedo, colorspace="sRGB")
+    save_rgb_png(f"{prefix}_normal.png", normal, colorspace="Non-Color")
+    save_gray_png(f"{prefix}_roughness.png", roughness)
+
+
+def generate_micro_surface_maps(size: int = 512) -> None:
+    """Subtle PBR micro-normal & roughness maps for white marble, brushed gold, cast iron & terracotta."""
+    # 1. White Statuary Marble (delicate grey veining + fine honed stone normal)
+    n_v = tileable_fbm(size, octaves=5, base_freq=5, seed=901)
+    n_f = tileable_fbm(size, octaves=4, base_freq=22, seed=902)
+    veins = np.power(np.abs(np.sin(np.linspace(0, math.pi * 3, size)[:, None] + n_v * 4.8)), 0.32)
+    marble = np.array([0.92, 0.90, 0.86], dtype=np.float32)[None, None, :] * (0.86 + 0.14 * veins[..., None])
+    save_rgb_png("white_marble_albedo.png", marble, colorspace="sRGB")
+    save_rgb_png("white_marble_normal.png", height_to_normal(veins * 0.5 + n_f * 0.5, strength=1.1), colorspace="Non-Color")
+    save_gray_png("white_marble_roughness.png", np.clip(0.32 + (1.0 - veins) * 0.16, 0.18, 0.65))
+
+    # 2. Hammered / Brushed Liturgical Gold
+    n_g = tileable_fbm(size, octaves=4, base_freq=18, seed=911)
+    save_rgb_png("metal_micro_normal.png", height_to_normal(n_g, strength=1.5), colorspace="Non-Color")
+    save_gray_png("metal_micro_roughness.png", np.clip(0.24 + (n_g - 0.5) * 0.16, 0.12, 0.48))
+
+    # 3. Catalan Terracotta Roof Tiles
+    yy, xx = np.mgrid[0:size, 0:size] / float(size)
+    ridge = 0.5 + 0.5 * np.sin(xx * math.pi * 36.0)
+    step = (yy * 14.0) % 1.0
+    n_t = tileable_fbm(size, octaves=4, base_freq=10, seed=921)
+    terra_h = np.clip(ridge * 0.65 + step * 0.25 + n_t * 0.10, 0.0, 1.0)
+    terra = np.array([0.62, 0.34, 0.23], dtype=np.float32)[None, None, :] * (0.78 + 0.32 * terra_h[..., None])
+    save_rgb_png("terracotta_albedo.png", terra, colorspace="sRGB")
+    save_rgb_png("terracotta_normal.png", height_to_normal(terra_h, strength=3.2), colorspace="Non-Color")
+    save_gray_png("terracotta_roughness.png", np.clip(0.80 - ridge * 0.12 + (n_t - 0.5) * 0.10, 0.55, 0.95))
 
 
 def generate_crimson_carpet(size: int = 512) -> None:
@@ -664,7 +720,10 @@ def generate_all_textures() -> None:
     generate_marble_floor()
     generate_trencadis_mosaic()
     generate_panot_barcelona()
-    generate_eixample_facade()
+    generate_eixample_facade("eixample_facade", stucco_rgb=(0.82, 0.71, 0.56), shutter_rgb=(0.24, 0.36, 0.27), seed=601)
+    generate_eixample_facade("eixample_terracotta", stucco_rgb=(0.76, 0.53, 0.42), shutter_rgb=(0.22, 0.27, 0.24), seed=602)
+    generate_eixample_facade("eixample_cream", stucco_rgb=(0.86, 0.81, 0.72), shutter_rgb=(0.26, 0.32, 0.40), seed=603)
+    generate_micro_surface_maps()
 
     generate_stained_glass(
         "stained_glass_east",

@@ -78,6 +78,9 @@ export class SagradaScene {
     uHazeStrength: { value: 0.22 },
   };
   private eixampleNightMats: THREE.MeshStandardMaterial[] = [];
+  private internalStairMeshes: THREE.Object3D[] = [];
+  private interiorOnlyRoots: THREE.Object3D[] = [];
+  private pondFrameSkip = 0;
 
   constructor(private renderer: THREE.WebGLRenderer) {
     this.scene = new THREE.Scene();
@@ -197,14 +200,25 @@ export class SagradaScene {
     const pondGeo = new THREE.PlaneGeometry(29.0, 34.0);
     const reflector = new Reflector(pondGeo, {
       clipBias: 0.003,
-      textureWidth: 512,
-      textureHeight: 512,
+      textureWidth: 384,
+      textureHeight: 384,
       color: 0x6f90a1,
     });
     const origBeforeRender = reflector.onBeforeRender.bind(reflector);
     reflector.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
       if (scene.overrideMaterial !== null) return;
+      // Throttle reflection re-render to every 2nd frame & hide interior-only meshes (cuts reflection GPU cost by ~75%!)
+      this.pondFrameSkip = (this.pondFrameSkip + 1) % 2;
+      if (this.pondFrameSkip !== 0) return;
+      const savedVis: Array<[THREE.Object3D, boolean]> = [];
+      for (const obj of [...this.interiorOnlyRoots, ...this.internalStairMeshes, this.candles.group, this.glassCarpets.group]) {
+        savedVis.push([obj, obj.visible]);
+        obj.visible = false;
+      }
       origBeforeRender(renderer, scene, camera, geometry, material, group);
+      for (const [obj, vis] of savedVis) {
+        obj.visible = vis;
+      }
     };
     reflector.rotation.x = -Math.PI / 2;
     // Water surface sits cleanly at Y = +0.16m inside the +0.36m sculpted coping rim (completely clear above ground!)
@@ -470,6 +484,16 @@ export class SagradaScene {
       if (spec.id === 'eixample' || spec.id === 'plaza_life') {
         this.weather.registerExteriorGroundMaterials(root);
       }
+      if (spec.id === 'furnishings' || spec.id === 'cloister_crypt') {
+        this.interiorOnlyRoots.push(root);
+      }
+      if (spec.id === 'towers') {
+        root.traverse((o) => {
+          if (o.name === 'Towers_InternalStaircases' || o.name === 'Towers_InternalStairRails') {
+            this.internalStairMeshes.push(o);
+          }
+        });
+      }
     };
 
     // ── PHASE 1 (FAST START): Core exterior + interior basilica (~1-2 seconds!) ──
@@ -549,6 +573,13 @@ export class SagradaScene {
       this.frustum.intersectsBox(this.pondBox);
     this.pondReflector.visible = pondVisible;
     this.reflectorActive = pondVisible;
+
+    // Smart 55k-tri Interior Tower Staircase Culling: hide internal helical stairs when outdoors far from towers!
+    const distBasilica = Math.hypot(cameraPos.x, cameraPos.z - 8.0);
+    const showInternalStairs = indoorFactor > 0.2 || (cameraPos.y > 10.5 && distBasilica < 66.0);
+    for (const sm of this.internalStairMeshes) {
+      sm.visible = showInternalStairs;
+    }
 
     const windowGlow = THREE.MathUtils.smoothstep(this.lighting.nightFactor, 0.12, 0.85) * 1.45;
     for (const m of this.eixampleNightMats) {

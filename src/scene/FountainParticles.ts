@@ -40,7 +40,7 @@ export class FountainParticles {
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
       uniforms: this.uniforms,
       vertexShader: /* glsl */ `
         attribute vec4 aSeed;
@@ -49,23 +49,24 @@ export class FountainParticles {
         varying float vLife;
 
         void main() {
-          float t = fract(uTime * 0.62 + aSeed.x);
+          float t = fract(uTime * 0.65 + aSeed.x);
           vLife = t;
           float ang = aSeed.y;
           float vy = 5.4 * aSeed.z;
-          float g = 9.2;
-          float r = t * 2.4 * aSeed.w;
+          float g = 9.4;
+          float r = t * 2.55 * aSeed.w;
 
           vec3 p = position;
           p.x += cos(ang) * r;
           p.z += sin(ang) * r;
           p.y += vy * t - 0.5 * g * t * t;
-          // Land cleanly on the +0.18m pond water surface
-          p.y = max(p.y, 0.18);
+          p.y = max(p.y, 0.19);
 
           vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
           float dist = max(-mvPos.z, 1.0);
-          gl_PointSize = clamp((58.0 * uPixelRatio) / dist, 2.0, 14.0);
+          // Soft expanding water-mist plumes instead of harsh tiny square dots!
+          float sizeGrow = mix(0.65, 1.85, t);
+          gl_PointSize = clamp((135.0 * sizeGrow * uPixelRatio) / dist, 3.5, 28.0);
           gl_Position = projectionMatrix * mvPos;
         }
       `,
@@ -74,12 +75,12 @@ export class FountainParticles {
         varying float vLife;
 
         void main() {
-          float d = length(gl_PointCoord - vec2(0.5));
-          if (d > 0.5) discard;
-          float soft = smoothstep(0.5, 0.0, d);
-          float fade = smoothstep(0.0, 0.08, vLife) * smoothstep(1.0, 0.72, vLife);
-          vec3 col = mix(vec3(0.55, 0.72, 0.88), vec3(0.95, 0.98, 1.0), uDayFactor);
-          gl_FragColor = vec4(col, soft * fade * (0.28 + 0.45 * uDayFactor));
+          float d = length(gl_PointCoord - vec2(0.5)) * 2.0;
+          if (d > 1.0) discard;
+          float soft = pow(1.0 - d, 2.3);
+          float fade = smoothstep(0.0, 0.12, vLife) * smoothstep(1.0, 0.58, vLife);
+          vec3 col = mix(vec3(0.52, 0.68, 0.84), vec3(0.95, 0.97, 1.0), uDayFactor);
+          gl_FragColor = vec4(col, soft * fade * (0.18 + 0.34 * uDayFactor));
         }
       `,
     });

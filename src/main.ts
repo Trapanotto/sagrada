@@ -223,7 +223,7 @@ async function bootstrap(): Promise<void> {
   };
   btnMinimap.addEventListener('click', toggleMinimap);
 
-  const tierLabels = { aaa: 'Grafik: AAA', ultra: 'Grafik: Ultra (GTAO)', fast: 'Grafik: Schnell' } as const;
+  const tierLabels = { aaa: 'AAA', ultra: 'Ultra (GTAO)', fast: 'Schnell' } as const;
   btnGraphics.addEventListener('click', () => {
     const next = post.cycleTier();
     btnGraphics.textContent = tierLabels[next];
@@ -354,7 +354,7 @@ async function bootstrap(): Promise<void> {
 
   const toggleAudio = () => {
     const on = audio.toggle();
-    btnAudio.textContent = on ? 'Audio: Ein' : 'Audio: Aus';
+    btnAudio.textContent = on ? 'Audio ✓' : 'Audio';
     btnAudio.classList.toggle('active', on);
   };
   btnAudio.addEventListener('click', toggleAudio);
@@ -435,7 +435,7 @@ async function bootstrap(): Promise<void> {
   timeChipBtns.forEach((btn) => {
     btn.addEventListener('click', () => applyTime(parseFloat(btn.dataset.time!)));
   });
-  applyTime(18.1);
+  applyTime(17.55);
 
   // Weather Atmosphere Controls (Klar / Nebel / Regen)
   const weatherBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.weather-btn[data-weather]'));

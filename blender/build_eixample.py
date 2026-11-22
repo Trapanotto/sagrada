@@ -110,6 +110,40 @@ def add_chamfered_eixample_block(
                 bp_rail = mid + out_n * 1.22
                 add_box(bm_iron, (bp_rail.x, bp_rail.y, Z_STREET + bz + 0.55), (elen * 0.86, 0.08, 0.95), rot_euler=(0, 0, rot_z))
 
+    # Authentic Barcelona Eixample Rooftop Architecture (zero empty flat donut roofs!):
+    # Perimeter roof parapet walls + staggered terracotta penthouse stairwells, chimneys & rooftop pergolas!
+    z_top = Z_STREET + h + 0.05
+    seed = int(abs(cx * 3.1 + cy * 7.3)) % 100
+    for i in range(n):
+        ni = (i + 1) % n
+        p0 = Vector((outer_pts[i][0], outer_pts[i][1], z_top))
+        p1 = Vector((outer_pts[ni][0], outer_pts[ni][1], z_top))
+        edge = p1 - p0
+        elen = edge.length
+        rot_z = math.atan2(edge.y, edge.x)
+        mid = (p0 + p1) * 0.5
+        # Roof parapet coping wall along outer edge
+        add_box(bm_wall, (mid.x, mid.y, z_top + 0.52), (elen + 0.3, 0.42, 1.05), rot_euler=(0, 0, rot_z))
+
+    # Rooftop penthouse stairhead volumes, chimneys & skylights on the 4 main roof wings
+    wing_r = hw - courtyard_inset * 0.5
+    for idx_w, (wx, wy, rw, rd) in enumerate((
+        (cx, cy + wing_r, w * 0.44, courtyard_inset * 0.58),
+        (cx, cy - wing_r, w * 0.44, courtyard_inset * 0.58),
+        (cx + wing_r, cy, courtyard_inset * 0.58, d * 0.44),
+        (cx - wing_r, cy, courtyard_inset * 0.58, d * 0.44),
+    )):
+        ph_h = 2.6 + ((seed + idx_w * 13) % 3) * 0.85
+        # Staggered rooftop penthouse pavilion / elevator housing
+        add_box(bm_wall, (wx, wy, z_top + ph_h * 0.5), (rw * 0.42, rd * 0.65, ph_h))
+        add_box(bm_roof, (wx, wy, z_top + ph_h + 0.14), (rw * 0.46, rd * 0.70, 0.28))
+        # Terracotta chimney stacks & AC / solar boxes
+        off = 1.0 if (idx_w % 2 == 0) else -1.0
+        ch_x = wx + (rw * 0.32 * off if idx_w < 2 else 0.0)
+        ch_y = wy + (0.0 if idx_w < 2 else rd * 0.32 * off)
+        add_box(bm_roof, (ch_x, ch_y, z_top + 1.1), (1.8, 1.4, 2.2))
+        add_box(bm_iron, (ch_x + 2.2 * off, ch_y + 1.4, z_top + 0.55), (1.9, 1.3, 1.1))
+
 
 def _add_organic_canopy_lobe(bm: bmesh.types.BMesh, center: Vector, rx: float, ry: float, rz: float, seed: float) -> None:
     """Solid organically sculpted leafy foliage cluster (zero broken paper-thin alpha quads!)."""
@@ -212,13 +246,18 @@ def build_eixample() -> None:
     bm_panot = bmesh.new()
     bm_grass = bmesh.new()
     bm_stone = bmesh.new()
-    bm_facade = bmesh.new()
+    bm_facade_ochre = bmesh.new()
+    bm_facade_terra = bmesh.new()
+    bm_facade_cream = bmesh.new()
     bm_roof = bmesh.new()
     bm_iron = bmesh.new()
     bm_awning = bmesh.new()
+    bm_hills = bmesh.new()
+    bm_sea = bmesh.new()
+    bm_horizon_city = bmesh.new()
 
-    # ── 1. Ground Street Grid (Asphalt base at Z = -0.14m so sidewalks sit slightly elevated at Z = 0.0) ──
-    add_box(bm_asphalt, (0.0, 0.0, -0.34), (460.0, 460.0, 0.4))
+    # ── 1. Ground Street Grid (Extended Barcelona Urban Plane, Z = -0.14m) ──
+    add_box(bm_asphalt, (0.0, 0.0, -0.34), (760.0, 760.0, 0.4))
 
     # ── 2. Sagrada Família Temple Island Sidewalk (Panot Barcelona tiles, Z = 0.0) ──
     # Placed around perimeter & plazas (keeping Z above -0.15 so it doesn't interfere with Crypt at Z=-5.5)
@@ -271,18 +310,72 @@ def build_eixample() -> None:
         (-178.0, 0.0, 22.0),
         (-178.0, 108.0, 24.0),
     ]
-    for bx, by, bh in block_centers:
+    facade_buckets = [bm_facade_ochre, bm_facade_terra, bm_facade_cream]
+    for idx_b, (bx, by, bh) in enumerate(block_centers):
         add_box(bm_panot, (bx, by, -0.07), (80.0, 80.0, 0.14))
-        add_chamfered_eixample_block(bm_facade, bm_roof, bm_iron, bm_awning, bx, by, w=72.0, d=72.0, h=bh, add_street_detail=True)
+        bm_f = facade_buckets[idx_b % len(facade_buckets)]
+        add_chamfered_eixample_block(bm_f, bm_roof, bm_iron, bm_awning, bx, by, w=72.0, d=72.0, h=bh, add_street_detail=True)
+
+    # ── 5b. 360° Barcelona Distant City Massing, Collserola/Tibidabo Hills, Torre Glòries & Mediterranean Sea! ──
+    # Outer low-poly Eixample city fabric extending smoothly from r = 240m -> 380m (eliminates empty grey void!)
+    for gx in (-285.0, -190.0, -95.0, 0.0, 95.0, 190.0, 285.0):
+        for gy in (-285.0, -205.0, -110.0, 0.0, 110.0, 205.0, 285.0):
+            if abs(gx) < 215.0 and abs(gy) < 165.0:
+                continue
+            h_city = 17.0 + ((int(abs(gx * 7 + gy * 13)) % 5) * 2.4)
+            add_box(bm_horizon_city, (gx, gy, h_city * 0.5 - 0.1), (68.0, 68.0, h_city))
+            add_box(bm_roof, (gx, gy, h_city + 0.15), (66.0, 66.0, 0.35))
+
+    # Iconic Torre Glòries (bullet-shaped Barcelona skyscraper ~330m Southeast)
+    add_cylinder(bm_sea, Vector((275.0, -215.0, 0.0)), Vector((275.0, -215.0, 92.0)), 14.5, 13.8, segments=14, cap=True)
+    add_cylinder(bm_sea, Vector((275.0, -215.0, 92.0)), Vector((275.0, -215.0, 128.0)), 13.8, 3.2, segments=14, cap=True)
+
+    # Organic Sculpted Collserola & Tibidabo Rolling Mountain Ridge (smooth multi-harmonic terrain — zero volcano cones!)
+    n_ridge = 36
+    r_inner, r_outer = 370.0, 560.0
+    prev_in = None
+    prev_peak = None
+    prev_out = None
+    for i in range(n_ridge + 1):
+        # Arc spanning from SW (Montjuïc) around North (Collserola/Tibidabo) to NE
+        ang = math.radians(-145.0 + (235.0 * i / n_ridge))
+        ca, sa = math.cos(ang), math.sin(ang)
+        # Smooth organic mountain elevation profile (Tibidabo peak in NW, rolling Collserola hills, Montjuïc in SW)
+        t = i / n_ridge
+        env = math.sin(t * math.pi)
+        h_peak = (
+            38.0
+            + 52.0 * math.exp(-((t - 0.54) / 0.16) ** 2)  # Tibidabo
+            + 34.0 * math.exp(-((t - 0.14) / 0.12) ** 2)  # Montjuïc
+            + 26.0 * math.exp(-((t - 0.78) / 0.18) ** 2)  # Eastern Collserola
+            + 12.0 * math.sin(t * 21.0)
+            + 7.0 * math.cos(t * 37.0)
+        ) * (0.25 + 0.75 * env)
+        r_mid = 0.5 * (r_inner + r_outer) + 18.0 * math.sin(t * 17.0)
+        v_in = bm_hills.verts.new((r_inner * ca, r_inner * sa, -2.0))
+        v_pk = bm_hills.verts.new((r_mid * ca, r_mid * sa, max(6.0, h_peak)))
+        v_out = bm_hills.verts.new((r_outer * ca, r_outer * sa, -4.0))
+        if prev_in is not None:
+            bm_hills.faces.new((prev_in, v_in, v_pk, prev_peak))
+            bm_hills.faces.new((prev_peak, v_pk, v_out, prev_out))
+        prev_in, prev_peak, prev_out = v_in, v_pk, v_out
+
+    # Shimmering Mediterranean Sea Horizon Strip along Southeast Barcelona Coast!
+    add_box(bm_sea, (320.0, -380.0, -0.35), (860.0, 380.0, 0.3))
 
     finalize_bmesh_object(bm_asphalt, "Eixample_Streets", mats["asphalt"], smooth=False, uv_scale=0.05)
     finalize_bmesh_object(bm_panot, "Eixample_Sidewalks", mats["panot_paving"], smooth=False, uv_scale=0.35)
     finalize_bmesh_object(bm_grass, "Eixample_ParkLawns", mats["grass_park"], smooth=False, uv_scale=0.10)
     finalize_bmesh_object(bm_stone, "Eixample_PondBasin", mats["sandstone_warm"], smooth=False, uv_scale=0.25)
-    finalize_bmesh_object(bm_facade, "Eixample_Buildings", mats["eixample_facade"], smooth=False, uv_scale=0.045)
+    finalize_bmesh_object(bm_facade_ochre, "Eixample_BuildingsOchre", mats["eixample_facade"], smooth=False, uv_scale=0.045)
+    finalize_bmesh_object(bm_facade_terra, "Eixample_BuildingsTerra", mats["eixample_facade_terra"], smooth=False, uv_scale=0.045)
+    finalize_bmesh_object(bm_facade_cream, "Eixample_BuildingsCream", mats["eixample_facade_cream"], smooth=False, uv_scale=0.045)
+    finalize_bmesh_object(bm_horizon_city, "Eixample_DistantCity", mats["eixample_facade_cream"], smooth=False, uv_scale=0.04, bake_ao=False)
     finalize_bmesh_object(bm_roof, "Eixample_Roofs", mats["eixample_terracotta"], smooth=False, uv_scale=0.08)
     finalize_bmesh_object(bm_iron, "Eixample_BalconiesIron", mats["iron_dark"], smooth=False, uv_scale=0.25, bake_ao=False)
     finalize_bmesh_object(bm_awning, "Eixample_ShopAwnings", mats["carpet_crimson"], smooth=False, uv_scale=0.25, bake_ao=False)
+    finalize_bmesh_object(bm_hills, "Barcelona_HorizonHills", mats["horizon_hills"], smooth=True, uv_scale=0.015, bake_ao=False)
+    finalize_bmesh_object(bm_sea, "Barcelona_MediterraneanSea", mats["mediterranean_sea"], smooth=True, uv_scale=0.02, bake_ao=False)
 
     # ── 6. Instanced Park Trees (Plane Trees & Cypresses) + Barcelona Street Lamps ──
     m_plane_t, m_plane_l = create_tree_mesh("Tree_Plane", mats["tree_bark"], mats["foliage_park"], cypress=False)

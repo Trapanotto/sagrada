@@ -140,25 +140,36 @@ def build_nativity_facade(
             add_box(bm_bronze, (fx - 0.6, py + sy * (p_w * 0.44), Z_NAVE + 3.0), (2.2, 0.25, 6.0))
 
     # Central Sculpted Cypress Tree of Life rising above Charity Gable (Z = 38 .. 49m)
+    # Multi-tiered organically sculpted Venetian-green mosaic cypress foliage (never a smooth plastic cone!)
     tree_x = fx + 2.0
-    add_cylinder(bm_cypress, Vector((tree_x, 0.0, 38.0)), Vector((tree_x, 0.0, 48.5)), 2.1, 0.25, segments=12)
-    # Organic cypress foliage tiers & white ceramic doves perched on branches
-    for tier in range(5):
-        zt = 39.5 + tier * 1.8
-        rt = 2.0 - tier * 0.32
-        for k in range(4):
-            ang = math.pi * 0.5 * k + tier * 0.6
-            add_cylinder(
-                bm_white,
-                Vector((tree_x + rt * math.cos(ang), rt * math.sin(ang), zt)),
-                Vector((tree_x + (rt + 0.55) * math.cos(ang), (rt + 0.55) * math.sin(ang), zt + 0.35)),
-                0.22,
-                0.08,
-                segments=6,
-            )
+    for tier in range(8):
+        t = tier / 7.0
+        zt = 38.4 + t * 10.2
+        rt = 2.15 * ((1.0 - t * 0.82) ** 0.85)
+        n_lobes = 7 if tier < 5 else 5
+        for k in range(n_lobes):
+            ang = 2.0 * math.pi * k / n_lobes + tier * 0.55
+            r_off = rt * 0.42
+            lobe_r = rt * 0.55
+            ret = bmesh.ops.create_icosphere(bm_cypress, subdivisions=1, radius=1.0)
+            for v in ret["verts"]:
+                v.co.x = tree_x + r_off * math.cos(ang) + v.co.x * lobe_r * 0.85
+                v.co.y = r_off * math.sin(ang) + v.co.y * lobe_r * 0.85
+                v.co.z = zt + v.co.z * lobe_r * 1.35
+        # Sculpted white ceramic doves perched around the cypress crown
+        if tier in (1, 3, 5):
+            for k in range(3):
+                ang = 2.0 * math.pi * k / 3.0 + tier * 0.9
+                px = tree_x + (rt + 0.15) * math.cos(ang)
+                py = (rt + 0.15) * math.sin(ang)
+                ret_d = bmesh.ops.create_icosphere(bm_white, subdivisions=1, radius=0.26)
+                for v in ret_d["verts"]:
+                    v.co.x = px + v.co.x * 1.15
+                    v.co.y = py + v.co.y * 0.85
+                    v.co.z = zt + 0.1 + v.co.z * 0.72
     # Red/Gold Tau Cross at the summit of the Cypress Tree
-    add_cylinder(bm_gold, Vector((tree_x, 0.0, 48.0)), Vector((tree_x, 0.0, 51.2)), 0.28, 0.24, segments=8)
-    add_cylinder(bm_gold, Vector((tree_x, -1.4, 50.8)), Vector((tree_x, 1.4, 50.8)), 0.24, 0.24, segments=8)
+    add_cylinder(bm_gold, Vector((tree_x, 0.0, 48.0)), Vector((tree_x, 0.0, 51.4)), 0.28, 0.24, segments=8)
+    add_cylinder(bm_gold, Vector((tree_x, -1.45, 50.9)), Vector((tree_x, 1.45, 50.9)), 0.24, 0.24, segments=8)
 
 
 def build_passion_facade(
