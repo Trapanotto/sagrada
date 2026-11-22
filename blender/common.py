@@ -33,7 +33,7 @@ Z_CRYPT = -5.5
 Z_AISLE_VAULT = 31.2      # 30 m above nave floor
 Z_NAVE_VAULT = 46.2       # 45 m above nave floor
 Z_CROSSING_VAULT = 61.2   # 60 m above nave floor
-Z_APSE_VAULT = 68.0       # Rising into Mary tower base
+Z_APSE_VAULT = 74.5       # Authentic 75 m soaring Apse vault rising into Mary tower base
 
 NAVE_SOUTH_Y = -45.0      # 5 bays south of crossing (-7.5 -> -45.0)
 TRANSEPT_X = 30.0         # East/West transept span (-30 .. +30)
@@ -655,43 +655,90 @@ def add_gaudi_window_tracery(
     facing: str = "X",
     rot_z: float | None = None,
 ) -> None:
-    """True 3D Gaudí stone mullions + stacked circular/elliptical rose tracery framing a stained-glass bay."""
+    """Authentic 3-tier Gaudí Hyperboloid Window Tracery:
+    1. Lower twin pointed lancets with slender central mullion
+    2. Giant middle elliptical rose wheel with 8 radial stone spokes + inner ring
+    3. Upper triple hyperboloid circular oculi framed by a sweeping parabolic arch!
+    """
     cx, cy, cz = center
     if rot_z is not None:
         u_dir = Vector((math.cos(rot_z), math.sin(rot_z), 0.0))
-        n_dir = Vector((-math.sin(rot_z), math.cos(rot_z), 0.0))
     elif facing == "X":
         u_dir = Vector((0.0, 1.0, 0.0))
-        n_dir = Vector((1.0, 0.0, 0.0))
     else:
         u_dir = Vector((1.0, 0.0, 0.0))
-        n_dir = Vector((0.0, 1.0, 0.0))
 
     c_vec = Vector((cx, cy, cz))
     half_h = height * 0.48
-    # Two slender vertical stone mullions dividing the lancet into 3 sub-lights
-    for frac in (-0.17, 0.17):
-        base = c_vec + u_dir * (width * frac)
-        add_cylinder(bm, base - Vector((0, 0, half_h)), base + Vector((0, 0, half_h)), 0.14, 0.14, segments=6)
+    half_w = width * 0.46
 
-    # Stacked 3D circular/elliptical rose rings (Gaudí's hyperboloid window tracery!)
-    num_rings = 2 if height < 11.5 else 3
-    ring_r = min(width * 0.34, height / (num_rings * 2.45))
-    for ri in range(num_rings):
-        tz = -0.30 + (0.62 * ri / max(1, num_rings - 1)) if num_rings > 1 else 0.18
-        rc = c_vec + Vector((0.0, 0.0, tz * height))
-        segs = 12
-        for s in range(segs):
-            a0 = 2.0 * math.pi * s / segs
-            a1 = 2.0 * math.pi * (s + 1) / segs
-            p0 = rc + u_dir * (ring_r * math.cos(a0)) + Vector((0, 0, ring_r * 1.18 * math.sin(a0)))
-            p1 = rc + u_dir * (ring_r * math.cos(a1)) + Vector((0, 0, ring_r * 1.18 * math.sin(a1)))
-            add_cylinder(bm, p0, p1, 0.13, 0.13, segments=6, cap=False)
-    # Transom stone bars crossing between rings
-    for tz in (-0.25, 0.25):
-        p0 = c_vec - u_dir * (width * 0.48) + Vector((0, 0, tz * height))
-        p1 = c_vec + u_dir * (width * 0.48) + Vector((0, 0, tz * height))
-        add_cylinder(bm, p0, p1, 0.12, 0.12, segments=6)
+    # 1. Lower slender twin lancets (bottom -> mid-transom at -0.10*H)
+    z_transom = -0.12 * height
+    for frac in (-0.22, 0.0, 0.22):
+        base = c_vec + u_dir * (width * frac)
+        add_cylinder(bm, base - Vector((0, 0, half_h)), base + Vector((0, 0, z_transom)), 0.12, 0.11, segments=6)
+    # Transom bar & twin pointed lancet heads
+    add_cylinder(
+        bm,
+        c_vec - u_dir * half_w + Vector((0, 0, z_transom)),
+        c_vec + u_dir * half_w + Vector((0, 0, z_transom)),
+        0.13,
+        0.13,
+        segments=6,
+    )
+    for side in (-0.24, 0.24):
+        p_l = c_vec + u_dir * (width * (side - 0.20)) + Vector((0, 0, z_transom - 0.9))
+        p_r = c_vec + u_dir * (width * (side + 0.20)) + Vector((0, 0, z_transom - 0.9))
+        p_t = c_vec + u_dir * (width * side) + Vector((0, 0, z_transom))
+        add_cylinder(bm, p_l, p_t, 0.11, 0.10, segments=5)
+        add_cylinder(bm, p_r, p_t, 0.11, 0.10, segments=5)
+
+    # 2. Iconic Giant Middle Elliptical Stone Rose Wheel with 8 Radial Spokes (center at +0.11*H)
+    rose_c = c_vec + Vector((0.0, 0.0, 0.11 * height))
+    rx = min(width * 0.36, height * 0.19)
+    rz = rx * 1.18
+    segs = 14
+    for s in range(segs):
+        a0 = 2.0 * math.pi * s / segs
+        a1 = 2.0 * math.pi * (s + 1) / segs
+        p0 = rose_c + u_dir * (rx * math.cos(a0)) + Vector((0, 0, rz * math.sin(a0)))
+        p1 = rose_c + u_dir * (rx * math.cos(a1)) + Vector((0, 0, rz * math.sin(a1)))
+        add_cylinder(bm, p0, p1, 0.14, 0.14, segments=6, cap=False)
+        # Inner jewel boss ring
+        if s % 2 == 0:
+            a2 = 2.0 * math.pi * (s + 2) / segs
+            q0 = rose_c + u_dir * (rx * 0.34 * math.cos(a0)) + Vector((0, 0, rz * 0.34 * math.sin(a0)))
+            q1 = rose_c + u_dir * (rx * 0.34 * math.cos(a2)) + Vector((0, 0, rz * 0.34 * math.sin(a2)))
+            add_cylinder(bm, q0, q1, 0.10, 0.10, segments=5, cap=False)
+    # 8 curved radial spokes inside the rose wheel
+    for sp in range(8):
+        ang = 2.0 * math.pi * sp / 8.0
+        p_in = rose_c + u_dir * (rx * 0.34 * math.cos(ang)) + Vector((0, 0, rz * 0.34 * math.sin(ang)))
+        p_out = rose_c + u_dir * (rx * math.cos(ang)) + Vector((0, 0, rz * math.sin(ang)))
+        add_cylinder(bm, p_in, p_out, 0.09, 0.10, segments=5, cap=False)
+
+    # 3. Upper Triple Hyperboloid Circular Oculi + Sweeping Parabolic Top Hood Arch
+    oc_specs = [
+        (0.0, 0.38 * height, min(width * 0.18, height * 0.085)),
+        (-0.24 * width, 0.30 * height, min(width * 0.13, height * 0.065)),
+        (0.24 * width, 0.30 * height, min(width * 0.13, height * 0.065)),
+    ]
+    for ou, oz, orad in oc_specs:
+        oc_c = c_vec + u_dir * ou + Vector((0.0, 0.0, oz))
+        for s in range(8):
+            a0 = 2.0 * math.pi * s / 8.0
+            a1 = 2.0 * math.pi * (s + 1) / 8.0
+            p0 = oc_c + u_dir * (orad * math.cos(a0)) + Vector((0, 0, orad * math.sin(a0)))
+            p1 = oc_c + u_dir * (orad * math.cos(a1)) + Vector((0, 0, orad * math.sin(a1)))
+            add_cylinder(bm, p0, p1, 0.10, 0.10, segments=5, cap=False)
+
+    # Sweeping outer parabolic stone arch head framing the top of the window
+    for s in range(8):
+        t0 = -1.0 + 2.0 * (s / 8.0)
+        t1 = -1.0 + 2.0 * ((s + 1) / 8.0)
+        p0 = c_vec + u_dir * (half_w * t0) + Vector((0, 0, half_h - 0.22 * height * (t0 * t0)))
+        p1 = c_vec + u_dir * (half_w * t1) + Vector((0, 0, half_h - 0.22 * height * (t1 * t1)))
+        add_cylinder(bm, p0, p1, 0.15, 0.15, segments=6, cap=False)
 
 
 def add_box(

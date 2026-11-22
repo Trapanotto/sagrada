@@ -227,28 +227,57 @@ def build_interior() -> None:
 
     finalize_bmesh_object(bm_branches, "Interior_ColumnBranches", mats["sandstone_warm"], smooth=True, uv_scale=0.22)
 
-    # ── 4. Walkable Galleries / Cantories (Emporen at Z = 14.5m) with OPEN Corner Stairwell Cutouts! ──
+    # ── 4. Walkable Organically Wavy Cantories (Emporen at Z = 14.5m) with OPEN Corner Stairwell Cutouts! ──
     bm_gal = bmesh.new()
     for sx in (-1, 1):
         gx = sx * 19.6
         # Stop East/West Empore slab cleanly at Y = -40.4 so the corner spiral stair at (±19.6, -42.8) has 100% open headroom!
         add_box(bm_gal, (gx, -27.4, Z_GALLERY - 0.35), (5.6, 26.0, 0.7))
-        bx = sx * 16.95
-        # Top handrail + bottom plinth + slender rhythmic gothic balustrade colonnettes
-        add_box(bm_gal, (bx, -27.4, Z_GALLERY + 1.08), (0.42, 26.0, 0.18))
-        add_box(bm_gal, (bx, -27.4, Z_GALLERY + 0.14), (0.40, 26.0, 0.28))
-        for k in range(30):
-            by = -14.8 - k * (25.4 / 29.0)
-            add_cylinder(bm_gal, Vector((bx, by, Z_GALLERY + 0.25)), Vector((bx, by, Z_GALLERY + 1.02)), 0.08, 0.07, segments=6)
+        # Iconic Gaudí undulating sinusoidal wave-balustrade (swells organically outward into the nave at every 7.5m bay!)
+        n_wave = 32
+        y_start, y_end = -14.4, -40.4
+        pts_w: list[tuple[float, float]] = []
+        for k in range(n_wave + 1):
+            t = k / n_wave
+            wy = y_start + t * (y_end - y_start)
+            # Smooth wave bulging inward toward central nave (0.44m wave amplitude synchronized with column bay rhythm)
+            wave_in = 0.44 * math.sin(math.pi * (wy - y_start) / (GRID * 0.5))
+            wx = sx * (16.95 - wave_in)
+            pts_w.append((wx, wy))
+        for k in range(n_wave):
+            x0, y0 = pts_w[k]
+            x1, y1 = pts_w[k + 1]
+            # Sculpted wavy top stone rail, lower wave curb plinth & bulging belly fascia slab
+            add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY + 1.08)), Vector((x1, y1, Z_GALLERY + 1.08)), 0.16, 0.16, segments=6, cap=False)
+            add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY + 0.14)), Vector((x1, y1, Z_GALLERY + 0.14)), 0.18, 0.18, segments=6, cap=False)
+            add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY - 0.25)), Vector((x1, y1, Z_GALLERY - 0.25)), 0.32, 0.32, segments=6, cap=False)
+            # Paired twin slender Gothic stone colonnettes following the exact wave curve!
+            xm, ym = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+            add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY + 0.22)), Vector((x0, y0, Z_GALLERY + 1.04)), 0.065, 0.055, segments=6)
+            add_cylinder(bm_gal, Vector((xm, ym, Z_GALLERY + 0.22)), Vector((xm, ym, Z_GALLERY + 1.04)), 0.055, 0.050, segments=6)
         for bay in range(2, 6):
             add_box(bm_gal, (gx, -bay * GRID, Z_GALLERY - 0.9), (5.4, 0.65, 0.8))
+
     # South Glory Choir Gallery bridging between the two open corner stairwells (X = -17.2 .. +17.2, Y = -40.6 .. -45.4)
     add_box(bm_gal, (0.0, -43.0, Z_GALLERY - 0.35), (34.4, 4.8, 0.7))
-    add_box(bm_gal, (0.0, -40.75, Z_GALLERY + 1.08), (34.4, 0.42, 0.18))
-    add_box(bm_gal, (0.0, -40.75, Z_GALLERY + 0.14), (34.4, 0.40, 0.28))
-    for k in range(36):
-        bx_s = -16.8 + k * (33.6 / 35.0)
-        add_cylinder(bm_gal, Vector((bx_s, -40.75, Z_GALLERY + 0.25)), Vector((bx_s, -40.75, Z_GALLERY + 1.02)), 0.08, 0.07, segments=6)
+    n_wave_s = 36
+    x_s0, x_s1 = -17.0, 17.0
+    pts_s: list[tuple[float, float]] = []
+    for k in range(n_wave_s + 1):
+        t = k / n_wave_s
+        wx = x_s0 + t * (x_s1 - x_s0)
+        wave_n = 0.48 * math.sin(math.pi * (wx - x_s0) / (GRID * 0.5))
+        wy = -40.75 + wave_n
+        pts_s.append((wx, wy))
+    for k in range(n_wave_s):
+        x0, y0 = pts_s[k]
+        x1, y1 = pts_s[k + 1]
+        add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY + 1.08)), Vector((x1, y1, Z_GALLERY + 1.08)), 0.16, 0.16, segments=6, cap=False)
+        add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY + 0.14)), Vector((x1, y1, Z_GALLERY + 0.14)), 0.18, 0.18, segments=6, cap=False)
+        add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY - 0.25)), Vector((x1, y1, Z_GALLERY - 0.25)), 0.32, 0.32, segments=6, cap=False)
+        xm, ym = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+        add_cylinder(bm_gal, Vector((x0, y0, Z_GALLERY + 0.22)), Vector((x0, y0, Z_GALLERY + 1.04)), 0.065, 0.055, segments=6)
+        add_cylinder(bm_gal, Vector((xm, ym, Z_GALLERY + 0.22)), Vector((xm, ym, Z_GALLERY + 1.04)), 0.055, 0.050, segments=6)
 
     # 2 Walkable Gaudí Corner Helical Staircases emerging cleanly INWARD onto BOTH South Choir & Side Empore!
     for sx in (-1, 1):
@@ -319,17 +348,39 @@ def build_interior() -> None:
             for sy in (-1, 1):
                 create_hyperboloid_vault_bay(bm_vault, bm_gold, sx * bx, sy * 11.25, Z_AISLE_VAULT, 7.5, 7.5, depth=2.6, oculus_r=0.95)
 
-    # 5b. Central Nave Vaults (Z = 46.2m) — 15m wide x 7.5m bays
+    # 5b. Central Nave Vaults (Z = 46.2m) — 15m wide x 7.5m bays + gilded Venetian starburst palm ribs around oculi!
     for bay_y in (-11.25, -18.75, -26.25, -33.75, -41.25):
         create_hyperboloid_vault_bay(bm_vault, bm_gold, 0.0, bay_y, Z_NAVE_VAULT, 15.0, 7.5, depth=3.8, oculus_r=1.65)
+        for rk in range(8):
+            ra = 2.0 * math.pi * rk / 8.0
+            add_cylinder(
+                bm_gold,
+                Vector((1.75 * math.cos(ra), bay_y + 1.75 * math.sin(ra), Z_NAVE_VAULT - 0.18)),
+                Vector((3.55 * math.cos(ra), bay_y + 2.95 * math.sin(ra), Z_NAVE_VAULT - 0.62)),
+                0.09,
+                0.04,
+                segments=5,
+                cap=False,
+            )
 
     # Central Transept Vaults (Z = 46.2m)
     for sx in (-1, 1):
         for bx in (11.25, 18.75, 26.25):
             create_hyperboloid_vault_bay(bm_vault, bm_gold, sx * bx, 0.0, Z_NAVE_VAULT, 7.5, 15.0, depth=3.8, oculus_r=1.55)
 
-    # 5c. Central Crossing Vault (Z = 61.2m under Tower of Jesus Christ)
+    # 5c. Central Crossing Vault (Z = 61.2m under Tower of Jesus Christ) + 12 gilded palm starburst rays!
     create_hyperboloid_vault_bay(bm_vault, bm_gold, 0.0, 0.0, Z_CROSSING_VAULT, 15.0, 15.0, depth=5.5, oculus_r=3.2, segs=24, rings=8)
+    for rk in range(12):
+        ra = 2.0 * math.pi * rk / 12.0
+        add_cylinder(
+            bm_gold,
+            Vector((3.35 * math.cos(ra), 3.35 * math.sin(ra), Z_CROSSING_VAULT - 0.25)),
+            Vector((6.40 * math.cos(ra), 6.40 * math.sin(ra), Z_CROSSING_VAULT - 1.35)),
+            0.14,
+            0.05,
+            segments=5,
+            cap=False,
+        )
 
     # Upper crossing drum walls bridging from 45m vaults up to 60m crossing vault
     for sx in (-1, 1):
@@ -359,8 +410,8 @@ def build_interior() -> None:
     for sx in (-1, 1):
         add_box(bm_vault, (sx * 16.5, 15.2, 38.5), (17.5, 1.2, 16.5))
 
-    # 5d. Apse Vault Dome rising into Mary Tower base (Z = 46m -> 68m)
-    create_hyperboloid_vault_bay(bm_vault, bm_gold, 0.0, 18.5, Z_APSE_VAULT, 24.0, 22.0, depth=14.0, oculus_r=3.4, segs=24, rings=8)
+    # 5d. Soaring Apse Vault Dome rising into Mary Tower base (Z = 56m -> 74.5m — matching real 75m Apse height!)
+    create_hyperboloid_vault_bay(bm_vault, bm_gold, 0.0, 18.5, Z_APSE_VAULT, 24.0, 22.0, depth=18.0, oculus_r=3.4, segs=24, rings=8)
 
     # Seal exterior ceiling backing decks right above side aisles, central nave, transepts & apse drum
     # so zero sky slits ever leak between vault rosettes!
@@ -372,22 +423,7 @@ def build_interior() -> None:
     # Split transept ceiling backing strictly OUTSIDE the central Crossing (X = ±7.6..±30.5) so the Glass Panorama Elevator rises 100% OPEN up through the 60m Crossing Vault Oculus!
     add_box(bm_vault, (19.05, 0.0, Z_NAVE_VAULT + 0.45), (22.9, 15.8, 0.65))
     add_box(bm_vault, (-19.05, 0.0, Z_NAVE_VAULT + 0.45), (22.9, 15.8, 0.65))
-    # Continuous semicircular apse upper drum sealing Z = 40m -> 68m beneath Mary Tower
-    drum_segs = 20
-    for i in range(drum_segs):
-        a0 = math.pi * i / drum_segs
-        a1 = math.pi * (i + 1) / drum_segs
-        am = 0.5 * (a0 + a1)
-        r_d = 18.2
-        seg_w = 2.0 * r_d * math.sin(math.pi / (2.0 * drum_segs)) + 0.6
-        add_box(
-            bm_vault,
-            (r_d * math.cos(am), 16.5 + r_d * math.sin(am), 54.0),
-            (seg_w, 1.4, 28.0),
-            rot_euler=(0.0, 0.0, am - math.pi / 2.0),
-        )
-    # Closed apse cap ring at Z = 68.5m
-    add_cylinder(bm_vault, Vector((0.0, 16.5, 67.8)), Vector((0.0, 16.5, 69.0)), 18.8, 18.8, segments=24, cap=True)
+    # Apse upper tapering dome-skirt is built in warm Catalan sandstone inside Section 6 (bm_walls) right below!
 
     finalize_bmesh_object(bm_vault, "Interior_HyperboloidVaults", mats["vault_stone"], smooth=True, uv_scale=0.14)
     finalize_bmesh_object(bm_gold, "Interior_GoldAccents", mats["gold_accent"], smooth=True, uv_scale=0.35)
@@ -472,6 +508,40 @@ def build_interior() -> None:
         tx = (r_apse - 0.25) * math.cos(am)
         ty = 16.5 + (r_apse - 0.25) * math.sin(am)
         add_gaudi_window_tracery(bm_walls, (tx, ty, 27.0), 4.6, 22.0, rot_z=rot_z)
+
+    # Graceful tapering warm-sandstone parabolic Apse dome-skirt (Z = 41.5m r=18.5 -> Z = 74.8m r=6.8)
+    # Matches the golden Catalan stone of the Neo-Gothic Apse gables & tapers seamlessly into the Virgin Mary Tower!
+    drum_segs = 24
+    tiers_apse = [
+        (41.5, 16.5, 18.5),
+        (51.0, 17.6, 15.0),
+        (61.5, 19.4, 11.2),
+        (74.8, 21.8, 6.8),
+    ]
+    out_rings: list[list[bmesh.types.BMVert]] = []
+    in_rings: list[list[bmesh.types.BMVert]] = []
+    for z_t, cy_t, r_t in tiers_apse:
+        ro, ri = [], []
+        for i in range(drum_segs + 1):
+            ang = math.pi * (-0.05 + 1.10 * i / drum_segs)
+            ca, sa = math.cos(ang), math.sin(ang)
+            ro.append(bm_walls.verts.new((r_t * ca, max(10.6, cy_t + r_t * sa), z_t)))
+            ri.append(bm_walls.verts.new(((r_t - 0.65) * ca, max(11.1, cy_t + (r_t - 0.65) * sa), z_t)))
+        out_rings.append(ro)
+        in_rings.append(ri)
+    for ti in range(len(out_rings) - 1):
+        for i in range(drum_segs):
+            # Solid watertight double-sided shell (outer face + inner face)
+            bm_walls.faces.new((out_rings[ti][i], out_rings[ti][i + 1], out_rings[ti + 1][i + 1], out_rings[ti + 1][i]))
+            bm_walls.faces.new((in_rings[ti][i + 1], in_rings[ti][i], in_rings[ti + 1][i], in_rings[ti + 1][i + 1]))
+    # Top & bottom closure rims so the shell is 100% solid manifold
+    for i in range(drum_segs):
+        bm_walls.faces.new((out_rings[-1][i], out_rings[-1][i + 1], in_rings[-1][i + 1], in_rings[-1][i]))
+        bm_walls.faces.new((in_rings[0][i], in_rings[0][i + 1], out_rings[0][i + 1], out_rings[0][i]))
+    # Sculpted exterior Gothic stone ribs running gracefully up the tapering Apse roof cone into Mary Tower!
+    for i in range(0, drum_segs + 1, 3):
+        for ti in range(len(out_rings) - 1):
+            add_cylinder(bm_walls, out_rings[ti][i].co.copy(), out_rings[ti + 1][i].co.copy(), 0.38, 0.24, segments=6, cap=False)
 
     finalize_bmesh_object(bm_walls, "Interior_NaveWalls", mats["sandstone_warm"], smooth=False, uv_scale=0.14)
 

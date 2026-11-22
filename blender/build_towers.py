@@ -39,31 +39,33 @@ def add_parabolic_bell_tower(
     z_neck = z_top - pinnacle_h
     shaft_h = z_neck - z_base
 
-    # 1. Hollow structural stone shell (outer radius 0.94*r clears ALL internal spiral stairs, with open archways at skybridge height!)
-    core_steps = 16
+    # 1. Slender Parabolic Bell-Tower Core with PIERCED Upper Acoustic Louver Slots (authentic daylight filigree!)
+    core_steps = 18
     prev_ring = None
     prev_z = z_base
     skybridge_z = 72.0 if abs(cy + 49.5) < 1.0 else 65.0
     for si in range(core_steps + 1):
         t = si / core_steps
         z = z_base + t * shaft_h
-        # Parabolic taper (catenary-like curvature) — wide hollow interior clears the spiral staircase cleanly!
-        r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.72)) * 0.94
+        # Authentic sleeker Gaudí catenary taper (slender iconic silhouette instead of chunky cylinders!)
+        r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.62)) * 0.94
         ring = [
             bm_stone.verts.new((cx + r * math.cos(2 * math.pi * k / ribs), cy + r * math.sin(2 * math.pi * k / ribs), z))
             for k in range(ribs)
         ]
         mid_z = 0.5 * (prev_z + z)
-        # Leave wide open 360° stone colonnade doorway at the skybridge level (65m / 72m) so you step straight onto/off stairs!
         is_bridge_band = (skybridge_z - 0.5) <= mid_z <= (skybridge_z + 4.2)
+        # Perforate upper lantern tiers (above Z=58m) by skipping alternate faces around the ribs so light passes through!
         if prev_ring is not None and not is_bridge_band:
             for k in range(ribs):
+                if mid_z > 58.0 and (si % 2 == 1) and (k % 2 == 0):
+                    continue
                 nk = (k + 1) % ribs
                 bm_stone.faces.new((prev_ring[k], prev_ring[nk], ring[nk], ring[k]))
         prev_ring = ring
         prev_z = z
 
-    # 2. Prominent vertical sculpted stone ribs running full height of the tower
+    # 2. Prominent vertical sculpted stone ribs running full height of the tower (slender catenary curve)
     for k in range(ribs):
         ang = 2.0 * math.pi * k / ribs
         ca, sa = math.cos(ang), math.sin(ang)
@@ -73,14 +75,14 @@ def add_parabolic_bell_tower(
             t1 = (si + 1) / seg_count
             z0 = z_base + t0 * shaft_h
             z1 = z_base + t1 * shaft_h
-            r0 = r_neck + (r_base - r_neck) * ((1.0 - t0) ** 0.72)
-            r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.72)
+            r0 = r_neck + (r_base - r_neck) * ((1.0 - t0) ** 0.62)
+            r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.62)
             add_cylinder(
                 bm_stone,
                 Vector((cx + r0 * ca, cy + r0 * sa, z0)),
                 Vector((cx + r1 * ca, cy + r1 * sa, z1)),
-                0.38 * (1.0 - 0.3 * t0),
-                0.38 * (1.0 - 0.3 * t1),
+                0.34 * (1.0 - 0.32 * t0),
+                0.34 * (1.0 - 0.32 * t1),
                 segments=6,
                 cap=False,
             )
@@ -89,12 +91,11 @@ def add_parabolic_bell_tower(
     for bi in range(louver_bands):
         t = (bi + 0.5) / louver_bands
         z = z_base + 4.0 + t * (shaft_h - 6.0)
-        r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.72)) * 0.96
+        r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.62)) * 0.97
         if bi in (louver_bands - 3, louver_bands - 1):
-            # Iconic colorful Venetian ceramic SANCTUS / EXCELSIS mosaic band near the top of every bell tower!
-            add_cylinder(bm_mosaic, Vector((cx, cy, z - 0.55)), Vector((cx, cy, z + 0.55)), r * 1.03, r * 1.01, segments=ribs, cap=False)
+            add_cylinder(bm_mosaic, Vector((cx, cy, z - 0.55)), Vector((cx, cy, z + 0.55)), r * 1.04, r * 1.02, segments=ribs, cap=False)
         else:
-            add_cylinder(bm_stone, Vector((cx, cy, z - 0.35)), Vector((cx, cy, z + 0.35)), r, r * 0.98, segments=ribs, cap=False)
+            add_cylinder(bm_stone, Vector((cx, cy, z - 0.28)), Vector((cx, cy, z + 0.28)), r, r * 0.98, segments=ribs, cap=False)
 
     # 4. Colorful Venetian-glass trencadís mosaic finial pinnacle (miter / bishop's staff / cross)
     # Lower flaring crown collar
@@ -186,56 +187,53 @@ def add_jesus_christ_tower(
     z_terminal_base = 148.0
     z_cross_base = 155.5
     z_top = 172.5
-    r_base = 10.6
-    r_neck = 5.4
+    # Authentic sleeker 12-sided perforated parabolic silhouette (9.5m base -> 4.8m neck!)
+    r_base = 9.5
+    r_neck = 4.8
     ribs = 12
 
-    # 1. Massive 12-sided ribbed parabolic main lantern shaft (starts solid above Z=60.5m so the 56m Crossing Gallery & all 8 Roof Bridges are 100% OPEN!)
-    segs = 18
-    prev_ring = None
-    prev_z = z_base
-    for si in range(segs + 1):
-        t = si / segs
-        z = z_base + t * (z_gallery - z_base)
-        r = r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.85)
-        ring = [
-            bm_stone.verts.new((r * 0.94 * math.cos(2 * math.pi * k / ribs), r * 0.94 * math.sin(2 * math.pi * k / ribs), z))
-            for k in range(ribs)
-        ]
-        mid_z = 0.5 * (prev_z + z)
-        # Keep 56..60.5m open for all 8 roof skybridges, and 133..136m open to step cleanly onto the 136m panoramic deck!
-        if prev_ring is not None and 60.5 <= mid_z <= 133.0:
-            for k in range(ribs):
-                nk = (k + 1) % ribs
-                bm_stone.faces.new((prev_ring[k], prev_ring[nk], ring[nk], ring[k]))
-        prev_ring = ring
-        prev_z = z
-
-    # 12 external triangular stone buttress ribs + horizontal stone window rings
-    for k in range(ribs):
-        ang = 2.0 * math.pi * k / ribs
-        ca, sa = math.cos(ang), math.sin(ang)
-        for si in range(12):
-            t0, t1 = si / 12.0, (si + 1) / 12.0
-            z0 = z_base + t0 * (z_gallery - z_base)
-            z1 = z_base + t1 * (z_gallery - z_base)
-            r0 = r_neck + (r_base - r_neck) * ((1.0 - t0) ** 0.85)
-            r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.85)
-            add_cylinder(
-                bm_stone,
-                Vector((r0 * ca, r0 * sa, z0)),
-                Vector((r1 * ca, r1 * sa, z1)),
-                0.72 * (1.0 - 0.3 * t0),
-                0.72 * (1.0 - 0.3 * t1),
-                segments=6,
-                cap=False,
-            )
-
-    for bi in range(14):
-        t = (bi + 0.5) / 14.0
-        z = z_base + 4.0 + t * (z_gallery - z_base - 6.0)
-        r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.85)) * 0.96
-        add_cylinder(bm_stone, Vector((0, 0, z - 0.5)), Vector((0, 0, z + 0.5)), r, r * 0.98, segments=ribs, cap=False)
+    # 1. Iconic Perforated 12-Sided Diagonal Triangular/Diamond Lattice Shaft (Gaudí's Hyperboloid-Fassadengitter!)
+    # Open 360° colonnade at 56..60.5m (for all 8 roof bridges) and pierced diamond window bays all the way up to 136m!
+    segs = 14
+    for si in range(segs):
+        t0, t1 = si / segs, (si + 1) / segs
+        z0 = z_base + t0 * (z_gallery - z_base)
+        z1 = z_base + t1 * (z_gallery - z_base)
+        r0 = r_neck + (r_base - r_neck) * ((1.0 - t0) ** 0.76)
+        r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.76)
+        mid_z = 0.5 * (z0 + z1)
+        is_open_level = mid_z < 60.5 or mid_z > 133.0
+        for k in range(ribs):
+            a0 = 2.0 * math.pi * k / ribs
+            a1 = 2.0 * math.pi * ((k + 1) % ribs) / ribs
+            p00 = Vector((r0 * math.cos(a0), r0 * math.sin(a0), z0))
+            p10 = Vector((r0 * math.cos(a1), r0 * math.sin(a1), z0))
+            p01 = Vector((r1 * math.cos(a0), r1 * math.sin(a0), z1))
+            p11 = Vector((r1 * math.cos(a1), r1 * math.sin(a1), z1))
+            # Vertical main corner buttress rib
+            add_cylinder(bm_stone, p00, p01, 0.58 * (1.0 - 0.30 * t0), 0.58 * (1.0 - 0.30 * t1), segments=6, cap=False)
+            if not is_open_level:
+                # Iconic X-braced diagonal triangular window lattice ribs (creates genuine see-through triangular fenestration!)
+                add_cylinder(bm_stone, p00, p11, 0.32 * (1.0 - 0.25 * t0), 0.28 * (1.0 - 0.25 * t1), segments=5, cap=False)
+                add_cylinder(bm_stone, p10, p01, 0.32 * (1.0 - 0.25 * t0), 0.28 * (1.0 - 0.25 * t1), segments=5, cap=False)
+                # Horizontal spandrel ring beam + subtle trencadís mosaic ridge accents on every 3rd tier
+                add_cylinder(bm_stone, p00, p10, 0.36 * (1.0 - 0.22 * t0), 0.36 * (1.0 - 0.22 * t0), segments=5, cap=False)
+                if si % 3 == 1:
+                    add_cylinder(
+                        bm_mosaic,
+                        Vector((p00.x * 1.015, p00.y * 1.015, p00.z)),
+                        Vector((p11.x * 1.015, p11.y * 1.015, p11.z)),
+                        0.14,
+                        0.14,
+                        segments=4,
+                        cap=False,
+                    )
+                    # Translucent triangular glass pane recessed cleanly inside the lattice!
+                    v_a = bm_glass.verts.new(Vector((p00.x * 0.94, p00.y * 0.94, p00.z)))
+                    v_b = bm_glass.verts.new(Vector((p10.x * 0.94, p10.y * 0.94, p10.z)))
+                    v_c = bm_glass.verts.new(Vector((p11.x * 0.94, p11.y * 0.94, p11.z)))
+                    v_d = bm_glass.verts.new(Vector((p01.x * 0.94, p01.y * 0.94, p01.z)))
+                    bm_glass.faces.new((v_a, v_b, v_c, v_d))
 
     # 1b. Central Glass Panorama Elevator Shaft + Sculpted Double Helical Stone Staircase (1.2m -> 56m -> 136m)!
     # Subtle gilded floor boarding ring at Nave Crossing (Z=1.24m) & slender vertical guide cables up to Z=56m
@@ -317,51 +315,56 @@ def add_mary_tower(
     z_base = 52.0
     z_crown = 123.0
     z_star_center = 134.2
-    r_base = 8.4
-    r_neck = 4.2
+    # Authentic sleeker Virgin Mary Tower with perforated diagonal star-lattice fenestration!
+    r_base = 7.6
+    r_neck = 3.5
     ribs = 12
 
-    # Hyperboloid tapering blue/white stone shaft (open colonnade at 52..60m roof bridge & 116..121m viewpoint!)
-    segs = 16
-    prev_ring = None
-    prev_z = z_base
-    for si in range(segs + 1):
-        t = si / segs
-        z = z_base + t * (z_crown - z_base)
-        r = r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.78)
-        ring = [
-            bm_stone.verts.new((cx + r * 0.94 * math.cos(2 * math.pi * k / ribs), cy + r * 0.94 * math.sin(2 * math.pi * k / ribs), z))
-            for k in range(ribs)
-        ]
-        mid_z = 0.5 * (prev_z + z)
-        if prev_ring is not None and 60.0 <= mid_z <= 116.5:
-            for k in range(ribs):
-                nk = (k + 1) % ribs
-                bm_stone.faces.new((prev_ring[k], prev_ring[nk], ring[nk], ring[k]))
-        prev_ring = ring
-        prev_z = z
+    segs = 12
+    for si in range(segs):
+        t0, t1 = si / segs, (si + 1) / segs
+        z0 = z_base + t0 * (z_crown - z_base)
+        z1 = z_base + t1 * (z_crown - z_base)
+        r0 = r_neck + (r_base - r_neck) * ((1.0 - t0) ** 0.72)
+        r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.72)
+        mid_z = 0.5 * (z0 + z1)
+        is_open = mid_z < 60.0 or mid_z > 116.5
+        for k in range(ribs):
+            a0 = 2.0 * math.pi * k / ribs
+            a1 = 2.0 * math.pi * ((k + 1) % ribs) / ribs
+            p00 = Vector((cx + r0 * math.cos(a0), cy + r0 * math.sin(a0), z0))
+            p10 = Vector((cx + r0 * math.cos(a1), cy + r0 * math.sin(a1), z0))
+            p01 = Vector((cx + r1 * math.cos(a0), cy + r1 * math.sin(a0), z1))
+            p11 = Vector((cx + r1 * math.cos(a1), cy + r1 * math.sin(a1), z1))
+            add_cylinder(bm_stone, p00, p01, 0.44 * (1.0 - 0.30 * t0), 0.44 * (1.0 - 0.30 * t1), segments=6, cap=False)
+            if not is_open:
+                # Diagonal diamond lattice framing blue-white starlight slits!
+                add_cylinder(bm_stone, p00, p11, 0.26 * (1.0 - 0.25 * t0), 0.22 * (1.0 - 0.25 * t1), segments=5, cap=False)
+                add_cylinder(bm_stone, p10, p01, 0.26 * (1.0 - 0.25 * t0), 0.22 * (1.0 - 0.25 * t1), segments=5, cap=False)
+                add_cylinder(bm_stone, p00, p10, 0.28 * (1.0 - 0.22 * t0), 0.28 * (1.0 - 0.22 * t0), segments=5, cap=False)
+                if si >= segs - 4:
+                    add_cylinder(
+                        bm_mosaic,
+                        Vector((cx + (p00.x - cx) * 1.015, cy + (p00.y - cy) * 1.015, p00.z)),
+                        Vector((cx + (p11.x - cx) * 1.015, cy + (p11.y - cy) * 1.015, p11.z)),
+                        0.14,
+                        0.14,
+                        segments=4,
+                        cap=False,
+                    )
 
-    for k in range(ribs):
-        ang = 2.0 * math.pi * k / ribs
-        ca, sa = math.cos(ang), math.sin(ang)
-        add_cylinder(
-            bm_stone,
-            Vector((cx + r_base * ca, cy + r_base * sa, z_base)),
-            Vector((cx + r_neck * ca, cy + r_neck * sa, z_crown)),
-            0.55,
-            0.34,
-            segments=6,
-            cap=False,
-        )
-
-    # Flaring blue-and-white trencadís crown petals supporting the Morning Star
-    add_cylinder(bm_mosaic, Vector((cx, cy, z_crown - 2.0)), Vector((cx, cy, z_crown + 5.5)), r_neck * 0.95, r_neck * 1.42, segments=12, cap=True)
-    # 3 curved white support ribs holding the star aloft
+    # Flaring 12-petal blue-and-white trencadís Morning Star crown chalice
+    for k in range(12):
+        ang = 2.0 * math.pi * k / 12.0
+        p0 = Vector((cx + r_neck * 0.92 * math.cos(ang), cy + r_neck * 0.92 * math.sin(ang), z_crown - 1.5))
+        p1 = Vector((cx + r_neck * 1.48 * math.cos(ang), cy + r_neck * 1.48 * math.sin(ang), z_crown + 5.8))
+        add_cylinder(bm_mosaic, p0, p1, 0.62, 0.22, segments=6, cap=True)
+    # 3 curved white support ribs holding the 12-pointed star aloft
     for k in range(3):
         ang = 2.0 * math.pi * k / 3.0
         p0 = Vector((cx + 3.4 * math.cos(ang), cy + 3.4 * math.sin(ang), z_crown + 4.8))
         p1 = Vector((cx + 0.8 * math.cos(ang), cy + 0.8 * math.sin(ang), z_star_center - 1.2))
-        add_cylinder(bm_stone, p0, p1, 0.55, 0.32, segments=8)
+        add_cylinder(bm_stone, p0, p1, 0.50, 0.30, segments=8)
 
     # Luminous 12-pointed Star (diameter ~7.5m, top at 138.0m)
     add_star_12_points(bm_star, Vector((cx, cy, z_star_center)), radius=3.8)
@@ -375,44 +378,35 @@ def add_evangelist_tower(
     cy: float,
     angle_out: float,
 ) -> None:
-    """One of the 4 Towers of the Evangelists (135.0m) topped by illuminated white wings & tetramorph sculpture."""
+    """One of the 4 Towers of the Evangelists (135.0m) with pierced diagonal lattice & illuminated white wings."""
     z_base = 52.0
     z_crown = 121.0
-    r_base = 5.4
-    r_neck = 2.9
+    r_base = 4.9
+    r_neck = 2.5
     ribs = 8
 
-    # Parabolic stone shaft (open colonnade at 52..60m roof bridge & 112..116m observation deck!)
-    segs = 16
-    prev_ring = None
-    prev_z = z_base
-    for si in range(segs + 1):
-        t = si / segs
-        z = z_base + t * (z_crown - z_base)
-        r = r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.78)
-        ring = [
-            bm_stone.verts.new((cx + r * 0.94 * math.cos(2 * math.pi * k / ribs), cy + r * 0.94 * math.sin(2 * math.pi * k / ribs), z))
-            for k in range(ribs)
-        ]
-        mid_z = 0.5 * (prev_z + z)
-        if prev_ring is not None and 60.0 <= mid_z <= 112.5:
-            for k in range(ribs):
-                nk = (k + 1) % ribs
-                bm_stone.faces.new((prev_ring[k], prev_ring[nk], ring[nk], ring[k]))
-        prev_ring = ring
-        prev_z = z
-
-    for k in range(ribs):
-        ang = 2.0 * math.pi * k / ribs
-        add_cylinder(
-            bm_stone,
-            Vector((cx + r_base * math.cos(ang), cy + r_base * math.sin(ang), z_base)),
-            Vector((cx + r_neck * math.cos(ang), cy + r_neck * math.sin(ang), z_crown)),
-            0.42,
-            0.25,
-            segments=6,
-            cap=False,
-        )
+    # Perforated parabolic diamond lattice shaft (open at 52..60m roof bridge & 112..116m observation deck!)
+    segs = 11
+    for si in range(segs):
+        t0, t1 = si / segs, (si + 1) / segs
+        z0 = z_base + t0 * (z_crown - z_base)
+        z1 = z_base + t1 * (z_crown - z_base)
+        r0 = r_neck + (r_base - r_neck) * ((1.0 - t0) ** 0.72)
+        r1 = r_neck + (r_base - r_neck) * ((1.0 - t1) ** 0.72)
+        mid_z = 0.5 * (z0 + z1)
+        is_open = mid_z < 60.0 or (112.5 <= mid_z <= 116.5)
+        for k in range(ribs):
+            a0 = 2.0 * math.pi * k / ribs
+            a1 = 2.0 * math.pi * ((k + 1) % ribs) / ribs
+            p00 = Vector((cx + r0 * math.cos(a0), cy + r0 * math.sin(a0), z0))
+            p10 = Vector((cx + r0 * math.cos(a1), cy + r0 * math.sin(a1), z0))
+            p01 = Vector((cx + r1 * math.cos(a0), cy + r1 * math.sin(a0), z1))
+            p11 = Vector((cx + r1 * math.cos(a1), cy + r1 * math.sin(a1), z1))
+            add_cylinder(bm_stone, p00, p01, 0.36 * (1.0 - 0.30 * t0), 0.36 * (1.0 - 0.30 * t1), segments=6, cap=False)
+            if not is_open:
+                add_cylinder(bm_stone, p00, p11, 0.22 * (1.0 - 0.25 * t0), 0.19 * (1.0 - 0.25 * t1), segments=5, cap=False)
+                add_cylinder(bm_stone, p10, p01, 0.22 * (1.0 - 0.25 * t0), 0.19 * (1.0 - 0.25 * t1), segments=5, cap=False)
+                add_cylinder(bm_stone, p00, p10, 0.24 * (1.0 - 0.22 * t0), 0.24 * (1.0 - 0.22 * t0), segments=5, cap=False)
 
     # Icosahedron golden lantern collar
     add_cylinder(bm_gold, Vector((cx, cy, z_crown - 0.5)), Vector((cx, cy, z_crown + 3.2)), r_neck * 1.15, r_neck * 0.9, segments=10)
