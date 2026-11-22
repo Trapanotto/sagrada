@@ -39,23 +39,29 @@ def add_parabolic_bell_tower(
     z_neck = z_top - pinnacle_h
     shaft_h = z_neck - z_base
 
-    # 1. Inner perforated structural core cylinder
-    core_steps = 12
+    # 1. Hollow structural stone shell (outer radius 0.94*r clears ALL internal spiral stairs, with open archways at skybridge height!)
+    core_steps = 16
     prev_ring = None
+    prev_z = z_base
+    skybridge_z = 72.0 if abs(cy + 49.5) < 1.0 else 65.0
     for si in range(core_steps + 1):
         t = si / core_steps
         z = z_base + t * shaft_h
-        # Parabolic taper (catenary-like curvature)
-        r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.72)) * 0.78
+        # Parabolic taper (catenary-like curvature) — wide hollow interior clears the spiral staircase cleanly!
+        r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.72)) * 0.94
         ring = [
             bm_stone.verts.new((cx + r * math.cos(2 * math.pi * k / ribs), cy + r * math.sin(2 * math.pi * k / ribs), z))
             for k in range(ribs)
         ]
-        if prev_ring is not None:
+        mid_z = 0.5 * (prev_z + z)
+        # Leave wide open 360° stone colonnade doorway at the skybridge level (65m / 72m) so you step straight onto/off stairs!
+        is_bridge_band = (skybridge_z - 0.5) <= mid_z <= (skybridge_z + 4.2)
+        if prev_ring is not None and not is_bridge_band:
             for k in range(ribs):
                 nk = (k + 1) % ribs
                 bm_stone.faces.new((prev_ring[k], prev_ring[nk], ring[nk], ring[k]))
         prev_ring = ring
+        prev_z = z
 
     # 2. Prominent vertical sculpted stone ribs running full height of the tower
     for k in range(ribs):
@@ -137,18 +143,18 @@ def add_spiral_stair_shaft(
     cy: float,
     z0: float,
     z1: float,
-    r_mid: float = 1.85,
-    tread_w: float = 1.45,
+    r_mid: float = 1.65,
+    tread_w: float = 1.25,
     turns_per_10m: float = 1.55,
-    step_rise: float = 0.42,
+    step_rise: float = 0.28,
     clockwise: bool = True,
 ) -> None:
-    """Sculpted Gaudí open-centered helical spiral staircase inside any of the 18 tower shafts."""
+    """Sculpted Gaudí continuous overlapping helical stone staircase inside any of the 18 tower shafts."""
     span = max(2.0, z1 - z0)
-    steps = max(12, int(span / step_rise))
+    steps = max(18, int(span / step_rise))
     turns = (span / 10.0) * turns_per_10m
     sgn = 1.0 if clockwise else -1.0
-    r_rail = max(0.55, r_mid - tread_w * 0.46)
+    r_rail = max(0.55, r_mid - tread_w * 0.45)
 
     for si in range(steps):
         t = si / max(1, steps - 1)
@@ -156,9 +162,10 @@ def add_spiral_stair_shaft(
         z = z0 + t * span
         sx = cx + r_mid * math.cos(ang)
         sy = cy + r_mid * math.sin(ang)
-        add_box(bm_stone, (sx, sy, z), (tread_w, 0.56, 0.20), rot_euler=(0.0, 0.0, ang))
-        if si < steps - 1 and si % 2 == 0:
-            t_n = min(1.0, (si + 2) / max(1, steps - 1))
+        # Solid overlapping stone step treads (0.68m deep, 0.24m thick -> continuous walkable ribbon, zero gaps!)
+        add_box(bm_stone, (sx, sy, z), (tread_w, 0.68, 0.24), rot_euler=(0.0, 0.0, ang))
+        if si < steps - 1 and si % 3 == 0:
+            t_n = min(1.0, (si + 3) / max(1, steps - 1))
             ang_n = sgn * t_n * turns * 2.0 * math.pi
             z_n = z0 + t_n * span
             p0 = Vector((cx + r_rail * math.cos(ang), cy + r_rail * math.sin(ang), z + 0.92))
@@ -183,22 +190,26 @@ def add_jesus_christ_tower(
     r_neck = 5.4
     ribs = 12
 
-    # 1. Massive octagonal/12-sided ribbed parabolic main lantern shaft (56m -> 136m)
-    segs = 16
+    # 1. Massive 12-sided ribbed parabolic main lantern shaft (starts solid above Z=60.5m so the 56m Crossing Gallery & all 8 Roof Bridges are 100% OPEN!)
+    segs = 18
     prev_ring = None
+    prev_z = z_base
     for si in range(segs + 1):
         t = si / segs
         z = z_base + t * (z_gallery - z_base)
         r = r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.85)
         ring = [
-            bm_stone.verts.new((r * 0.86 * math.cos(2 * math.pi * k / ribs), r * 0.86 * math.sin(2 * math.pi * k / ribs), z))
+            bm_stone.verts.new((r * 0.94 * math.cos(2 * math.pi * k / ribs), r * 0.94 * math.sin(2 * math.pi * k / ribs), z))
             for k in range(ribs)
         ]
-        if prev_ring is not None:
+        mid_z = 0.5 * (prev_z + z)
+        # Keep 56..60.5m open for all 8 roof skybridges, and 133..136m open to step cleanly onto the 136m panoramic deck!
+        if prev_ring is not None and 60.5 <= mid_z <= 133.0:
             for k in range(ribs):
                 nk = (k + 1) % ribs
                 bm_stone.faces.new((prev_ring[k], prev_ring[nk], ring[nk], ring[k]))
         prev_ring = ring
+        prev_z = z
 
     # 12 external triangular stone buttress ribs + horizontal stone window rings
     for k in range(ribs):
@@ -307,22 +318,25 @@ def add_mary_tower(
     r_neck = 4.2
     ribs = 12
 
-    # Hyperboloid tapering blue/white stone shaft
-    segs = 14
+    # Hyperboloid tapering blue/white stone shaft (open colonnade at 52..60m roof bridge & 116..121m viewpoint!)
+    segs = 16
     prev_ring = None
+    prev_z = z_base
     for si in range(segs + 1):
         t = si / segs
         z = z_base + t * (z_crown - z_base)
         r = r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.78)
         ring = [
-            bm_stone.verts.new((cx + r * 0.88 * math.cos(2 * math.pi * k / ribs), cy + r * 0.88 * math.sin(2 * math.pi * k / ribs), z))
+            bm_stone.verts.new((cx + r * 0.94 * math.cos(2 * math.pi * k / ribs), cy + r * 0.94 * math.sin(2 * math.pi * k / ribs), z))
             for k in range(ribs)
         ]
-        if prev_ring is not None:
+        mid_z = 0.5 * (prev_z + z)
+        if prev_ring is not None and 60.0 <= mid_z <= 116.5:
             for k in range(ribs):
                 nk = (k + 1) % ribs
                 bm_stone.faces.new((prev_ring[k], prev_ring[nk], ring[nk], ring[k]))
         prev_ring = ring
+        prev_z = z
 
     for k in range(ribs):
         ang = 2.0 * math.pi * k / ribs
@@ -365,22 +379,25 @@ def add_evangelist_tower(
     r_neck = 2.9
     ribs = 8
 
-    # Parabolic stone shaft
-    segs = 12
+    # Parabolic stone shaft (open colonnade at 52..60m roof bridge & 112..116m observation deck!)
+    segs = 16
     prev_ring = None
+    prev_z = z_base
     for si in range(segs + 1):
         t = si / segs
         z = z_base + t * (z_crown - z_base)
         r = r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.78)
         ring = [
-            bm_stone.verts.new((cx + r * 0.86 * math.cos(2 * math.pi * k / ribs), cy + r * 0.86 * math.sin(2 * math.pi * k / ribs), z))
+            bm_stone.verts.new((cx + r * 0.94 * math.cos(2 * math.pi * k / ribs), cy + r * 0.94 * math.sin(2 * math.pi * k / ribs), z))
             for k in range(ribs)
         ]
-        if prev_ring is not None:
+        mid_z = 0.5 * (prev_z + z)
+        if prev_ring is not None and 60.0 <= mid_z <= 112.5:
             for k in range(ribs):
                 nk = (k + 1) % ribs
                 bm_stone.faces.new((prev_ring[k], prev_ring[nk], ring[nk], ring[k]))
         prev_ring = ring
+        prev_z = z
 
     for k in range(ribs):
         ang = 2.0 * math.pi * k / ribs
@@ -429,18 +446,18 @@ def build_towers() -> None:
 
     # ── 1. Tower of Jesus Christ (172.5m) with Glass Panorama Elevator Shaft & Helical Staircase ──
     add_jesus_christ_tower(bm_warm_stone, bm_mosaic, bm_gold, bm_cross, bm_glass)
-    add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, 0.0, 0.0, 56.0, 136.0, r_mid=3.65, tread_w=1.85, turns_per_10m=1.1, step_rise=0.52, clockwise=True)
+    add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, 0.0, 0.0, 56.0, 136.0, r_mid=3.65, tread_w=1.85, turns_per_10m=1.1, step_rise=0.34, clockwise=True)
 
     # ── 2. Tower of the Virgin Mary (138.0m) over Apse (0, +22.5) + Internal Spiral Staircase ──
     add_mary_tower(bm_warm_stone, bm_mosaic, bm_star)
-    add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, 0.0, 22.5, 52.0, 118.0, r_mid=2.85, tread_w=1.45, turns_per_10m=1.25, step_rise=0.55)
+    add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, 0.0, 22.5, 56.0, 118.0, r_mid=2.85, tread_w=1.40, turns_per_10m=1.25, step_rise=0.34)
 
     # ── 3. Four Towers of the Evangelists (135.0m) at (±11.5, ±11.5) + Internal Spiral Staircases ──
     for sx in (-1, 1):
         for sy in (-1, 1):
             ang = math.atan2(sy, sx)
             add_evangelist_tower(bm_warm_stone, bm_marble, bm_gold, sx * 11.5, sy * 11.5, ang)
-            add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, sx * 11.5, sy * 11.5, 52.0, 114.0, r_mid=2.05, tread_w=1.25, turns_per_10m=1.35, step_rise=0.58, clockwise=(sx * sy > 0))
+            add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, sx * 11.5, sy * 11.5, 56.0, 114.0, r_mid=1.95, tread_w=1.22, turns_per_10m=1.35, step_rise=0.36, clockwise=(sx * sy > 0))
 
     # ── 4. Four Apostles Towers — Nativity Facade (East, X = +31.5) + ALL 4 Internal Spiral Staircases ──
     nativity_specs = [
@@ -451,8 +468,9 @@ def build_towers() -> None:
     ]
     for idx, (cx, cy, z_top, r_b) in enumerate(nativity_specs):
         add_parabolic_bell_tower(bm_nativity_stone, bm_mosaic, bm_gold, cx, cy, 26.0, z_top, r_b, 1.55)
-        add_cylinder(bm_nativity_stone, Vector((cx, cy, 13.8)), Vector((cx, cy, 27.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
-        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 65.0, r_mid=1.92, tread_w=1.55, turns_per_10m=1.68, step_rise=0.45 if idx == 1 else 0.56, clockwise=(idx % 2 == 1))
+        # Start closed tower drum at Z = 18.6m so the 14.5..18.6m Tower-Base Gallery doorway is 100% OPEN!
+        add_cylinder(bm_nativity_stone, Vector((cx, cy, 18.6)), Vector((cx, cy, 27.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
+        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 65.0, r_mid=1.62, tread_w=1.28, turns_per_10m=1.68, step_rise=0.30 if idx == 1 else 0.34, clockwise=(idx % 2 == 1))
 
     # Walkable Nativity Tower Skybridge connecting all East towers at Z = 65.0m!
     add_box(bm_nativity_stone, (31.5, 0.0, 64.6), (3.4, 21.8, 0.8))
@@ -468,8 +486,8 @@ def build_towers() -> None:
     ]
     for idx, (cx, cy, z_top, r_b) in enumerate(passion_specs):
         add_parabolic_bell_tower(bm_passion_stone, bm_mosaic, bm_gold, cx, cy, 26.0, z_top, r_b, 1.60)
-        add_cylinder(bm_passion_stone, Vector((cx, cy, 13.8)), Vector((cx, cy, 27.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
-        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 65.0, r_mid=1.95, tread_w=1.55, turns_per_10m=1.68, step_rise=0.45 if idx == 1 else 0.56, clockwise=(idx % 2 == 0))
+        add_cylinder(bm_passion_stone, Vector((cx, cy, 18.6)), Vector((cx, cy, 27.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
+        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 65.0, r_mid=1.65, tread_w=1.28, turns_per_10m=1.68, step_rise=0.30 if idx == 1 else 0.34, clockwise=(idx % 2 == 0))
 
     # Walkable Passion Tower Skybridge connecting all West towers at Z = 65.0m!
     add_box(bm_passion_stone, (-31.5, 0.0, 64.6), (3.4, 21.8, 0.8))
@@ -485,8 +503,8 @@ def build_towers() -> None:
     ]
     for idx, (cx, cy, z_top, r_b) in enumerate(glory_specs):
         add_parabolic_bell_tower(bm_warm_stone, bm_mosaic, bm_gold, cx, cy, 28.0, z_top, r_b, 1.65)
-        add_cylinder(bm_warm_stone, Vector((cx, cy, 13.8)), Vector((cx, cy, 29.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
-        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 72.0, r_mid=2.0, tread_w=1.55, turns_per_10m=1.62, step_rise=0.54, clockwise=(idx % 2 == 1))
+        add_cylinder(bm_warm_stone, Vector((cx, cy, 18.6)), Vector((cx, cy, 29.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
+        add_spiral_stair_shaft(bm_internal_stairs, bm_internal_rails, cx, cy, 14.5, 72.0, r_mid=1.70, tread_w=1.30, turns_per_10m=1.62, step_rise=0.34, clockwise=(idx % 2 == 1))
 
     # Walkable Glory Tower Skybridge at Z = 72.0m!
     add_box(bm_warm_stone, (0.0, -49.5, 71.6), (22.8, 3.4, 0.8))

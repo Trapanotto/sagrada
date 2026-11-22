@@ -74,12 +74,20 @@ def build_interior() -> None:
     mats = get_materials()
 
     # ── 1. Marble Floor (Nave, Transepts, Apse Ambulatory, Presbytery Platform) ──
+    # Leaves a TRUE open rectangular stairwell cutout over the Crypt staircase (X: -22.2..-9.8, Y: +10.2..+18.2)!
     bm_floor = bmesh.new()
-    # Main 5-aisle nave floor (X: -22.8..22.8, Y: -46..+15.5)
-    add_box(bm_floor, (0.0, -15.25, Z_NAVE - 0.35), (45.6, 61.5, 0.7))
-    # East & West transept arms (X: -31..+31, Y: -15.2..+15.2)
-    add_box(bm_floor, (0.0, 0.0, Z_NAVE - 0.35), (62.0, 30.4, 0.7))
-    # Semicircular apse ambulatory floor
+    # Main 5-aisle nave floor south of Crypt cutout (X: -22.8..22.8, Y: -46..+10.2)
+    add_box(bm_floor, (0.0, -17.9, Z_NAVE - 0.35), (45.6, 56.2, 0.7))
+    # East half of north crossing & north nave (X: -9.8..+22.8, Y: +10.2..+16.5) — completely clears Crypt stairs!
+    add_box(bm_floor, (6.5, 13.35, Z_NAVE - 0.35), (32.6, 6.3, 0.7))
+    # East transept arm (X: +22.8..+31.2, Y: -15.2..+15.2)
+    add_box(bm_floor, (27.0, 0.0, Z_NAVE - 0.35), (8.4, 30.4, 0.7))
+    # West transept arm south of Crypt cutout (X: -31.2..-22.8, Y: -15.2..+15.2)
+    add_box(bm_floor, (-27.0, 0.0, Z_NAVE - 0.35), (8.4, 30.4, 0.7))
+    # Low sculpted marble balustrade guarding the South & East edges of the open Crypt Stairwell Cutout!
+    add_box(bm_floor, (-16.0, 10.2, Z_NAVE + 0.52), (12.4, 0.32, 1.04))
+    add_box(bm_floor, (-9.8, 14.2, Z_NAVE + 0.52), (0.32, 8.0, 1.04))
+    # Semicircular apse ambulatory floor (clipped cleanly outside the West Crypt Stairwell Cutout!)
     apse_segs = 28
     top_v = []
     bot_v = []
@@ -88,6 +96,9 @@ def build_interior() -> None:
         r = APSE_RADIUS + 4.2
         px = r * math.cos(ang)
         py = APSE_CENTER_Y + r * math.sin(ang) - 6.0
+        # Keep the open stairwell entry at (-21.5, 16.5) unobstructed!
+        if px < -10.0 and py < 18.4:
+            py = 18.4
         top_v.append(bm_floor.verts.new((px, py, Z_NAVE)))
         bot_v.append(bm_floor.verts.new((px, py, Z_NAVE - 0.7)))
     c_top = bm_floor.verts.new((0.0, APSE_CENTER_Y - 6.0, Z_NAVE))
@@ -213,45 +224,48 @@ def build_interior() -> None:
 
     finalize_bmesh_object(bm_branches, "Interior_ColumnBranches", mats["sandstone_warm"], smooth=True, uv_scale=0.22)
 
-    # ── 4. Walkable Galleries / Cantories (Emporen at Z = 14.5m) with Pierced Stone Balustrades ──
+    # ── 4. Walkable Galleries / Cantories (Emporen at Z = 14.5m) with OPEN Corner Stairwell Cutouts! ──
     bm_gal = bmesh.new()
     for sx in (-1, 1):
         gx = sx * 19.6
-        add_box(bm_gal, (gx, -30.0, Z_GALLERY - 0.35), (5.6, 31.0, 0.7))
+        # Stop East/West Empore slab cleanly at Y = -40.4 so the corner spiral stair at (±19.6, -42.8) has 100% open headroom!
+        add_box(bm_gal, (gx, -27.4, Z_GALLERY - 0.35), (5.6, 26.0, 0.7))
         bx = sx * 16.95
         # Top handrail + bottom plinth + slender rhythmic gothic balustrade colonnettes
-        add_box(bm_gal, (bx, -30.0, Z_GALLERY + 1.08), (0.42, 31.0, 0.18))
-        add_box(bm_gal, (bx, -30.0, Z_GALLERY + 0.14), (0.40, 31.0, 0.28))
-        for k in range(36):
-            by = -14.8 - k * (30.4 / 35.0)
+        add_box(bm_gal, (bx, -27.4, Z_GALLERY + 1.08), (0.42, 26.0, 0.18))
+        add_box(bm_gal, (bx, -27.4, Z_GALLERY + 0.14), (0.40, 26.0, 0.28))
+        for k in range(30):
+            by = -14.8 - k * (25.4 / 29.0)
             add_cylinder(bm_gal, Vector((bx, by, Z_GALLERY + 0.25)), Vector((bx, by, Z_GALLERY + 1.02)), 0.08, 0.07, segments=6)
-        for bay in range(2, 7):
+        for bay in range(2, 6):
             add_box(bm_gal, (gx, -bay * GRID, Z_GALLERY - 0.9), (5.4, 0.65, 0.8))
-    # South Glory Choir Gallery bridging the nave entrance (Y = -44.5..-40.5, X = -22..+22)
-    add_box(bm_gal, (0.0, -43.0, Z_GALLERY - 0.35), (44.0, 4.8, 0.7))
-    add_box(bm_gal, (0.0, -40.75, Z_GALLERY + 1.08), (44.0, 0.42, 0.18))
-    add_box(bm_gal, (0.0, -40.75, Z_GALLERY + 0.14), (44.0, 0.40, 0.28))
-    for k in range(44):
-        bx_s = -21.5 + k * (43.0 / 43.0)
+    # South Glory Choir Gallery bridging between the two open corner stairwells (X = -17.2 .. +17.2, Y = -40.6 .. -45.4)
+    add_box(bm_gal, (0.0, -43.0, Z_GALLERY - 0.35), (34.4, 4.8, 0.7))
+    add_box(bm_gal, (0.0, -40.75, Z_GALLERY + 1.08), (34.4, 0.42, 0.18))
+    add_box(bm_gal, (0.0, -40.75, Z_GALLERY + 0.14), (34.4, 0.40, 0.28))
+    for k in range(36):
+        bx_s = -16.8 + k * (33.6 / 35.0)
         add_cylinder(bm_gal, Vector((bx_s, -40.75, Z_GALLERY + 0.25)), Vector((bx_s, -40.75, Z_GALLERY + 1.02)), 0.08, 0.07, segments=6)
 
-    # 2 Walkable Gaudí Corner Helical Staircases connecting Nave Floor (1.2m) -> Emporen Galleries (14.5m)!
+    # 2 Walkable Gaudí Corner Helical Staircases emerging cleanly into the open corner wells at (±19.6, -42.8)!
     for sx in (-1, 1):
         scx, scy = sx * 19.6, -42.8
-        n_st = 46
+        n_st = 62
         turns = 2.5
         # Central stone spiral newel column
-        add_cylinder(bm_gal, Vector((scx, scy, Z_NAVE)), Vector((scx, scy, Z_GALLERY + 1.1)), 0.48, 0.44, segments=12)
+        add_cylinder(bm_gal, Vector((scx, scy, Z_NAVE)), Vector((scx, scy, Z_GALLERY + 1.15)), 0.48, 0.44, segments=12)
         for si in range(n_st):
             t = si / (n_st - 1)
             ang = sx * t * turns * 2.0 * math.pi
             z_s = Z_NAVE + t * (Z_GALLERY - Z_NAVE)
             add_box(
                 bm_gal,
-                (scx + 1.18 * math.cos(ang), scy + 1.18 * math.sin(ang), z_s),
-                (1.45, 0.56, 0.22),
+                (scx + 1.24 * math.cos(ang), scy + 1.24 * math.sin(ang), z_s),
+                (1.62, 0.62, 0.24),
                 rot_euler=(0.0, 0.0, ang),
             )
+        # Clean inner corner landing apron joining top step smoothly onto BOTH Side Empore & South Choir Gallery!
+        add_box(bm_gal, (sx * 17.5, -40.6, Z_GALLERY - 0.35), (2.2, 2.2, 0.7))
 
     # Walkable Elevated Gallery Corridor connecting East Empore (22, -14.5, 14.5m) -> Nativity Spiral Staircase Base (31.5, -3.6, 14.5m)!
     p_g0 = Vector((21.0, -14.5, Z_GALLERY - 0.35))

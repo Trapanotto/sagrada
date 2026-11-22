@@ -128,28 +128,28 @@ export interface TowerStairShaft {
 export const TOWER_STAIR_SHAFTS: TowerStairShaft[] = [
   // 1. Tower of Jesus Christ (56m -> 136m spiraling around glass panorama elevator!)
   { name: 'Wendeltreppe · Turm Jesu Christi', cx: 0.0, cz: 0.0, zStart: 56.0, zEnd: 136.0, rInner: 2.25, rOuter: 4.95, turnsPer10m: 1.1, clockwise: true },
-  // 2. Tower of Virgin Mary (52m -> 118m over Apse)
-  { name: 'Wendeltreppe · Marien-Turm', cx: 0.0, cz: -22.5, zStart: 52.0, zEnd: 118.0, rInner: 1.75, rOuter: 4.0, turnsPer10m: 1.25, clockwise: true },
-  // 3. Four Towers of the Evangelists (52m -> 114m)
-  { name: 'Wendeltreppe · Evangelist Markus', cx: -11.5, cz: 11.5, zStart: 52.0, zEnd: 114.0, rInner: 1.05, rOuter: 3.1, turnsPer10m: 1.35, clockwise: true },
-  { name: 'Wendeltreppe · Evangelist Lukas', cx: -11.5, cz: -11.5, zStart: 52.0, zEnd: 114.0, rInner: 1.05, rOuter: 3.1, turnsPer10m: 1.35, clockwise: false },
-  { name: 'Wendeltreppe · Evangelist Matthäus', cx: 11.5, cz: 11.5, zStart: 52.0, zEnd: 114.0, rInner: 1.05, rOuter: 3.1, turnsPer10m: 1.35, clockwise: false },
-  { name: 'Wendeltreppe · Evangelist Johannes', cx: 11.5, cz: -11.5, zStart: 52.0, zEnd: 114.0, rInner: 1.05, rOuter: 3.1, turnsPer10m: 1.35, clockwise: true },
+  // 2. Tower of Virgin Mary (56m -> 118m over Apse, starts flush with 56m North Roof Skybridge!)
+  { name: 'Wendeltreppe · Marien-Turm', cx: 0.0, cz: -22.5, zStart: 56.0, zEnd: 118.0, rInner: 1.85, rOuter: 3.85, turnsPer10m: 1.25, clockwise: true },
+  // 3. Four Towers of the Evangelists (56m -> 114m, starts flush with 56m Diagonal Roof Skybridges!)
+  { name: 'Wendeltreppe · Evangelist Markus', cx: -11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.15, rOuter: 2.85, turnsPer10m: 1.35, clockwise: true },
+  { name: 'Wendeltreppe · Evangelist Lukas', cx: -11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.15, rOuter: 2.85, turnsPer10m: 1.35, clockwise: false },
+  { name: 'Wendeltreppe · Evangelist Matthäus', cx: 11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.15, rOuter: 2.85, turnsPer10m: 1.35, clockwise: false },
+  { name: 'Wendeltreppe · Evangelist Johannes', cx: 11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.15, rOuter: 2.85, turnsPer10m: 1.35, clockwise: true },
   // 4. Four Nativity Towers (East, 14.5m -> 65m)
-  { name: 'Wendeltreppe · Geburtsturm SO', cx: 31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 1.05, rOuter: 3.0, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Geburtsturm Mitte-Süd', cx: 31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 1.05, rOuter: 3.0, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Geburtsturm Mitte-Nord', cx: 31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 1.05, rOuter: 3.0, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Geburtsturm NO', cx: 31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 1.05, rOuter: 3.0, turnsPer10m: 1.68, clockwise: true },
+  { name: 'Wendeltreppe · Geburtsturm SO', cx: 31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: false },
+  { name: 'Wendeltreppe · Geburtsturm Mitte-Süd', cx: 31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: true },
+  { name: 'Wendeltreppe · Geburtsturm Mitte-Nord', cx: 31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: false },
+  { name: 'Wendeltreppe · Geburtsturm NO', cx: 31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: true },
   // 5. Four Passion Towers (West, 14.5m -> 65m)
-  { name: 'Wendeltreppe · Passionsturm SW', cx: -31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 1.05, rOuter: 3.0, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Passionsturm Mitte-Süd', cx: -31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 1.05, rOuter: 3.0, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Passionsturm Mitte-Nord', cx: -31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 1.05, rOuter: 3.0, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Passionsturm NW', cx: -31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 1.05, rOuter: 3.0, turnsPer10m: 1.68, clockwise: false },
+  { name: 'Wendeltreppe · Passionsturm SW', cx: -31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: true },
+  { name: 'Wendeltreppe · Passionsturm Mitte-Süd', cx: -31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: false },
+  { name: 'Wendeltreppe · Passionsturm Mitte-Nord', cx: -31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: true },
+  { name: 'Wendeltreppe · Passionsturm NW', cx: -31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.85, rOuter: 2.55, turnsPer10m: 1.68, clockwise: false },
   // 6. Four Glory Towers (South, 14.5m -> 72m)
-  { name: 'Wendeltreppe · Glorienturm West', cx: -11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 1.1, rOuter: 3.1, turnsPer10m: 1.62, clockwise: false },
-  { name: 'Wendeltreppe · Glorienturm Mitte-West', cx: -3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 1.1, rOuter: 3.1, turnsPer10m: 1.62, clockwise: true },
-  { name: 'Wendeltreppe · Glorienturm Mitte-Ost', cx: 3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 1.1, rOuter: 3.1, turnsPer10m: 1.62, clockwise: false },
-  { name: 'Wendeltreppe · Glorienturm Ost', cx: 11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 1.1, rOuter: 3.1, turnsPer10m: 1.62, clockwise: true },
+  { name: 'Wendeltreppe · Glorienturm West', cx: -11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.90, rOuter: 2.65, turnsPer10m: 1.62, clockwise: false },
+  { name: 'Wendeltreppe · Glorienturm Mitte-West', cx: -3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.90, rOuter: 2.65, turnsPer10m: 1.62, clockwise: true },
+  { name: 'Wendeltreppe · Glorienturm Mitte-Ost', cx: 3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.90, rOuter: 2.65, turnsPer10m: 1.62, clockwise: false },
+  { name: 'Wendeltreppe · Glorienturm Ost', cx: 11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.90, rOuter: 2.65, turnsPer10m: 1.62, clockwise: true },
 ];
 
 function distToSegment2D(px: number, pz: number, x0: number, z0: number, x1: number, z1: number): { dist: number; t: number } {

@@ -495,30 +495,13 @@ async function bootstrap(): Promise<void> {
     btn.addEventListener('click', () => applyWeather(btn.dataset.weather as WeatherMode));
   });
 
-  // Direct First-Person Ego-Shooter Start Overlay (1 click -> instant Pointer Lock mouse-look!)
-  const dismissFpsStart = (lockNow: boolean) => {
-    fpsStartOverlay.classList.add('hidden');
-    if (lockNow) {
-      player.requestPointerLock();
-    }
-  };
-  fpsStartOverlay.addEventListener('click', () => dismissFpsStart(true));
-  player.onPointerLockChange = (locked) => {
-    if (locked) fpsStartOverlay.classList.add('hidden');
-  };
+  // Start immediately into live 3D view with ZERO confirmation modal!
+  // Single click anywhere on the canvas locks mouse pointer into direct Ego-Shooter FPS control.
+  fpsStartOverlay.classList.add('hidden');
+  player.onPointerLockChange = () => {};
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    if (!fpsStartOverlay.classList.contains('hidden')) {
-      if (e.code === 'Escape') {
-        dismissFpsStart(false);
-        return;
-      }
-      if (e.code === 'Enter' || e.code === 'Space') {
-        dismissFpsStart(true);
-        return;
-      }
-    }
     if (e.code === 'KeyG') toggleGeometry();
     else if (e.code === 'KeyH') toggleHotspots();
     else if (e.code === 'KeyM') toggleMinimap();
@@ -544,13 +527,10 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
-  // Reveal scene, HUD & Direct FPS Ego-Shooter Click-to-Start Overlay (desktop only — phones jump straight into touch!)
+  // Reveal scene & HUD immediately (zero confirmation dialog!)
   loadingScreen.classList.add('fade-out');
   setTimeout(() => loadingScreen.classList.add('hidden'), 650);
   hudPanels.forEach((p) => p.classList.remove('hidden'));
-  if (!isTouchDevice() && !isMobileDevice() && window.innerWidth > 900) {
-    fpsStartOverlay.classList.remove('hidden');
-  }
 
   // Handle Resize
   window.addEventListener('resize', () => {

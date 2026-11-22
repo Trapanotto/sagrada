@@ -66,19 +66,20 @@ def build_nativity_facade(
         add_box(bm_nat, (fx + 4.8 - step * 0.55, 0.0, sz * 0.5), (0.65, 28.0, sz))
     add_box(bm_nat, (fx + 1.4, 0.0, Z_NAVE * 0.5), (3.4, 28.0, Z_NAVE))
 
-    # Massive sculpted piers flanking the 3 portals (leaving open walkthrough portals at Y = -9, 0, +9)
+    # Massive sculpted piers flanking the 3 portals (split cleanly around Z=14.5..18.5m so the East 14.5m Tower-Base Gallery is 100% OPEN!)
     pier_ys = (-14.2, -4.6, 4.6, 14.2)
     for py in pier_ys:
-        add_box(bm_nat, (fx, py, 14.5), (4.2, 3.6, 29.0))
+        add_box(bm_nat, (fx, py, 7.2), (4.2, 3.6, 14.4))
+        add_box(bm_nat, (fx, py, 24.4), (4.2, 3.6, 11.4))
         # Organic dripping stalactite-like buttress projections
         for k in range(5):
             zk = 5.0 + k * 4.5
             r = 1.45 - k * 0.16
             add_cylinder(bm_nat, Vector((fx + 2.2, py, zk)), Vector((fx + 1.8, py, zk + 4.8)), r, r * 0.68, segments=10)
 
-    # Upper facade wall above the 3 open portals (Z = 10.5 .. 30.0)
-    # Central Charity Portal is open to Z = 10.2m (width 5.4m), side portals open to Z = 8.4m
-    add_box(bm_nat, (fx, 0.0, 20.2), (3.6, 29.0, 19.6))
+    # Upper facade wall split cleanly around Z = 14.5..18.5m so the East Tower-Base Gallery & Spiral Stairs are 100% OPEN!
+    add_box(bm_nat, (fx, 0.0, 12.2), (3.4, 29.0, 3.6))
+    add_box(bm_nat, (fx, 0.0, 24.4), (3.4, 29.0, 11.4))
     # Deep sculpted archivolts framing each portal
     for py, p_w, p_h, g_h in ((-9.2, 5.2, 8.6, 24.0), (0.0, 6.2, 10.4, 30.0), (9.2, 5.2, 8.6, 24.0)):
         # Stepped parabolic archivolt ribs projecting outward
@@ -180,16 +181,18 @@ def build_passion_facade(
     """West Passion Facade (X = -31.5): 6 giant inclined bone columns, stark portico, Subirachs aesthetic."""
     fx = -31.5
 
-    # Entrance steps from Plaça de la Sagrada Família (Z=0) up to portico terrace (Z=1.2)
+    # Entrance steps from Plaça de la Sagrada Família (Z=0) cleanly up to portico terrace (Z=1.2) — ZERO buried steps!
     for step in range(6):
         sz = (step + 1) * (Z_NAVE / 6.0)
-        add_box(bm_pas, (fx - 8.2 + step * 0.55, 0.0, sz * 0.5), (0.65, 30.0, sz))
-    add_box(bm_pas, (fx - 3.6, 0.0, Z_NAVE * 0.5), (6.4, 30.0, Z_NAVE))
+        add_box(bm_pas, (fx - 8.4 + step * 0.58, 0.0, sz * 0.5), (0.62, 30.0, sz))
+    add_box(bm_pas, (fx - 2.6, 0.0, Z_NAVE * 0.5), (5.2, 30.0, Z_NAVE))
 
-    # Inner recessed Passion wall with 3 wide open doors (central door open 5.6m wide!)
+    # Inner recessed Passion wall split around Z = 14.5..18.5m so West Tower-Base Gallery & Spiral Stairs are 100% OPEN!
     for py in (-14.2, -5.2, 5.2, 14.2):
-        add_box(bm_pas, (fx, py, 14.5), (3.4, 4.2, 29.0))
-    add_box(bm_pas, (fx, 0.0, 21.0), (3.2, 29.0, 18.0))
+        add_box(bm_pas, (fx, py, 7.2), (3.4, 4.2, 14.4))
+        add_box(bm_pas, (fx, py, 24.4), (3.4, 4.2, 11.2))
+    add_box(bm_pas, (fx, 0.0, 12.2), (3.2, 29.0, 3.6))
+    add_box(bm_pas, (fx, 0.0, 24.4), (3.2, 29.0, 11.4))
     # Bronze Gospel doors folded open at entrance jambs
     for sy in (-1, 1):
         add_box(bm_bronze, (fx + 0.5, sy * 2.8, Z_NAVE + 3.2), (2.4, 0.26, 6.4))
@@ -255,10 +258,12 @@ def build_glory_facade(
     """South Glory Facade (Y = -49.5, Completed Design): 7 tall columns, cloud portico, monumental bridge staircase."""
     fy = -49.5
 
-    # Main facade wall framing the grand central portal (Y = -47.2, open walkthrough center X = -4.2..+4.2!)
+    # Main facade wall split cleanly around Z = 14.5..18.5m so South Choir Gallery -> Glory Tower bridges are 100% OPEN!
     for px in (-21.0, -13.2, -6.2, 6.2, 13.2, 21.0):
-        add_box(bm_warm, (px, fy + 2.2, 16.0), (3.4, 3.6, 32.0))
-    add_box(bm_warm, (0.0, fy + 2.2, 24.0), (45.0, 3.2, 22.0))
+        add_box(bm_warm, (px, fy + 2.2, 7.2), (3.4, 3.6, 14.4))
+        add_box(bm_warm, (px, fy + 2.2, 25.4), (3.4, 3.6, 13.4))
+    add_box(bm_warm, (0.0, fy + 2.2, 12.2), (45.0, 3.2, 3.6))
+    add_box(bm_warm, (0.0, fy + 2.2, 26.8), (45.0, 3.2, 16.4))
 
     # Monumental Bronze Lord's Prayer Doors folded open at the center
     for sx in (-1, 1):
@@ -291,14 +296,14 @@ def build_glory_facade(
     add_pointed_gable(bm_warm, (0.0, fy - 5.5), 30.5, 34.0, 18.0, 3.2, facing="Y-")
 
     # Monumental Ceremonial Terrace & Grand Staircase descending south over Carrer de Mallorca!
-    # Wide flat podium terrace right in front of the Glory portico (Y = -47..-58, Z = 1.2)
-    add_box(bm_warm, (0.0, fy - 3.5, Z_NAVE * 0.5), (44.0, 13.5, Z_NAVE))
-    # Grand terraced cascade stairs (Y = -58..-72, descending gently from Z = 1.2 down to Z = 0.0)
+    # Wide flat podium terrace cleanly ending at Y = -58.0 (ZERO buried top steps!)
+    add_box(bm_warm, (0.0, -52.5, Z_NAVE * 0.5), (44.0, 11.0, Z_NAVE))
+    # Grand terraced cascade stairs (Y = -58.6..-70.0, descending cleanly from Z = 1.2 down to asphalt Z = -0.14!)
     for step in range(10):
-        sz = (10 - step) * (Z_NAVE / 10.0)
-        sy = -58.5 - step * 1.15
+        sz = (10 - step) * (Z_NAVE / 10.0) + 0.16
+        sy = -58.65 - step * 1.18
         sw = 34.0 + step * 0.8
-        add_box(bm_warm, (0.0, sy, sz * 0.5), (sw, 1.25, sz))
+        add_box(bm_warm, (0.0, sy, sz * 0.5 - 0.16), (sw, 1.24, sz))
     # Ornamental flanking parapet walls with gilded light obelisks along the grand staircase
     for sx in (-1, 1):
         add_box(bm_warm, (sx * 19.5, -64.0, 1.2), (1.4, 13.5, 2.4))

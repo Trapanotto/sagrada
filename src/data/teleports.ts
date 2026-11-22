@@ -88,8 +88,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
     label: 'Gaudí-Wendeltreppe (Ostturm, begehbar)',
     shortLabel: 'Ost-Treppe',
     level: 'towers',
-    position: [33.4, 34.0, 3.6],
-    lookAt: [31.5, 44.0, 3.6],
+    position: [33.12, 34.0, 3.6],
+    lookAt: [31.5, 42.0, 3.6],
     flyMode: false,
   },
   {
@@ -97,8 +97,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
     label: 'Passions-Wendeltreppe (Westturm, begehbar)',
     shortLabel: 'West-Treppe',
     level: 'towers',
-    position: [-29.6, 32.0, 3.6],
-    lookAt: [-31.5, 42.0, 3.6],
+    position: [-29.85, 32.0, 3.6],
+    lookAt: [-31.5, 40.0, 3.6],
     flyMode: false,
   },
   {

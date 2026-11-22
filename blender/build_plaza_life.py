@@ -25,25 +25,59 @@ from common import (
 
 
 def create_barcelona_bench_meshes(wood_mat: bpy.types.Material, iron_mat: bpy.types.Material) -> tuple[bpy.types.Mesh, bpy.types.Mesh]:
-    """Authentic Barcelona romantic wooden-slat park bench with cast-iron scroll legs."""
+    """Anatomically accurate Barcelona 'Banc Romàntic' wooden-slat park bench with continuous cast-iron scroll frames.
+    Faces +Y (front edge at y=+0.24, slanted backrest from y=-0.20 to y=-0.34, zero floating slats or armrests!).
+    """
     bm_w = bmesh.new()
     bm_i = bmesh.new()
-    # Curved ergonomic wooden slats (seat + backrest)
-    for dy, dz in ((-0.16, 0.44), (0.0, 0.46), (0.16, 0.48)):
-        add_box(bm_w, (0.0, dy, dz), (2.2, 0.12, 0.045))
-    for dy, dz in ((-0.26, 0.68), (-0.30, 0.84), (-0.32, 0.98)):
-        add_box(bm_w, (0.0, dy, dz), (2.2, 0.05, 0.11), rot_euler=(0.18, 0.0, 0.0))
-    # 3 cast-iron scroll leg frames
-    for lx in (-0.95, 0.0, 0.95):
-        add_box(bm_i, (lx, 0.12, 0.24), (0.07, 0.08, 0.48))
-        add_box(bm_i, (lx, -0.22, 0.48), (0.07, 0.08, 0.96))
-        add_box(bm_i, (lx, -0.05, 0.42), (0.07, 0.46, 0.06))
-        if lx != 0.0:
-            add_box(bm_i, (lx, -0.02, 0.64), (0.06, 0.42, 0.05))
 
-    apply_box_uv(bm_w, scale=0.6)
+    # 1. Ergonomic Contoured Wooden Seat Slats (4 dense flush oak planks, Z ≈ 0.44m, facing +Y)
+    seat_slats = [
+        (0.21, 0.445, -0.06),   # Rolled front knee lip
+        (0.08, 0.455, -0.02),
+        (-0.05, 0.448, 0.02),
+        (-0.18, 0.436, 0.06),
+    ]
+    for sy, sz, tilt_x in seat_slats:
+        add_box(bm_w, (0.0, sy, sz), (2.16, 0.105, 0.036), rot_euler=(tilt_x, 0.0, 0.0))
+
+    # 2. Angled Wooden Backrest Slats (4 flush planks leaning cleanly back at 14° along the iron spine!)
+    back_tilt = 0.24  # ~14° ergonomic recline toward -Y
+    for k in range(4):
+        s_dist = 0.16 + k * 0.125
+        by = -0.21 - math.sin(back_tilt) * s_dist
+        bz = 0.45 + math.cos(back_tilt) * s_dist
+        add_box(bm_w, (0.0, by, bz), (2.16, 0.036, 0.098), rot_euler=(back_tilt, 0.0, 0.0))
+
+    # 3. 3 Continuous Cast-Iron Frame Legs & Scroll Armrests (every slat & armrest solidly bolted to iron!)
+    for lx in (-0.88, 0.0, 0.88):
+        # Front leg (from ground Z=0.0 cleanly up to seat underside Z=0.44; outer legs continue up to Z=0.64 armrest!)
+        front_top = 0.64 if lx != 0.0 else 0.43
+        add_cylinder(bm_i, Vector((lx, 0.21, 0.0)), Vector((lx, 0.19, front_top)), 0.032, 0.028, segments=8)
+        # Rear leg (slightly splayed backward from Z=0.0 up to seat junction at y=-0.21, Z=0.44)
+        add_cylinder(bm_i, Vector((lx, -0.27, 0.0)), Vector((lx, -0.21, 0.44)), 0.034, 0.030, segments=8)
+        # Inclined backrest iron spine following EXACT back_tilt angle right behind the wooden backrest slats!
+        p_spine_bot = Vector((lx, -0.225, 0.43))
+        p_spine_top = Vector((lx, -0.225 - math.sin(back_tilt) * 0.56, 0.43 + math.cos(back_tilt) * 0.56))
+        add_cylinder(bm_i, p_spine_bot, p_spine_top, 0.028, 0.024, segments=8)
+        # Horizontal seat cradle bar solidly supporting all 4 seat slats
+        add_cylinder(bm_i, Vector((lx, 0.22, 0.425)), Vector((lx, -0.22, 0.415)), 0.028, 0.028, segments=8)
+        # Lower leg cross-brace for structural realism
+        add_cylinder(bm_i, Vector((lx, 0.19, 0.16)), Vector((lx, -0.24, 0.16)), 0.020, 0.020, segments=6)
+        # Ground foot pads resting flat on Z = 0.0
+        add_box(bm_i, (lx, 0.21, 0.015), (0.09, 0.10, 0.03))
+        add_box(bm_i, (lx, -0.27, 0.015), (0.09, 0.10, 0.03))
+        # Outer armrests solidly bridging front upright (y=0.19, Z=0.64) directly into backrest spine (y=-0.27, Z=0.64)!
+        if lx != 0.0:
+            add_cylinder(bm_i, Vector((lx, 0.21, 0.64)), Vector((lx, -0.27, 0.64)), 0.028, 0.026, segments=8)
+            add_cylinder(bm_i, Vector((lx, 0.21, 0.64)), Vector((lx, 0.24, 0.61)), 0.026, 0.022, segments=6)
+
+    # Longitudinal under-seat cast-iron stretcher bar linking all 3 legs
+    add_cylinder(bm_i, Vector((-0.88, -0.02, 0.34)), Vector((0.88, -0.02, 0.34)), 0.022, 0.022, segments=8)
+
+    apply_box_uv(bm_w, scale=0.65)
     bake_bvh_vertex_ao(bm_w, max_dist=1.2, min_ao=0.58)
-    apply_box_uv(bm_i, scale=0.6)
+    apply_box_uv(bm_i, scale=0.65)
     mw = bpy.data.meshes.new("Mesh_BenchWood")
     mi = bpy.data.meshes.new("Mesh_BenchIron")
     bm_w.to_mesh(mw)
@@ -157,22 +191,24 @@ def build_plaza_life() -> None:
     add_cylinder(bm_stone, Vector((fx, fy, 1.10)), Vector((fx, fy, 1.48)), 0.72, 1.85, segments=16)  # Flared upper stone water bowl
     add_cylinder(bm_gold, Vector((fx, fy, 1.45)), Vector((fx, fy, 2.05)), 0.26, 0.10, segments=10)   # Brass fountain jet nozzle
 
-    # ── 2. Instanced Barcelona Park Benches around Pond, Plazas & Promenades ──
+    # ── 2. Instanced Barcelona Park Benches around Pond, Plazas & Promenades (all solidly on Panot sidewalks!) ──
     m_bw, m_bi = create_barcelona_bench_meshes(mats["wood_pew"], mats["iron_dark"])
     benches: list[tuple[float, float, float]] = [
-        # Plaça de Gaudí pond promenade (facing the reflective pond & Nativity Facade!)
-        (65.5, -10.0, -math.pi * 0.5), (65.5, -3.5, -math.pi * 0.5),
-        (65.5, 3.5, -math.pi * 0.5), (65.5, 10.0, -math.pi * 0.5),
-        (99.5, -10.0, math.pi * 0.5), (99.5, -3.5, math.pi * 0.5),
-        (99.5, 3.5, math.pi * 0.5), (99.5, 10.0, math.pi * 0.5),
-        (75.0, -19.5, 0.0), (82.5, -19.5, 0.0), (90.0, -19.5, 0.0),
-        (75.0, 19.5, math.pi), (82.5, 19.5, math.pi), (90.0, 19.5, math.pi),
+        # Plaça de Gaudí West rim (facing East toward the reflective pond)
+        (65.0, -10.5, -math.pi * 0.5), (65.0, -3.5, -math.pi * 0.5),
+        (65.0, 3.5, -math.pi * 0.5), (65.0, 10.5, -math.pi * 0.5),
+        # Plaça de Gaudí East rim (facing West across the pond toward the Nativity Facade!)
+        (100.2, -10.5, math.pi * 0.5), (100.2, -3.5, math.pi * 0.5),
+        (100.2, 3.5, math.pi * 0.5), (100.2, 10.5, math.pi * 0.5),
+        # North & South pond promenade rims (facing inward toward pond & fountain)
+        (75.0, -19.8, 0.0), (82.5, -19.8, 0.0), (90.0, -19.8, 0.0),
+        (75.0, 19.8, math.pi), (82.5, 19.8, math.pi), (90.0, 19.8, math.pi),
         # Plaça de la Sagrada Família (West park facing Passion Facade)
-        (-66.0, -10.0, math.pi * 0.5), (-66.0, 0.0, math.pi * 0.5), (-66.0, 10.0, math.pi * 0.5),
+        (-65.5, -10.0, -math.pi * 0.5), (-65.5, 0.0, -math.pi * 0.5), (-65.5, 10.0, -math.pi * 0.5),
         (-86.0, -12.0, 0.0), (-86.0, 12.0, math.pi),
         (-102.0, -10.0, -math.pi * 0.5), (-102.0, 10.0, -math.pi * 0.5),
-        # South Glory Plaza flanking the grand staircase
-        (-28.0, -68.0, 0.0), (-22.0, -68.0, 0.0), (22.0, -68.0, 0.0), (28.0, -68.0, 0.0),
+        # Temple Island South Glory Promenade (sits solidly on Z=0.0 Panot sidewalk at Y=-58.5, facing North toward Glory Facade!)
+        (-28.0, -58.5, 0.0), (-22.0, -58.5, 0.0), (22.0, -58.5, 0.0), (28.0, -58.5, 0.0),
     ]
     for idx, (bx, by, brot) in enumerate(benches):
         for suffix, mesh in (("W", m_bw), ("I", m_bi)):
