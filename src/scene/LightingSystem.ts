@@ -18,7 +18,7 @@ export class LightingSystem {
   public readonly particles: AtmosphericParticles;
   public readonly sunDir = new THREE.Vector3(0.6, 0.7, 0.2);
 
-  public timeHours = 17.15;
+  public timeHours = 18.1;
   public dayFactor = 1.0;
   public nightFactor = 0.0;
   public eastSunHit = 0.0;
@@ -137,21 +137,21 @@ export class LightingSystem {
             // Ultra-slow Mediterranean cloud drift via gentle sky azimuth rotation
             float drift = uTime * 0.0012;
             vec2 uv = dirToEquirectUv(dir, drift);
-            vec3 cDay = texture2D(uHdriDay, uv).rgb * 0.92;
-            vec3 cSun = texture2D(uHdriSunset, uv).rgb * 1.12;
-            vec3 cNight = texture2D(uHdriNight, uv).rgb * 0.55;
+            vec3 cDay = texture2D(uHdriDay, uv).rgb * 0.60;
+            vec3 cSun = texture2D(uHdriSunset, uv).rgb * 0.66;
+            vec3 cNight = texture2D(uHdriNight, uv).rgb * 0.36;
 
             // Smooth photographic crossfade: Day -> Golden Sunset -> Starry Night
             vec3 daySun = mix(cDay, cSun, clamp(uGoldenFactor * 1.15, 0.0, 1.0));
             col = mix(daySun, cNight, clamp(uNightFactor, 0.0, 1.0));
           } else {
-            col = mix(uHorizonColor, uTopColor, pow(h, 0.54));
+            col = mix(uHorizonColor, uTopColor, pow(h, 0.54)) * 0.78;
           }
 
           // Crisp HDR solar glow & sun disk aligned to Barcelona solar ephemeris
           float sunAmt = max(dot(dir, sunN), 0.0);
-          col += uSunColor * pow(sunAmt, 16.0) * 0.36 * (1.0 - uNightFactor * 0.94);
-          col += uSunColor * smoothstep(0.9985, 0.9996, sunAmt) * 2.8 * (1.0 - uNightFactor);
+          col += uSunColor * pow(sunAmt, 20.0) * 0.24 * (1.0 - uNightFactor * 0.94);
+          col += uSunColor * smoothstep(0.9988, 0.9997, sunAmt) * 2.1 * (1.0 - uNightFactor);
 
           // Ground horizon haze below eye horizon
           if (dir.y < 0.0) {
@@ -509,14 +509,20 @@ export class LightingSystem {
     }
 
     this.sunLight.color.copy(sunCol);
-    this.sunLight.intensity = dayFactor * 3.1;
+    // Physically grounded solar intensity: strong crisp shadows without blowing out sandstone highlights!
+    this.baseSunInt = dayFactor * THREE.MathUtils.lerp(2.05, 1.48, goldenFactor * 0.75);
+    this.sunLight.intensity = this.baseSunInt;
     this.sunLight.castShadow = dayFactor > 0.06;
     this.requestShadowUpdate(forceShadow);
 
-    this.hemiLight.color.copy(topCol).lerp(new THREE.Color('#d8e8fa'), 0.45 * dayFactor);
-    this.hemiLight.groundColor.set('#7a654f').lerp(new THREE.Color('#0b0f1a'), nightFactor * 0.90);
-    this.hemiLight.intensity = THREE.MathUtils.lerp(0.11, 0.78, dayFactor);
-    this.scene.environmentIntensity = THREE.MathUtils.lerp(0.14, 0.78, dayFactor);
+    // Avoid double-stacking HemisphereLight + HDRI PMREM IBL!
+    // HDRI provides realistic sky ambient; HemiLight adds only subtle warm ground-bounce fill.
+    this.hemiLight.color.copy(topCol).lerp(new THREE.Color('#c8ddf5'), 0.35 * dayFactor);
+    this.hemiLight.groundColor.set('#685543').lerp(new THREE.Color('#090d16'), nightFactor * 0.92);
+    this.baseHemiInt = THREE.MathUtils.lerp(0.05, 0.22, dayFactor);
+    this.baseEnvInt = THREE.MathUtils.lerp(0.08, 0.44, dayFactor) * THREE.MathUtils.lerp(1.0, 0.78, goldenFactor);
+    this.hemiLight.intensity = this.baseHemiInt;
+    this.scene.environmentIntensity = this.baseEnvInt;
 
     const eastSunHit = Math.max(0, eastWest) * dayFactor;
     const westSunHit = Math.max(0, -eastWest) * dayFactor;
@@ -527,7 +533,7 @@ export class LightingSystem {
     const targetClimbY = THREE.MathUtils.lerp(7.5, 1.2, THREE.MathUtils.clamp(elevation / 0.65, 0, 1));
     const beamTilt = THREE.MathUtils.lerp(1.12, 0.48, THREE.MathUtils.clamp(elevation / 1.0, 0, 1));
 
-    this.baseEastInt = 14 * dayFactor + eastSunHit * 520;
+    this.baseEastInt = 8 * dayFactor + eastSunHit * 240;
     for (let i = 0; i < this.eastProjectors.length; i++) {
       const es = this.eastProjectors[i];
       es.intensity = this.baseEastInt;
@@ -538,11 +544,11 @@ export class LightingSystem {
       const eb = this.eastBeams[i];
       eb.rotation.z = beamTilt;
       eb.position.x = 21.4 - Math.sin(beamTilt) * 11.5;
-      (eb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.21;
+      (eb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.14;
       eb.visible = eastSunHit > 0.03;
     }
 
-    this.baseWestInt = 14 * dayFactor + westSunHit * 560;
+    this.baseWestInt = 8 * dayFactor + westSunHit * 265;
     for (let i = 0; i < this.westProjectors.length; i++) {
       const ws = this.westProjectors[i];
       ws.intensity = this.baseWestInt;
@@ -553,38 +559,38 @@ export class LightingSystem {
       const wb = this.westBeams[i];
       wb.rotation.z = -beamTilt;
       wb.position.x = -21.4 + Math.sin(beamTilt) * 11.5;
-      (wb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.23;
+      (wb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.16;
       wb.visible = westSunHit > 0.03;
     }
 
-    this.baseApseInt = 16 * dayFactor + 18;
+    this.baseApseInt = 9 * dayFactor + 10;
     this.apseGlassLight.intensity = this.baseApseInt;
 
-    const ambientGlass = 0.34 * dayFactor + 0.18;
-    const eastGlow = ambientGlass + eastSunHit * 3.1;
-    const westGlow = ambientGlass + westSunHit * 3.4;
+    const ambientGlass = 0.24 * dayFactor + 0.12;
+    const eastGlow = ambientGlass + eastSunHit * 2.1;
+    const westGlow = ambientGlass + westSunHit * 2.3;
     for (const m of this.trackedMats.east) m.emissiveIntensity = eastGlow;
     for (const m of this.trackedMats.west) m.emissiveIntensity = westGlow;
-    for (const m of this.trackedMats.apse) m.emissiveIntensity = 0.72 + dayFactor * 1.45;
+    for (const m of this.trackedMats.apse) m.emissiveIntensity = 0.55 + dayFactor * 1.05;
 
-    // Dramatic Chiaroscuro balance: lower flat interior fill so stained-glass light shafts & candles shine!
-    this.baseInteriorInt = THREE.MathUtils.lerp(28, 56, nightFactor);
+    // Realistic stone basilica Chiaroscuro: restrained ambient fill so stained glass & candles define the space!
+    this.baseInteriorInt = THREE.MathUtils.lerp(13, 28, nightFactor);
     for (const il of this.interiorFillLights) {
       il.intensity = this.baseInteriorInt;
     }
 
-    this.baseNightInt = nightFactor * 270;
+    this.baseNightInt = nightFactor * 165;
     for (const nl of this.nightSpotLights) {
       nl.intensity = this.baseNightInt;
     }
 
-    const landmarkGlow = 1.4 + nightFactor * 4.4;
-    for (const m of this.trackedMats.star) m.emissiveIntensity = landmarkGlow * 1.4;
-    for (const m of this.trackedMats.cross) m.emissiveIntensity = landmarkGlow * 1.1;
-    this.starPointLight.intensity = 20 + nightFactor * 150;
-    this.crossPointLight.intensity = 22 + nightFactor * 160;
-    (this.starHaloSprite.material as THREE.SpriteMaterial).opacity = 0.20 + nightFactor * 0.72;
-    (this.crossHaloSprite.material as THREE.SpriteMaterial).opacity = 0.16 + nightFactor * 0.65;
+    const landmarkGlow = 1.2 + nightFactor * 3.2;
+    for (const m of this.trackedMats.star) m.emissiveIntensity = landmarkGlow * 1.25;
+    for (const m of this.trackedMats.cross) m.emissiveIntensity = landmarkGlow * 1.0;
+    this.starPointLight.intensity = 14 + nightFactor * 105;
+    this.crossPointLight.intensity = 16 + nightFactor * 115;
+    (this.starHaloSprite.material as THREE.SpriteMaterial).opacity = 0.16 + nightFactor * 0.58;
+    (this.crossHaloSprite.material as THREE.SpriteMaterial).opacity = 0.14 + nightFactor * 0.52;
   }
 
   public requestShadowUpdate(immediate = false): void {
@@ -596,17 +602,19 @@ export class LightingSystem {
     }
   }
 
+  private baseSunInt = 1.9;
+  private baseHemiInt = 0.2;
+  private baseEnvInt = 0.42;
   private baseEastInt = 0;
   private baseWestInt = 0;
   private baseApseInt = 0;
-  private baseInteriorInt = 48;
+  private baseInteriorInt = 16;
   private baseNightInt = 0;
 
   public updateZoneCulling(cameraPos: THREE.Vector3, indoorFactor: number): void {
     // CRITICAL ANTI-STUTTER FIX:
-    // NEVER toggle light.visible = false/true while walking! Toggling light.visible alters NUM_POINT_LIGHTS /
-    // NUM_SPOT_LIGHTS in Three.js's shader cache and causes multi-second GLSL recompilation freezes when entering portals!
-    // Instead, keep all 12 lights permanently visible and cleanly modulate intensity to 0.0 outside their zone!
+    // NEVER toggle light.visible = false/true while walking! Keep all 12 lights permanently visible
+    // and smoothly modulate intensities to prevent GLSL shader recompilation freezes!
     const inCryptRange = cameraPos.y < 2.2;
     const nearInterior =
       cameraPos.y > -2.5 &&
@@ -615,6 +623,13 @@ export class LightingSystem {
       cameraPos.z > -50 &&
       cameraPos.z < 68;
     const needNightFloods = this.nightFactor > 0.04 && indoorFactor < 0.92;
+
+    // Physical outdoor-sky occlusion inside stone cathedral walls:
+    // Dramatically reduce outdoor sky IBL & hemisphere fill indoors so stone vaults have real depth & contrast!
+    const outdoorSkyLeak = THREE.MathUtils.lerp(1.0, 0.28, indoorFactor);
+    this.hemiLight.intensity = this.baseHemiInt * outdoorSkyLeak;
+    this.scene.environmentIntensity = this.baseEnvInt * THREE.MathUtils.lerp(1.0, 0.34, indoorFactor);
+    this.sunLight.intensity = this.baseSunInt * (cameraPos.y < -1.2 ? 0.05 : 1.0);
 
     if (!inCryptRange) {
       for (const cl of this.cryptLights) cl.intensity = 0;

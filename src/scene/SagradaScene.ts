@@ -31,10 +31,10 @@ const MODEL_SPECS: ModelSpec[] = [
 ];
 
 const LIGHTMAP_BY_MESH: Record<string, { url: string; intensity: number }> = {
-  Interior_HyperboloidVaults: { url: './textures/lightmaps/lightmap_vaults.webp', intensity: 1.05 },
-  Interior_MarbleFloor: { url: './textures/lightmaps/lightmap_floor.webp', intensity: 0.92 },
-  Interior_NaveWalls: { url: './textures/lightmaps/lightmap_walls.webp', intensity: 0.95 },
-  Crypt_Architecture: { url: './textures/lightmaps/lightmap_crypt.webp', intensity: 1.15 },
+  Interior_HyperboloidVaults: { url: './textures/lightmaps/lightmap_vaults.webp', intensity: 0.58 },
+  Interior_MarbleFloor: { url: './textures/lightmaps/lightmap_floor.webp', intensity: 0.48 },
+  Interior_NaveWalls: { url: './textures/lightmaps/lightmap_walls.webp', intensity: 0.52 },
+  Crypt_Architecture: { url: './textures/lightmaps/lightmap_crypt.webp', intensity: 0.65 },
 };
 
 export class SagradaScene {
@@ -431,7 +431,7 @@ export class SagradaScene {
             matName.includes('PorphyryRed') ||
             matName.includes('GoldAccent')
           ) {
-            obj.material.envMapIntensity = obj.name === 'Interior_MarbleFloor' ? 1.45 : 1.15;
+            obj.material.envMapIntensity = obj.name === 'Interior_MarbleFloor' ? 0.85 : 0.72;
             this.interiorReflectiveMats.push(obj.material);
           }
 
@@ -532,11 +532,11 @@ export class SagradaScene {
     this.waterUniforms.uNightFactor.value = this.lighting.nightFactor;
     this.windUniform.value += dt;
 
-    // Warm golden haze in the 45-60m vaults by day, subtle indigo at night
+    // Restrained warm golden haze in the 45-60m vaults by day, subtle indigo at night
     this.hazeUniforms.uHazeColor.value
-      .set('#edd8ba')
-      .lerp(new THREE.Color('#1c2740'), this.lighting.nightFactor * 0.85);
-    this.hazeUniforms.uHazeStrength.value = THREE.MathUtils.lerp(0.24, 0.14, this.lighting.nightFactor);
+      .set('#d8be9a')
+      .lerp(new THREE.Color('#141d32'), this.lighting.nightFactor * 0.88);
+    this.hazeUniforms.uHazeStrength.value = THREE.MathUtils.lerp(0.14, 0.09, this.lighting.nightFactor);
 
     camera.updateMatrixWorld();
     this.projScreenMat.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);

@@ -12,9 +12,9 @@ export type GraphicsTier = 'aaa' | 'ultra' | 'fast';
 const CinematicGradeShader = {
   uniforms: {
     tDiffuse: { value: null },
-    uVignette: { value: 0.28 },
-    uSaturation: { value: 1.11 },
-    uContrast: { value: 1.07 },
+    uVignette: { value: 0.24 },
+    uSaturation: { value: 1.05 },
+    uContrast: { value: 1.04 },
     uTime: { value: 0.0 },
   },
   vertexShader: /* glsl */ `
@@ -40,18 +40,18 @@ const CinematicGradeShader = {
       col = mix(vec3(luma), col, uSaturation);
       col = (col - 0.5) * uContrast + 0.5;
 
-      // Subtle architectural cinema Split-Toning: cool Mediterranean indigo shadows + warm golden highlights
-      vec3 shadowTint = vec3(0.95, 0.98, 1.05);
-      vec3 highlightTint = vec3(1.045, 1.01, 0.95);
-      col *= mix(shadowTint, highlightTint, smoothstep(0.18, 0.78, luma));
+      // Subtle photorealistic Split-Toning: cool shadowed stone recesses + natural warm highlights (no over-brightening)
+      vec3 shadowTint = vec3(0.95, 0.98, 1.03);
+      vec3 highlightTint = vec3(1.015, 0.995, 0.96);
+      col *= mix(shadowTint, highlightTint, smoothstep(0.18, 0.80, luma));
 
       // Ultra-subtle organic 35mm film grain (breaks sky banding without noise)
       float grain = fract(sin(dot(vUv * 512.0 + fract(uTime * 0.7), vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
-      col += grain * 0.0085;
+      col += grain * 0.007;
 
       vec2 centered = vUv * 2.0 - 1.0;
       float vig = 1.0 - dot(centered, centered) * uVignette * 0.42;
-      col *= clamp(vig, 0.62, 1.0);
+      col *= clamp(vig, 0.66, 1.0);
 
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), texel.a);
     }
@@ -119,8 +119,8 @@ export class PostProcessingPipeline {
     this.gtaoPass.enabled = false;
     this.composer.addPass(this.gtaoPass);
 
-    // Selective HDR Bloom (half-res internal mip chain — very fast!)
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(Math.floor(w * 0.5), Math.floor(h * 0.5)), 0.30, 0.50, 1.05);
+    // Selective HDR Bloom (high threshold 1.48 so sunlit sandstone NEVER blooms — only true lights, stars & flames!)
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(Math.floor(w * 0.5), Math.floor(h * 0.5)), 0.16, 0.42, 1.48);
     this.composer.addPass(this.bloomPass);
 
     // Optional Photo-Mode Depth of Field (BokehPass — off during normal walking)
@@ -188,8 +188,8 @@ export class PostProcessingPipeline {
   }
 
   public setNightBloomFactor(nightFactor: number): void {
-    this.bloomPass.strength = THREE.MathUtils.lerp(0.26, 0.50, nightFactor);
-    this.bloomPass.threshold = THREE.MathUtils.lerp(1.06, 0.88, nightFactor);
+    this.bloomPass.strength = THREE.MathUtils.lerp(0.15, 0.34, nightFactor);
+    this.bloomPass.threshold = THREE.MathUtils.lerp(1.48, 1.12, nightFactor);
   }
 
   public setSize(width: number, height: number): void {

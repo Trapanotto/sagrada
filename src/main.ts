@@ -40,9 +40,9 @@ async function bootstrap(): Promise<void> {
   renderer.shadowMap.autoUpdate = false; // Cached 2K sun shadows: only re-rendered when sun moves or scene loads!
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.localClippingEnabled = true; // Enables smooth stone-by-stone historical construction timelapse!
-  // Blender 4/5 cinema standard: preserves rich saturated stained glass & golden sunsets without white clipping
+  // Blender 4/5 cinema standard: realistic physical exposure (0.74 outdoors -> auto-adapts gently indoors!)
   renderer.toneMapping = THREE.AgXToneMapping;
-  renderer.toneMappingExposure = 1.06;
+  renderer.toneMappingExposure = 0.74;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.25, 1100);
@@ -276,7 +276,7 @@ async function bootstrap(): Promise<void> {
 
   photoResetBtn.addEventListener('click', () => {
     photoFov.value = '62';
-    photoExposure.value = '1.06';
+    photoExposure.value = '0.76';
     photoFocus.value = '26';
     photoAperture.value = '0';
     updatePhotoCameraSettings();
@@ -316,7 +316,7 @@ async function bootstrap(): Promise<void> {
       post.setDof(false);
       camera.fov = 62;
       camera.updateProjectionMatrix();
-      renderer.toneMappingExposure = 1.06;
+      renderer.toneMappingExposure = 0.74;
       restoreNormalHud();
     }
   };
@@ -435,7 +435,7 @@ async function bootstrap(): Promise<void> {
   timeChipBtns.forEach((btn) => {
     btn.addEventListener('click', () => applyTime(parseFloat(btn.dataset.time!)));
   });
-  applyTime(17.15);
+  applyTime(18.1);
 
   // Weather Atmosphere Controls (Klar / Nebel / Regen)
   const weatherBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.weather-btn[data-weather]'));
@@ -539,6 +539,22 @@ async function bootstrap(): Promise<void> {
       player.update(dt);
     }
     const indoorFactor = collision.getIndoorFactor(camera.position);
+    // Physical camera Auto-Eye-Adaptation: stops down in bright Barcelona sun (0.73), opens subtly indoors (0.86) & crypt (0.95)!
+    if (!photoMode) {
+      const targetExp =
+        camera.position.y < -1.5
+          ? 0.96
+          : THREE.MathUtils.lerp(
+              THREE.MathUtils.lerp(0.73, 0.88, sagrada.lighting.nightFactor),
+              0.87,
+              indoorFactor
+            );
+      renderer.toneMappingExposure = THREE.MathUtils.lerp(
+        renderer.toneMappingExposure,
+        targetExp,
+        Math.min(1, dt * 2.2)
+      );
+    }
     sagrada.update(dt, camera, indoorFactor);
     post.render(dt);
 
