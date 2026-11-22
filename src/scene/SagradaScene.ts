@@ -12,26 +12,28 @@ import { CandleFlames } from './CandleFlames';
 import { StainedGlassCarpets } from './StainedGlassCarpets';
 import { WeatherSystem } from './WeatherSystem';
 import { JesusElevator } from './JesusElevator';
+import { CollisionSystem } from './CollisionSystem';
 import { isMobileDevice } from '../utils/device';
 
 interface ModelSpec {
   id: string;
   label: string;
   url: string;
-  priority: 'core' | 'background';
-  weightMB: number;
+  weightKB: number;
 }
 
 const MODEL_SPECS: ModelSpec[] = [
-  { id: 'facades', label: 'Geburts-, Passions- & Glorienfassade', url: './models/facades.glb', priority: 'core', weightMB: 2.4 },
-  { id: 'towers', label: 'Alle 18 Türme & Wendeltreppe', url: './models/towers.glb', priority: 'core', weightMB: 3.1 },
-  { id: 'eixample', label: 'Eixample-Stadtblock & Blätter-Bäume', url: './models/eixample.glb', priority: 'core', weightMB: 3.2 },
-  // interior.glb is preloaded in <head> and streams immediately right after exterior reveal -> cuts startup time nearly in half!
-  { id: 'interior', label: 'Innenraum, Säulenwald & Cycles-GI', url: './models/interior.glb', priority: 'background', weightMB: 2.9 },
-  { id: 'furnishings', label: 'Liturgische Ausstattung, Kapellen & Ausstellung', url: './models/furnishings.glb', priority: 'background', weightMB: 0.7 },
-  { id: 'cloister_crypt', label: 'Kreuzgang, Sakristeien & Krypta-GI', url: './models/cloister_crypt.glb', priority: 'background', weightMB: 1.6 },
-  { id: 'plaza_life', label: 'Parkbänke, Kioske, Brunnen & Stadtmöbel', url: './models/plaza_life.glb', priority: 'background', weightMB: 0.8 },
+  { id: 'facades', label: 'Geburts-, Passions- & Glorienfassade', url: './models/facades.glb', weightKB: 540 },
+  { id: 'towers', label: 'Alle 18 Türme & Wendeltreppen', url: './models/towers.glb', weightKB: 1351 },
+  { id: 'interior', label: 'Innenraum, Säulenwald & Gewölbe', url: './models/interior.glb', weightKB: 1208 },
+  { id: 'furnishings', label: 'Hochaltar, Kapellen & Ausstattung', url: './models/furnishings.glb', weightKB: 367 },
+  { id: 'cloister_crypt', label: 'Kreuzgang, Sakristeien & Krypta', url: './models/cloister_crypt.glb', weightKB: 125 },
+  { id: 'eixample', label: 'Eixample-Stadtblock & Spiegelteich', url: './models/eixample.glb', weightKB: 154 },
+  { id: 'plaza_life', label: 'Parkbänke, Kioske & Stadtmöbel', url: './models/plaza_life.glb', weightKB: 79 },
 ];
+
+const nextFrame = (): Promise<void> =>
+  new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
 const LIGHTMAP_BY_MESH: Record<string, { url: string; intensity: number }> = {
   Interior_HyperboloidVaults: { url: './textures/lightmaps/lightmap_vaults.webp', intensity: 0.58 },
@@ -315,6 +317,7 @@ export class SagradaScene {
    */
   private injectStoneAntiTilingAndHeightFog(mat: THREE.MeshStandardMaterial): void {
     const hazeU = this.hazeUniforms;
+    mat.customProgramCacheKey = () => 'sagrada-stone-antitiling-v1';
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uHazeColor = hazeU.uHazeColor;
       shader.uniforms.uHazeStrength = hazeU.uHazeStrength;
@@ -355,6 +358,7 @@ export class SagradaScene {
 
   private injectTreeWindSway(mat: THREE.MeshStandardMaterial): void {
     const windU = this.windUniform;
+    mat.customProgramCacheKey = () => 'sagrada-tree-wind-v1';
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uWindTime = windU;
       shader.vertexShader = shader.vertexShader.replace(
@@ -374,25 +378,110 @@ export class SagradaScene {
 
   public async loadAllModules(
     camera: THREE.PerspectiveCamera,
-    onProgress: (fraction: number) => void
+    collision: CollisionSystem,
+    onProgress: (fraction: number, statusText: string) => void
   ): Promise<void> {
-    const dracoLoader = new DRACOLoader();
+    THREE.Cache.enabled = true;
+
+    let managerLoaded = 0;
+    let managerTotal = 1;
+    let glbDlFrac = 0;
+    let lastEmitted = 0;
+    let lastStatus = 'Architektur & Texturen werden geladen…';
+
+    const report = (frac: number, statusText?: string) => {
+      if (statusText) lastStatus = statusText;
+      const clamped = Math.min(1.0, Math.max(lastEmitted, frac));
+      lastEmitted = clamped;
+      onProgress(clamped, lastStatus);
+    };
+
+    const loadingManager = new THREE.LoadingManager();
+    loadingManager.onProgress = (_url, loaded, total) => {
+      managerLoaded = loaded;
+      managerTotal = Math.max(1, total);
+      const texFrac = managerLoaded / managerTotal;
+      // Blend GLB byte progress + shared PBR WebP texture completion into 0..0.64
+      report((glbDlFrac * 0.55 + texFrac * 0.45) * 0.64, 'Architektur & Texturen werden geladen…');
+    };
+
+    const dracoLoader = new DRACOLoader(loadingManager);
     dracoLoader.setDecoderPath('./draco/');
     dracoLoader.setWorkerLimit(Math.min(4, navigator.hardwareConcurrency || 2));
-    dracoLoader.preload(); // Start initializing WASM workers immediately while bytes stream!
-    const loader = new GLTFLoader();
+    dracoLoader.preload();
+    const loader = new GLTFLoader(loadingManager);
     loader.setDRACOLoader(dracoLoader);
-    const texLoader = new THREE.TextureLoader();
+    const texLoader = new THREE.TextureLoader(loadingManager);
 
     const eixampleNightTex = this.createEixampleNightWindowTexture();
     const maxAniso = Math.min(isMobileDevice() ? 4 : 16, this.renderer.capabilities.getMaxAnisotropy());
     const lightmapCache = new Map<string, THREE.Texture>();
+    // Share identical MeshStandardMaterials across all 7 GLBs (dramatically cuts GPU textures & shader compiles!)
+    const sharedMaterials = new Map<string, THREE.MeshStandardMaterial>();
+    const enhancedMaterials = new WeakSet<THREE.Material>();
+
+    const configureMaterial = (mat: THREE.MeshStandardMaterial, obj: THREE.Mesh) => {
+      const matName = mat.name;
+      const isStainedGlass = obj.name.includes('StainedGlass') || matName.includes('StainedGlass');
+      const isGlassCase = obj.name.includes('GlassCases') || obj.name.includes('ElevatorShaftGlass') || matName.includes('GlassCase');
+      const isFoliage = matName.includes('FoliagePark') || matName.includes('FoliageCypress');
+
+      if (!enhancedMaterials.has(mat)) {
+        enhancedMaterials.add(mat);
+        for (const tex of [mat.map, mat.normalMap, mat.roughnessMap]) {
+          if (tex) {
+            tex.anisotropy = maxAniso;
+            tex.needsUpdate = true;
+          }
+        }
+        if (
+          matName.includes('SandstoneWarm') ||
+          matName.includes('NativityStone') ||
+          matName.includes('PassionStone') ||
+          matName.includes('VaultStone') ||
+          matName.includes('CryptStone')
+        ) {
+          this.injectStoneAntiTilingAndHeightFog(mat);
+        }
+        if (
+          obj.name === 'Interior_MarbleFloor' ||
+          matName.includes('PorphyryRed') ||
+          matName.includes('GoldAccent')
+        ) {
+          mat.envMapIntensity = obj.name === 'Interior_MarbleFloor' ? 0.85 : 0.72;
+          this.interiorReflectiveMats.push(mat);
+        }
+        if (isStainedGlass) {
+          mat.side = THREE.DoubleSide;
+          mat.roughness = 0.14;
+          mat.transparent = true;
+          mat.opacity = 0.92;
+        }
+        if (isGlassCase) {
+          mat.transparent = true;
+          mat.opacity = 0.22;
+          mat.roughness = 0.06;
+          mat.depthWrite = false;
+          mat.side = THREE.DoubleSide;
+        }
+        if (matName.includes('EixampleFacade')) {
+          mat.emissive = new THREE.Color('#ffbd69');
+          mat.emissiveMap = eixampleNightTex;
+          mat.emissiveIntensity = 0.0;
+          this.eixampleNightMats.push(mat);
+        }
+        if (isFoliage) {
+          this.injectTreeWindSway(mat);
+        }
+      }
+    };
 
     const processLoadedRoot = (spec: ModelSpec, root: THREE.Group) => {
       root.name = `Module_${spec.id}`;
       root.traverse((obj) => {
         if (!(obj instanceof THREE.Mesh)) return;
-        const matName = obj.material instanceof THREE.MeshStandardMaterial ? obj.material.name : '';
+        const mat = obj.material instanceof THREE.MeshStandardMaterial ? obj.material : null;
+        const matName = mat ? mat.name : '';
         const isStainedGlass = obj.name.includes('StainedGlass') || matName.includes('StainedGlass');
         const isGroundOrFloor =
           obj.name.includes('Floor') ||
@@ -402,67 +491,38 @@ export class SagradaScene {
           obj.name.includes('Sidewalks') ||
           obj.name.includes('ParkLawns');
         const isGlassCase = obj.name.includes('GlassCases') || obj.name.includes('ElevatorShaftGlass') || matName.includes('GlassCase');
-        const isFoliage = matName.includes('FoliagePark') || matName.includes('FoliageCypress');
 
         obj.castShadow = !isStainedGlass && !isGroundOrFloor && !isGlassCase;
         obj.receiveShadow = !isStainedGlass && !isGlassCase;
 
-        if (obj.material instanceof THREE.MeshStandardMaterial) {
-          for (const tex of [obj.material.map, obj.material.normalMap, obj.material.roughnessMap]) {
-            if (tex) {
-              tex.anisotropy = maxAniso;
-              tex.needsUpdate = true;
-            }
-          }
-
+        if (mat) {
           const lmSpec = LIGHTMAP_BY_MESH[obj.name];
           const lmTex = lightmapCache.get(obj.name);
-          if (lmSpec && lmTex && obj.geometry.attributes.uv1) {
-            obj.material.lightMap = lmTex;
-            obj.material.lightMapIntensity = lmSpec.intensity;
-            obj.material.needsUpdate = true;
-          }
+          const hasUniqueLightmap = Boolean(lmSpec && lmTex && obj.geometry.attributes.uv1);
 
-          if (
-            matName.includes('SandstoneWarm') ||
-            matName.includes('NativityStone') ||
-            matName.includes('PassionStone') ||
-            matName.includes('VaultStone') ||
-            matName.includes('CryptStone')
-          ) {
-            this.injectStoneAntiTilingAndHeightFog(obj.material);
-          }
-
-          if (
-            obj.name === 'Interior_MarbleFloor' ||
-            matName.includes('PorphyryRed') ||
-            matName.includes('GoldAccent')
-          ) {
-            obj.material.envMapIntensity = obj.name === 'Interior_MarbleFloor' ? 0.85 : 0.72;
-            this.interiorReflectiveMats.push(obj.material);
-          }
-
-          if (isStainedGlass) {
-            obj.material.side = THREE.DoubleSide;
-            obj.material.roughness = 0.14;
-            obj.material.transparent = true;
-            obj.material.opacity = 0.92;
-          }
-          if (isGlassCase) {
-            obj.material.transparent = true;
-            obj.material.opacity = 0.22;
-            obj.material.roughness = 0.06;
-            obj.material.depthWrite = false;
-            obj.material.side = THREE.DoubleSide;
-          }
-          if (matName.includes('EixampleFacade')) {
-            obj.material.emissive = new THREE.Color('#ffbd69');
-            obj.material.emissiveMap = eixampleNightTex;
-            obj.material.emissiveIntensity = 0.0;
-            this.eixampleNightMats.push(obj.material);
-          }
-          if (isFoliage) {
-            this.injectTreeWindSway(obj.material);
+          if (!hasUniqueLightmap && matName) {
+            const cached = sharedMaterials.get(matName);
+            if (cached) {
+              // Dispose redundant duplicate material/texture wrappers and reuse the canonical shared material
+              if (cached !== mat) {
+                if (mat.map && mat.map !== cached.map) mat.map.dispose();
+                if (mat.normalMap && mat.normalMap !== cached.normalMap) mat.normalMap.dispose();
+                if (mat.roughnessMap && mat.roughnessMap !== cached.roughnessMap) mat.roughnessMap.dispose();
+                mat.dispose();
+                obj.material = cached;
+              }
+              configureMaterial(cached, obj);
+            } else {
+              sharedMaterials.set(matName, mat);
+              configureMaterial(mat, obj);
+            }
+          } else {
+            if (hasUniqueLightmap && lmSpec && lmTex) {
+              mat.lightMap = lmTex;
+              mat.lightMapIntensity = lmSpec.intensity;
+              mat.needsUpdate = true;
+            }
+            configureMaterial(mat, obj);
           }
         }
       });
@@ -472,6 +532,7 @@ export class SagradaScene {
       this.savedDrawCalls += stats.savedDrawCalls;
 
       this.scene.add(root);
+      collision.registerCollisionMeshes(root);
       this.lighting.registerLoadedMaterials(root);
       this.timeline.registerModule(root);
       if (spec.id === 'eixample' || spec.id === 'plaza_life') {
@@ -489,96 +550,107 @@ export class SagradaScene {
       }
     };
 
-    // ── PHASE 1 (MAX-SPEED CORE LOAD): 100% bandwidth dedicated strictly to the 4 core GLBs! ──
-    const coreSpecs = MODEL_SPECS.filter((s) => s.priority === 'core');
-    const bgSpecs = MODEL_SPECS.filter((s) => s.priority === 'background');
-    const totalWeight = coreSpecs.reduce((sum, s) => sum + s.weightMB, 0);
-    // Track smooth per-file progress: 0..0.82 download bytes, 0.82..1.0 Draco decode & scene attach
+    // ── STAGE 1 (0% -> 64%): Download all 7 compact GLBs + shared WebP PBR textures + lightmaps + candles + compact HDRIs ──
+    report(0.02, 'Architektur & Texturen werden geladen…');
+    const totalWeight = MODEL_SPECS.reduce((sum, s) => sum + s.weightKB, 0);
     const fileProgress = new Map<string, number>();
-    let lastReported = 0;
 
-    const emitProgress = () => {
+    const updateDlProgress = () => {
       let weighted = 0;
-      for (const s of coreSpecs) {
-        weighted += (fileProgress.get(s.id) ?? 0) * s.weightMB;
+      for (const s of MODEL_SPECS) {
+        weighted += (fileProgress.get(s.id) ?? 0) * s.weightKB;
       }
-      const frac = Math.min(0.99, weighted / totalWeight);
-      if (frac > lastReported) {
-        lastReported = frac;
-        onProgress(frac);
-      }
+      glbDlFrac = Math.min(1, weighted / totalWeight);
+      const texFrac = managerLoaded / managerTotal;
+      report((glbDlFrac * 0.55 + texFrac * 0.45) * 0.64, 'Architektur & Texturen werden geladen…');
     };
 
-    await Promise.all(
-      coreSpecs.map(async (spec) => {
-        const gltf = await loader.loadAsync(spec.url, (ev) => {
-          const expectedBytes = ev.lengthComputable && ev.total > 0 ? ev.total : spec.weightMB * 1024 * 1024;
-          const dlFrac = Math.min(1, ev.loaded / expectedBytes);
-          fileProgress.set(spec.id, Math.max(fileProgress.get(spec.id) ?? 0, dlFrac * 0.82));
-          emitProgress();
-        });
-        processLoadedRoot(spec, gltf.scene);
-        fileProgress.set(spec.id, 1.0);
-        emitProgress();
+    const lightmapsPromise = Promise.all(
+      Object.entries(LIGHTMAP_BY_MESH).map(async ([meshName, spec]) => {
+        try {
+          const lmTex = await texLoader.loadAsync(spec.url);
+          lmTex.flipY = false;
+          lmTex.channel = 1;
+          lmTex.colorSpace = THREE.SRGBColorSpace;
+          lmTex.minFilter = THREE.LinearMipmapLinearFilter;
+          lmTex.magFilter = THREE.LinearFilter;
+          lightmapCache.set(meshName, lmTex);
+        } catch {
+          // Optional
+        }
       })
     );
 
+    const candlesPromise = this.candles.loadFromManifest('./data/candles.json').catch((err) => {
+      console.warn('[Candles] Manifest load fallback:', err);
+      return 0;
+    });
+
+    const hdriPromise = this.lighting.loadHdris();
+
+    const loadedGltfs = await Promise.all(
+      MODEL_SPECS.map(async (spec) => {
+        const gltf = await loader.loadAsync(spec.url, (ev) => {
+          const expectedBytes = ev.lengthComputable && ev.total > 0 ? ev.total : spec.weightKB * 1024;
+          const frac = Math.min(1, ev.loaded / expectedBytes);
+          fileProgress.set(spec.id, Math.max(fileProgress.get(spec.id) ?? 0, frac));
+          updateDlProgress();
+        });
+        fileProgress.set(spec.id, 1.0);
+        updateDlProgress();
+        return { spec, gltf };
+      })
+    );
+
+    await Promise.all([lightmapsPromise, candlesPromise]);
+    dracoLoader.dispose();
+
+    // ── STAGE 2 (64% -> 76%): Attach modules, deduplicate materials & optimize GPU instancing ──
+    report(0.66, 'Szene & Materialien werden zusammengesetzt…');
+    await nextFrame();
+    for (let i = 0; i < loadedGltfs.length; i++) {
+      const { spec, gltf } = loadedGltfs[i];
+      processLoadedRoot(spec, gltf.scene);
+      report(0.66 + ((i + 1) / loadedGltfs.length) * 0.10, `Modul geladen: ${spec.label}`);
+      if (i % 2 === 1) await nextFrame();
+    }
+
+    // ── STAGE 3 (76% -> 88%): Build 3D BVH collision index & finish HDRI PMREM IBL ──
+    report(0.78, '3D-Kollisionsgeometrie wird aufgebaut…');
+    await nextFrame();
+    const bvhStats = collision.buildBVH();
+    console.info(`[Collision] 3D BVH ready: ${bvhStats.triangles.toLocaleString()} tris across ${bvhStats.meshes} meshes in ${bvhStats.buildMs} ms`);
+    report(0.84, 'Umgebungslicht & Reflexionen werden berechnet…');
+    await nextFrame();
+    await hdriPromise;
+
+    // ── STAGE 4 (88% -> 98%): Pre-compile ALL WebGL shaders, shadow map & interior reflection probe ──
+    report(0.88, 'Shader & Beleuchtung werden vorbereitet…');
+    await nextFrame();
+    const prewarmObjs: Array<[THREE.Object3D, boolean]> = [
+      [this.candles.group, this.candles.group.visible],
+      [this.glassCarpets.group, this.glassCarpets.group.visible],
+      [this.lighting.particles.points, this.lighting.particles.points.visible],
+      ...this.internalStairMeshes.map((o): [THREE.Object3D, boolean] => [o, o.visible]),
+    ];
+    for (const [obj] of prewarmObjs) obj.visible = true;
+    await this.renderer.compileAsync(this.scene, camera);
+    for (const [obj, wasVis] of prewarmObjs) obj.visible = wasVis;
+
+    report(0.94, 'Schatten & Spiegelungen werden gerendert…');
+    await nextFrame();
     this.lighting.requestShadowUpdate(true);
-    onProgress(1.0);
+    this.captureInteriorReflectionProbe();
 
-    // ── PHASE 2 (IMMEDIATE SILENT STREAMING): Interior first (from preloaded HTTP cache!), then furnishings/crypt/HDRIs ──
-    setTimeout(() => {
-      void (async () => {
-        const interiorSpec = bgSpecs.find((s) => s.id === 'interior');
-        const restSpecs = bgSpecs.filter((s) => s.id !== 'interior');
+    // Warm up the live camera view (uploads all visible GPU textures & renders pond reflector + shadow map ONCE!)
+    report(0.97, 'Erster Frame wird vorbereitet…');
+    await nextFrame();
+    this.update(0.016, camera, collision.getIndoorFactor(camera.position));
+    this.renderer.render(this.scene, camera);
+    await nextFrame();
+    this.renderer.render(this.scene, camera);
 
-        const lightmapsPromise = Promise.all(
-          Object.entries(LIGHTMAP_BY_MESH).map(async ([meshName, spec]) => {
-            try {
-              const lmTex = await texLoader.loadAsync(spec.url);
-              lmTex.flipY = false;
-              lmTex.channel = 1;
-              lmTex.colorSpace = THREE.SRGBColorSpace;
-              lmTex.minFilter = THREE.LinearMipmapLinearFilter;
-              lmTex.magFilter = THREE.LinearFilter;
-              lightmapCache.set(meshName, lmTex);
-            } catch {
-              // Optional
-            }
-          })
-        );
-
-        // 2a. Attach preloaded interior.glb immediately so walking toward or teleporting inside is instant!
-        if (interiorSpec) {
-          await lightmapsPromise;
-          const gltf = await loader.loadAsync(interiorSpec.url);
-          processLoadedRoot(interiorSpec, gltf.scene);
-        }
-
-        // 2b. Stream furnishings, crypt & plaza life + 1K PureSky HDRIs in parallel
-        this.lighting.loadRealHdrisInBackground();
-        await Promise.all(
-          restSpecs.map(async (spec) => {
-            const gltf = await loader.loadAsync(spec.url);
-            processLoadedRoot(spec, gltf.scene);
-          })
-        );
-        dracoLoader.dispose();
-
-        // 2c. Pre-warm indoor/stair shaders silently while user is still outside -> ZERO portal entry freeze!
-        const prewarmObjs: Array<[THREE.Object3D, boolean]> = [
-          [this.candles.group, this.candles.group.visible],
-          [this.glassCarpets.group, this.glassCarpets.group.visible],
-          [this.lighting.particles.points, this.lighting.particles.points.visible],
-          ...this.internalStairMeshes.map((o): [THREE.Object3D, boolean] => [o, o.visible]),
-        ];
-        for (const [obj] of prewarmObjs) obj.visible = true;
-        await this.renderer.compileAsync(this.scene, camera);
-        for (const [obj, wasVis] of prewarmObjs) obj.visible = wasVis;
-        this.lighting.requestShadowUpdate(true);
-        this.captureInteriorReflectionProbe();
-      })();
-    }, 30);
+    report(1.0, 'Bereit zum Betreten');
   }
 
   public update(dt: number, camera: THREE.PerspectiveCamera, indoorFactor: number): void {

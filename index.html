@@ -10,24 +10,35 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Basílica de la Sagrada Família — Begehbares 3D-Architekturmodell</title>
-    <!-- Start fetching Draco WASM & 3 exterior startup models at t=0ms in parallel with JS bundle! -->
+    <!-- Start fetching Draco WASM, candle manifest & compact models at t=0ms in parallel with JS bundle -->
     <link rel="preload" href="./draco/draco_decoder.wasm" as="fetch" crossorigin />
-    <link rel="preload" href="./models/facades.glb" as="fetch" crossorigin />
+    <link rel="preload" href="./data/candles.json" as="fetch" crossorigin />
     <link rel="preload" href="./models/towers.glb" as="fetch" crossorigin />
-    <link rel="preload" href="./models/eixample.glb" as="fetch" crossorigin />
+    <link rel="preload" href="./models/interior.glb" as="fetch" crossorigin />
+    <link rel="preload" href="./models/facades.glb" as="fetch" crossorigin />
   </head>
   <body>
     <div id="app">
       <canvas id="scene-canvas"></canvas>
 
-      <!-- Ultra-simple minimal loading screen with smooth percentage readout -->
+      <!-- Honest Multi-Phase Loading Screen -> Frosted "Basílica betreten" Gate (zero post-100% stutter!) -->
       <div id="loading-screen">
         <div class="loading-minimal">
-          <div class="loading-title">SAGRADA FAMÍLIA</div>
-          <div class="loading-bar-track">
-            <div id="loading-bar-fill"></div>
+          <div class="loading-title">BASÍLICA DE LA SAGRADA FAMÍLIA</div>
+          <div class="loading-subtitle">Begehbares 3D-Architekturmodell · Barcelona</div>
+          <div id="loading-progress-wrap">
+            <div class="loading-bar-track">
+              <div id="loading-bar-fill"></div>
+            </div>
+            <div class="loading-meta">
+              <span id="loading-status">Initialisiere…</span>
+              <span id="loading-percent">0 %</span>
+            </div>
           </div>
-          <div id="loading-percent">0 %</div>
+          <div id="loading-enter-wrap" class="hidden">
+            <button id="btn-enter-basilica" class="enter-btn" type="button">Basílica betreten</button>
+            <div class="enter-hint">Aktiviert Mausblick &amp; Raumakustik · WASD Gehen · F Flug · ESC Menü</div>
+          </div>
         </div>
       </div>
 

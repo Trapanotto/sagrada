@@ -20,6 +20,7 @@ from common import (
     finalize_bmesh_object,
     get_materials,
     reset_scene,
+    save_candle_anchors,
 )
 
 
@@ -148,6 +149,7 @@ def build_crypt(
     bm_gold: bmesh.types.BMesh,
     bm_marble: bmesh.types.BMesh,
     bm_candle: bmesh.types.BMesh,
+    candle_anchors: list[tuple[float, float, float, float]],
 ) -> None:
     """Neo-Gothic subterranean Crypt beneath the Apse (Z = -5.5m) with 7 chapels & Antoni Gaudí's Tomb."""
     cx, cy = 0.0, 21.0
@@ -197,10 +199,9 @@ def build_crypt(
         wy = cy + r_main * math.sin(am)
         seg_w = 2.0 * r_main * math.sin(math.pi / segs) + 0.55
         ang_diff = abs(((am - door_ang + math.pi) % (2.0 * math.pi)) - math.pi)
-        if ang_diff < 0.16:
-            # Stone doorway lintel header above the 2.9m tall stairwell entrance (leaves clean walkable archway!)
-            lintel_h = max(0.8, wall_h - 2.95)
-            add_box(bm_crypt, (wx, wy, Z_CRYPT + 2.95 + lintel_h * 0.5), (seg_w, 1.1, lintel_h), rot_euler=(0, 0, am - math.pi / 2.0))
+        if ang_diff < 0.22:
+            # Full-height arched doorway opening into the Crypt stairwell (guarantees >2.3m headroom walking down!)
+            pass
         else:
             add_box(bm_crypt, (wx, wy, Z_CRYPT + wall_h * 0.5 - 0.1), (seg_w, 1.1, wall_h + 0.2), rot_euler=(0, 0, am - math.pi / 2.0))
         add_cylinder(
@@ -227,21 +228,29 @@ def build_crypt(
         oy = cy + (r_main - 0.2) * math.sin(ang)
         add_cylinder(bm_crypt, Vector((px, py, z_mid_ring - 0.18)), Vector((ox, oy, z_wall_top - 0.05)), 0.22, 0.22, segments=6)
 
-    # Central Crypt Altar (under the main High Altar)
+    # Central Crypt Altar (under the main High Altar) + 2 brass altar candlesticks
     add_box(bm_marble, (cx, cy + 1.5, Z_CRYPT + 0.65), (3.0, 1.4, 1.3))
     add_cylinder(bm_gold, Vector((cx, cy + 1.5, Z_CRYPT + 1.3)), Vector((cx, cy + 1.5, Z_CRYPT + 3.0)), 0.08, 0.06, segments=8)
     add_cylinder(bm_gold, Vector((cx - 0.55, cy + 1.5, Z_CRYPT + 2.45)), Vector((cx + 0.55, cy + 1.5, Z_CRYPT + 2.45)), 0.06, 0.06, segments=8)
+    for sx_a in (-1.05, 1.05):
+        ax_c, ay_c = cx + sx_a, cy + 1.5
+        add_cylinder(bm_gold, Vector((ax_c, ay_c, Z_CRYPT + 1.30)), Vector((ax_c, ay_c, Z_CRYPT + 1.62)), 0.10, 0.05, segments=8)
+        add_cylinder(bm_candle, Vector((ax_c, ay_c, Z_CRYPT + 1.62)), Vector((ax_c, ay_c, Z_CRYPT + 1.98)), 0.045, 0.04, segments=8)
+        candle_anchors.append((ax_c, ay_c, Z_CRYPT + 2.00, 0.78))
 
-    # ANTONI GAUDÍ'S TOMB (Chapel of Our Lady of Mount Carmel, West side of Crypt: X = -9.5, Y = 23.5)
+    # ANTONI GAUDÍ'S TOMB (Chapel of Our Lady of Mount Carmel, West side of Crypt: X = -9.8, Y = 23.5)
     tx, ty = -9.8, 23.5
     add_box(bm_marble, (tx, ty, Z_CRYPT + 0.14), (2.4, 1.35, 0.28))
     add_box(bm_gold, (tx, ty, Z_CRYPT + 0.30), (1.9, 0.9, 0.04))  # Inscribed bronze/gold plaque
-    # Warm glowing votive candle rack beside Gaudí's tomb & around the crypt altar
+    # Warm glowing votive candle rack beside Gaudí's tomb
+    add_box(bm_crypt, (tx - 0.62, ty + 1.4, Z_CRYPT + 0.42), (2.2, 0.45, 0.84))
+    add_box(bm_gold, (tx - 0.62, ty + 1.4, Z_CRYPT + 0.85), (2.26, 0.50, 0.04))
     for k in range(6):
         vx = tx - 1.5 + k * 0.35
         vy = ty + 1.4
-        add_cylinder(bm_candle, Vector((vx, vy, Z_CRYPT + 0.85)), Vector((vx, vy, Z_CRYPT + 1.15)), 0.045, 0.04, segments=6)
-    add_box(bm_crypt, (tx - 0.6, ty + 1.4, Z_CRYPT + 0.42), (2.2, 0.45, 0.84))
+        z_top_g = Z_CRYPT + 1.14 + (0.04 if k % 2 == 0 else 0.0)
+        add_cylinder(bm_candle, Vector((vx, vy, Z_CRYPT + 0.86)), Vector((vx, vy, z_top_g)), 0.042, 0.038, segments=7)
+        candle_anchors.append((vx, vy, z_top_g + 0.02, 0.68))
 
     # Additional warm votive candles on proper sculpted bronze/stone candelabra stands around the central sanctuary
     for i in range(8):
@@ -260,6 +269,7 @@ def build_crypt(
             0.048,
             segments=8,
         )
+        candle_anchors.append((vx, vy, Z_CRYPT + 1.28, 0.82))
 
     # Watertight UNDERGROUND Stone Stairwell Tunnel: (-21.0, +13.8, Z=1.2) -> Crypt Entry (-11.2, +13.8, Z=-5.5)
     # CRITICAL: Every underground tunnel wall & ceiling stays strictly BELOW Z = Z_NAVE (1.2m) so NOTHING protrudes above the Nave floor!
@@ -273,16 +283,17 @@ def build_crypt(
         pos = p_top.lerp(p_bot, t)
         # Solid stone step tread + deep masonry sub-base
         add_box(bm_crypt, (pos.x, pos.y, pos.z - 0.35), (0.52, tunnel_half_w * 2.0 + 0.2, 0.70))
-        # Left & right underground stone tunnel walls capped STRICTLY at Z <= Z_NAVE (zero blocks sticking into Nave!)
-        wall_bot = pos.z - 0.65
-        wall_top = z_floor_cap
-        wall_ht = max(0.35, wall_top - wall_bot)
-        for side in (-1, 1):
-            wy = pos.y + side * (tunnel_half_w + 0.22)
-            add_box(bm_crypt, (pos.x, wy, wall_bot + wall_ht * 0.5), (0.62, 0.44, wall_ht))
-        # Sloped underground ceiling ONLY where headroom (pos.z + 3.1) is below the Nave floor!
-        if pos.z + 3.05 < z_floor_cap:
-            add_box(bm_crypt, (pos.x, pos.y, pos.z + 3.15), (0.65, tunnel_half_w * 2.0 + 0.9, 0.45))
+        # Left & right underground stone tunnel walls terminate cleanly at outer crypt wall (x <= -13.6) so they never jut into Crypt!
+        if pos.x <= -13.55:
+            wall_bot = pos.z - 0.65
+            wall_top = z_floor_cap
+            wall_ht = max(0.35, wall_top - wall_bot)
+            for side in (-1, 1):
+                wy = pos.y + side * (tunnel_half_w + 0.22)
+                add_box(bm_crypt, (pos.x, wy, wall_bot + wall_ht * 0.5), (0.62, 0.44, wall_ht))
+            # Sloped underground ceiling ONLY where headroom (pos.z + 3.1) is below the Nave floor!
+            if pos.z + 3.05 < z_floor_cap:
+                add_box(bm_crypt, (pos.x, pos.y, pos.z + 3.15), (0.65, tunnel_half_w * 2.0 + 0.9, 0.45))
     # Underground end-wall sealing beneath the very top step (strictly below Nave floor Z=1.2!)
     add_box(bm_crypt, (p_top.x - 0.35, p_top.y, Z_NAVE - 0.65), (0.45, tunnel_half_w * 2.0 + 0.9, 1.25))
 
@@ -311,7 +322,8 @@ def build_cloister_and_crypt() -> None:
     add_sacristy_pavilion(bm_stone, bm_floor, bm_mosaic, bm_gold, cx=-27.5, cy=32.5)
 
     # ── 3. Subterranean Neo-Gothic Crypt & Gaudí's Tomb ──
-    build_crypt(bm_crypt, bm_floor, bm_gold, bm_marble, bm_candle)
+    crypt_candle_anchors: list[tuple[float, float, float, float]] = []
+    build_crypt(bm_crypt, bm_floor, bm_gold, bm_marble, bm_candle, crypt_candle_anchors)
 
     finalize_bmesh_object(bm_stone, "Cloister_And_Sacristies", mats["sandstone_warm"], smooth=False, uv_scale=0.15)
     finalize_bmesh_object(bm_floor, "Cloister_And_Crypt_Floor", mats["floor_marble"], smooth=False, uv_scale=0.18)
@@ -321,6 +333,7 @@ def build_cloister_and_crypt() -> None:
     finalize_bmesh_object(bm_marble, "Crypt_AltarAndGaudiTomb", mats["white_marble"], smooth=False, uv_scale=0.30)
     finalize_bmesh_object(bm_candle, "Crypt_VotiveCandles", mats["candle_glow"], smooth=True, uv_scale=0.50)
 
+    save_candle_anchors("crypt", crypt_candle_anchors)
     export_glb(os.path.join(MODEL_DIR, "cloister_crypt.glb"))
 
 

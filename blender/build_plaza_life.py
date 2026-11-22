@@ -134,10 +134,17 @@ def add_pergola(
         add_box(bm_wood, (cx, y, Z_STREET + 3.62), (width + 0.8, 0.14, 0.16))
 
 
-def add_wayfinding_totem(bm_iron: bmesh.types.BMesh, bm_gold: bmesh.types.BMesh, cx: float, cy: float, rot_z: float = 0.0) -> None:
-    """Sleek Barcelona bronze/iron tourist map & wayfinding monolith."""
-    add_box(bm_iron, (cx, cy, Z_STREET + 1.35), (0.95, 0.16, 2.7), rot_euler=(0, 0, rot_z))
-    add_box(bm_gold, (cx, cy, Z_STREET + 1.65), (0.82, 0.20, 1.35), rot_euler=(0, 0, rot_z))
+def add_wayfinding_totem(
+    bm_iron: bmesh.types.BMesh,
+    bm_gold: bmesh.types.BMesh,
+    cx: float,
+    cy: float,
+    rot_z: float = 0.0,
+    z_base: float = Z_STREET,
+) -> None:
+    """Sleek Barcelona bronze/iron tourist map & wayfinding monolith anchored cleanly to ground."""
+    add_box(bm_iron, (cx, cy, z_base + 1.35), (0.95, 0.16, 2.7), rot_euler=(0, 0, rot_z))
+    add_box(bm_gold, (cx, cy, z_base + 1.65), (0.82, 0.20, 1.35), rot_euler=(0, 0, rot_z))
 
 
 def add_canaletes_fountain(bm_kiosk: bmesh.types.BMesh, bm_gold: bmesh.types.BMesh, cx: float, cy: float) -> None:
@@ -156,19 +163,28 @@ def add_barcelona_taxi(
     cy: float,
     rot_z: float = 0.0,
 ) -> None:
-    """Iconic black-and-yellow Barcelona taxi parked along Carrer de la Marina / Sardenya!"""
-    # Black body + yellow doors/side stripes (Barcelona's unmistakable taxi livery!)
-    add_box(bm_iron, (cx, cy, 0.42), (1.85, 4.4, 0.68), rot_euler=(0, 0, rot_z))
-    add_box(bm_gold, (cx, cy, 0.44), (1.90, 2.2, 0.56), rot_euler=(0, 0, rot_z))
-    # Cabin roof + glowing green/amber roof taxi sign
-    add_box(bm_iron, (cx, cy - 0.15, 1.05), (1.62, 2.15, 0.62), rot_euler=(0, 0, rot_z))
-    add_box(bm_glow, (cx, cy, 1.44), (0.42, 0.24, 0.18), rot_euler=(0, 0, rot_z))
-    # Warm headlights
+    """Iconic black-and-yellow Barcelona taxi grounded solidly on 4 wheels resting on asphalt (Z = -0.14m)!"""
+    z_road = -0.14
     ca, sa = math.cos(rot_z), math.sin(rot_z)
+    # 4 tires resting flush on asphalt (radius 0.30m -> axle at z_road + 0.30)
+    for dx in (-0.84, 0.84):
+        for dy in (-1.35, 1.35):
+            wx0 = cx + (dx - 0.10) * ca - dy * sa
+            wy0 = cy + (dx - 0.10) * sa + dy * ca
+            wx1 = cx + (dx + 0.10) * ca - dy * sa
+            wy1 = cy + (dx + 0.10) * sa + dy * ca
+            add_cylinder(bm_iron, Vector((wx0, wy0, z_road + 0.30)), Vector((wx1, wy1, z_road + 0.30)), 0.30, 0.30, segments=10)
+    # Black lower chassis + yellow doors/side stripes (Barcelona's unmistakable taxi livery!)
+    add_box(bm_iron, (cx, cy, z_road + 0.54), (1.85, 4.4, 0.64), rot_euler=(0, 0, rot_z))
+    add_box(bm_gold, (cx, cy, z_road + 0.56), (1.90, 2.2, 0.52), rot_euler=(0, 0, rot_z))
+    # Cabin roof + glowing green/amber roof taxi sign
+    add_box(bm_iron, (cx, cy - 0.15, z_road + 1.14), (1.62, 2.15, 0.60), rot_euler=(0, 0, rot_z))
+    add_box(bm_glow, (cx, cy, z_road + 1.52), (0.42, 0.24, 0.18), rot_euler=(0, 0, rot_z))
+    # Warm headlights
     for dx in (-0.65, 0.65):
         hx = cx + dx * ca - 2.22 * sa
         hy = cy + dx * sa + 2.22 * ca
-        add_box(bm_glow, (hx, hy, 0.48), (0.28, 0.10, 0.16), rot_euler=(0, 0, rot_z))
+        add_box(bm_glow, (hx, hy, z_road + 0.60), (0.28, 0.10, 0.16), rot_euler=(0, 0, rot_z))
 
 
 def build_plaza_life() -> None:
@@ -207,8 +223,8 @@ def build_plaza_life() -> None:
         (-65.5, -10.0, -math.pi * 0.5), (-65.5, 0.0, -math.pi * 0.5), (-65.5, 10.0, -math.pi * 0.5),
         (-86.0, -12.0, 0.0), (-86.0, 12.0, math.pi),
         (-102.0, -10.0, -math.pi * 0.5), (-102.0, 10.0, -math.pi * 0.5),
-        # Temple Island South Glory Promenade (sits solidly on Z=0.0 Panot sidewalk at Y=-58.5, facing North toward Glory Facade!)
-        (-28.0, -58.5, 0.0), (-22.0, -58.5, 0.0), (22.0, -58.5, 0.0), (28.0, -58.5, 0.0),
+        # Temple Island South Glory Promenade (cleanly spaced clear of Glory podium & planters!)
+        (-34.5, -58.5, 0.0), (-29.5, -58.5, 0.0), (29.5, -58.5, 0.0), (34.5, -58.5, 0.0),
     ]
     for idx, (bx, by, brot) in enumerate(benches):
         for suffix, mesh in (("W", m_bw), ("I", m_bi)):
@@ -227,21 +243,21 @@ def build_plaza_life() -> None:
     add_canaletes_fountain(bm_kiosk, bm_gold, 64.5, 22.0)
     add_canaletes_fountain(bm_kiosk, bm_gold, -64.5, 22.0)
 
-    for tx, ty, tr in (
-        (46.0, 14.0, math.pi * 0.5),
-        (46.0, -14.0, math.pi * 0.5),
-        (-46.0, 14.0, math.pi * 0.5),
-        (-46.0, -14.0, math.pi * 0.5),
-        (24.0, -76.0, 0.0),
-        (-24.0, -76.0, 0.0),
+    for tx, ty, tr, zb in (
+        (46.0, 14.0, math.pi * 0.5, Z_STREET),
+        (46.0, -14.0, math.pi * 0.5, Z_STREET),
+        (-46.0, 14.0, math.pi * 0.5, Z_STREET),
+        (-46.0, -14.0, math.pi * 0.5, Z_STREET),
+        (24.0, -60.0, 0.0, Z_STREET),
+        (-24.0, -60.0, 0.0, Z_STREET),
     ):
-        add_wayfinding_totem(bm_iron, bm_gold, tx, ty, rot_z=tr)
+        add_wayfinding_totem(bm_iron, bm_gold, tx, ty, rot_z=tr, z_base=zb)
 
     # ── 4. Sculpted Stone Planter Urns with Mediterranean Shrubs along Basilica Perimeter ──
     planters = [
         (42.0, -28.0), (42.0, -16.0), (42.0, 16.0), (42.0, 28.0),
         (-42.0, -28.0), (-42.0, -16.0), (-42.0, 16.0), (-42.0, 28.0),
-        (-24.0, -58.0), (24.0, -58.0), (-16.0, 46.0), (16.0, 46.0),
+        (-25.5, -56.0), (25.5, -56.0), (-16.0, 46.0), (16.0, 46.0),
     ]
     for px, py in planters:
         add_cylinder(bm_stone, Vector((px, py, Z_STREET)), Vector((px, py, Z_STREET + 0.85)), 0.72, 0.92, segments=10)

@@ -8,6 +8,7 @@ export interface TeleportTarget {
 }
 
 export class PlayerController {
+  public enabled = false;
   public flyMode = false;
   public isPointerLocked = false;
   public isMoving = false;
@@ -67,6 +68,7 @@ export class PlayerController {
 
   private bindEvents(): void {
     window.addEventListener('keydown', (e) => {
+      if (!this.enabled) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       this.keys.add(e.code);
       if (e.code === 'KeyF') {
@@ -85,7 +87,7 @@ export class PlayerController {
 
     // True Ego-Shooter FPS control: single left-click on canvas immediately locks mouse pointer!
     this.domElement.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
+      if (!this.enabled || e.button !== 0) return;
       if (!this.isPointerLocked) {
         if (this.domElement.requestPointerLock) {
           try {
@@ -225,6 +227,11 @@ export class PlayerController {
   }
 
   public update(dt: number): void {
+    if (!this.enabled) {
+      this.isMoving = false;
+      this.speedMps = 0;
+      return;
+    }
     const safeDt = Math.min(dt, 0.08);
 
     // Handle smooth teleport animation
@@ -278,27 +285,42 @@ export class PlayerController {
       return;
     }
 
-    // Walk mode with realistic speed, gravity, smooth stairs & collisions
+    // Walk mode with realistic speed, gravity, smooth stairs & anti-tunneling sub-stepped 3D BVH collision
     const walkSpeed = sprinting ? 11.5 : 5.4;
     let horizDist = 0;
+    const currentFeetY = this.camera.position.y - this.collision.eyeHeight;
+    let resolved = this.collision.resolveWalkPosition(this.camera.position.x, currentFeetY, this.camera.position.z);
+
     if (move.lengthSq() > 0) {
       move.normalize().multiplyScalar(walkSpeed * safeDt);
       horizDist = move.length();
-      this.camera.position.x += move.x;
-      this.camera.position.z += move.z;
+      // Sub-step horizontal motion (<= 0.20m per step) so sprinting can never tunnel through walls/pews/railings
+      const subSteps = Math.max(1, Math.ceil(horizDist / 0.20));
+      const stepX = move.x / subSteps;
+      const stepZ = move.z / subSteps;
+      let curX = this.camera.position.x;
+      let curZ = this.camera.position.z;
+      let curFeet = currentFeetY;
+      for (let s = 0; s < subSteps; s++) {
+        resolved = this.collision.resolveWalkPosition(curX + stepX, curFeet, curZ + stepZ);
+        curX = resolved.clampedX;
+        curZ = resolved.clampedZ;
+        if (this.onGround && resolved.groundY <= curFeet + 1.45) {
+          curFeet = resolved.groundY;
+        }
+      }
+      this.camera.position.x = resolved.clampedX;
+      this.camera.position.z = resolved.clampedZ;
       this.isMoving = true;
       this.speedMps = walkSpeed;
     } else {
+      this.camera.position.x = resolved.clampedX;
+      this.camera.position.z = resolved.clampedZ;
       this.isMoving = false;
       this.speedMps = 0;
     }
 
-    const currentFeetY = this.camera.position.y - this.collision.eyeHeight;
-    const resolved = this.collision.resolveWalkPosition(this.camera.position.x, currentFeetY, this.camera.position.z);
-    this.camera.position.x = resolved.clampedX;
-    this.camera.position.z = resolved.clampedZ;
-
-    // Vertical gravity, leaping off high ledges/parapets & smooth stair stepping!
+    // Vertical gravity, leaping off high ledges/parapets, ceiling headroom & smooth stair stepping!
     const targetEyeY = resolved.groundY + this.collision.eyeHeight;
     if (!this.onGround || this.camera.position.y > targetEyeY + 0.55) {
       if (this.onGround) {
@@ -309,6 +331,17 @@ export class PlayerController {
       }
       this.velY = Math.max(this.velY - 17.5 * safeDt, -34.0);
       this.camera.position.y += this.velY * safeDt;
+      if (this.velY > 0) {
+        const ceilY = this.collision.getCeilingY(
+          this.camera.position.x,
+          this.camera.position.y - this.collision.eyeHeight,
+          this.camera.position.z
+        );
+        if (ceilY !== null && this.camera.position.y > ceilY - 0.18) {
+          this.camera.position.y = ceilY - 0.18;
+          this.velY = 0;
+        }
+      }
       if (this.camera.position.y <= targetEyeY) {
         const impactSpeed = Math.abs(this.velY);
         this.camera.position.y = targetEyeY;

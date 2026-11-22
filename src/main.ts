@@ -70,6 +70,10 @@ async function bootstrap(): Promise<void> {
   const loadingScreen = document.getElementById('loading-screen')!;
   const loadingFill = document.getElementById('loading-bar-fill')!;
   const loadingPercent = document.getElementById('loading-percent')!;
+  const loadingStatus = document.getElementById('loading-status')!;
+  const loadingProgressWrap = document.getElementById('loading-progress-wrap')!;
+  const loadingEnterWrap = document.getElementById('loading-enter-wrap')!;
+  const btnEnterBasilica = document.getElementById('btn-enter-basilica') as HTMLButtonElement;
 
   const hudPanels = [
     document.getElementById('hud-top')!,
@@ -498,7 +502,9 @@ async function bootstrap(): Promise<void> {
   // Single click anywhere on the canvas locks mouse pointer into direct Ego-Shooter FPS control.
   player.onPointerLockChange = () => {};
 
+  let entered = false;
   window.addEventListener('keydown', (e) => {
+    if (!entered) return;
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (e.code === 'KeyG') toggleGeometry();
     else if (e.code === 'KeyH') toggleHotspots();
@@ -513,23 +519,20 @@ async function bootstrap(): Promise<void> {
     else if (tour.active && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Escape'].includes(e.code)) tour.stop();
   });
 
-  // Ultra-fast parallel core load with smooth real-time percentage readout (0 % -> 100 %)
+  // Honest complete load: all 7 compact GLBs + shared PBR WebP textures + 3D BVH + HDRIs + shader & GPU warm-up!
   try {
-    await sagrada.loadAllModules(camera, (fraction) => {
+    await sagrada.loadAllModules(camera, collision, (fraction, statusText) => {
       const pct = Math.min(100, Math.max(0, Math.round(fraction * 100)));
       loadingFill.style.width = `${pct}%`;
       loadingPercent.textContent = `${pct} %`;
+      loadingStatus.textContent = statusText;
     });
   } catch (err) {
-    loadingPercent.textContent = 'Ladefehler';
+    loadingStatus.textContent = 'Fehler beim Laden der 3D-Szene';
+    loadingPercent.textContent = 'Fehler';
     console.error(err);
     return;
   }
-
-  // Reveal scene & HUD immediately with crisp 240ms fade!
-  loadingScreen.classList.add('fade-out');
-  setTimeout(() => loadingScreen.classList.add('hidden'), 260);
-  hudPanels.forEach((p) => p.classList.remove('hidden'));
 
   // Handle Resize
   window.addEventListener('resize', () => {
@@ -539,7 +542,7 @@ async function bootstrap(): Promise<void> {
     post.setSize(window.innerWidth, window.innerHeight);
   });
 
-  // Main Animation Loop
+  // Main Animation Loop (starts immediately behind frosted Enter screen so GPU is 100% hot & fluid!)
   let lastTime = performance.now();
   let hudTick = 0;
   let smoothIndoorFactor = collision.getIndoorFactor(camera.position);
@@ -604,6 +607,8 @@ async function bootstrap(): Promise<void> {
       savedDrawCalls: sagrada.savedDrawCalls,
     });
 
+    if (!entered) return;
+
     // Update UI overlays smoothly
     crosshairEl.classList.toggle('hidden', !player.isPointerLocked);
     hotspots.updateProjections(camera, window.innerWidth, window.innerHeight);
@@ -639,6 +644,42 @@ async function bootstrap(): Promise<void> {
     }
   };
   requestAnimationFrame(animate);
+
+  // Scene is 100% loaded, BVH built, shaders compiled & live-rendering -> reveal "Basílica betreten" gate!
+  loadingScreen.classList.add('loading-ready');
+  loadingProgressWrap.classList.add('hidden');
+  loadingEnterWrap.classList.remove('hidden');
+  btnEnterBasilica.focus();
+
+  const enterBasilica = () => {
+    if (entered) return;
+    entered = true;
+    player.enabled = true;
+
+    // Unlock spatial Web Audio cleanly on the user gesture
+    if (!audio.enabled) {
+      const on = audio.toggle();
+      btnAudio.textContent = on ? 'Audio ✓' : 'Audio';
+      btnAudio.classList.toggle('active', on);
+    }
+
+    // Lock FPS mouse look on desktop devices cleanly inside the user click gesture
+    if (!isTouchDevice()) {
+      player.requestPointerLock();
+    }
+
+    loadingScreen.classList.add('fade-out');
+    setTimeout(() => loadingScreen.classList.add('hidden'), 340);
+    hudPanels.forEach((p) => p.classList.remove('hidden'));
+  };
+
+  btnEnterBasilica.addEventListener('click', enterBasilica);
+  window.addEventListener('keydown', (e) => {
+    if (!entered && (e.code === 'Enter' || e.code === 'Space')) {
+      e.preventDefault();
+      enterBasilica();
+    }
+  });
 }
 
 void bootstrap();

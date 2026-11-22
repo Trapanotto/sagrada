@@ -347,11 +347,10 @@ export class LightingSystem {
   }
 
   /**
-   * Non-blocking progressive 1K PureSky HDRI loader:
-   * Streams day_1k.hdr first (~1.3 MB), then sunset_1k & night_1k lazily in the background
-   * so the loading screen NEVER stalls on 15 MB of .hdr parsing!
+   * Loads all 3 compact 256x128 PureSky IBL HDRIs (~267 KB total) in parallel and prefilters
+   * their PMREM cubemaps during loading so runtime reflections have ZERO startup stutter.
    */
-  public loadRealHdrisInBackground(): void {
+  public async loadHdris(): Promise<void> {
     this.pmremGenerator.compileEquirectangularShader();
     const rgbe = new RGBELoader();
     const prep = (t: THREE.DataTexture) => {
@@ -361,39 +360,31 @@ export class LightingSystem {
       return t;
     };
 
-    // 1. Load daytime 1K HDRI immediately in background
-    rgbe
-      .loadAsync('./hdri/day_1k.hdr')
-      .then((dayTex) => {
-        prep(dayTex);
-        this.pmremDay = this.pmremGenerator.fromEquirectangular(dayTex).texture;
-        this.skyUniforms.uHdriDay.value = dayTex;
-        // Temporarily share dayTex until sunset/night stream in so shader has valid samplers
-        if (!this.skyUniforms.uHdriSunset.value) this.skyUniforms.uHdriSunset.value = dayTex;
-        if (!this.skyUniforms.uHdriNight.value) this.skyUniforms.uHdriNight.value = dayTex;
-        this.skyUniforms.uUseHdri.value = 1.0;
-        this.activeEnvKey = null;
-        this.setTimeOfDay(this.timeHours, false);
+    try {
+      const [dayTex, sunsetTex, nightTex] = await Promise.all([
+        rgbe.loadAsync('./hdri/day_1k.hdr'),
+        rgbe.loadAsync('./hdri/sunset_1k.hdr'),
+        rgbe.loadAsync('./hdri/night_1k.hdr'),
+      ]);
+      prep(dayTex);
+      prep(sunsetTex);
+      prep(nightTex);
+      this.pmremDay = this.pmremGenerator.fromEquirectangular(dayTex).texture;
+      this.pmremSunset = this.pmremGenerator.fromEquirectangular(sunsetTex).texture;
+      this.pmremNight = this.pmremGenerator.fromEquirectangular(nightTex).texture;
+      this.skyUniforms.uHdriDay.value = dayTex;
+      this.skyUniforms.uHdriSunset.value = sunsetTex;
+      this.skyUniforms.uHdriNight.value = nightTex;
+      this.skyUniforms.uUseHdri.value = 1.0;
+      this.activeEnvKey = null;
+      this.setTimeOfDay(this.timeHours, false);
+    } catch (err) {
+      console.warn('[HDRI] Load fallback:', err);
+    }
+  }
 
-        // 2. Lazily stream sunset & night 1K HDRIs after scene is interactive
-        return Promise.all([
-          rgbe.loadAsync('./hdri/sunset_1k.hdr'),
-          rgbe.loadAsync('./hdri/night_1k.hdr'),
-        ]);
-      })
-      .then(([sunsetTex, nightTex]) => {
-        prep(sunsetTex);
-        prep(nightTex);
-        this.pmremSunset = this.pmremGenerator.fromEquirectangular(sunsetTex).texture;
-        this.pmremNight = this.pmremGenerator.fromEquirectangular(nightTex).texture;
-        this.skyUniforms.uHdriSunset.value = sunsetTex;
-        this.skyUniforms.uHdriNight.value = nightTex;
-        this.activeEnvKey = null;
-        this.setTimeOfDay(this.timeHours, false);
-      })
-      .catch((err) => {
-        console.warn('[HDRI] Background load fallback:', err);
-      });
+  public loadRealHdrisInBackground(): void {
+    void this.loadHdris();
   }
 
   private createRadialGlowTexture(): THREE.CanvasTexture {

@@ -128,12 +128,19 @@ def build_interior() -> None:
 
     # ── 2. High Altar, Suspended Golden Baldachin & Organ ──
     bm_altar = bmesh.new()
-    # Sculpted porphyry altar block
-    add_box(bm_altar, (0.0, 18.0, Z_ALTAR + 0.65), (3.4, 1.8, 1.3))
-    add_box(bm_altar, (0.0, 18.0, Z_ALTAR + 1.35), (3.9, 2.2, 0.18))
+    # Sculpted stepped porphyry altar base + monolithic mensa slab with overhang
+    add_box(bm_altar, (0.0, 18.0, Z_ALTAR + 0.08), (3.85, 2.25, 0.16))
+    add_box(bm_altar, (0.0, 18.0, Z_ALTAR + 0.68), (3.35, 1.72, 1.08))
+    add_box(bm_altar, (0.0, 18.0, Z_ALTAR + 1.28), (3.70, 2.02, 0.12))
+    add_box(bm_altar, (0.0, 18.0, Z_ALTAR + 1.40), (3.96, 2.24, 0.14))
     finalize_bmesh_object(bm_altar, "Interior_HighAltar", mats["porphyry_red"], smooth=False, uv_scale=0.35)
 
     bm_gold = bmesh.new()
+    # Gilded antependium front relief border & brass altar cross atop High Altar
+    add_box(bm_gold, (0.0, 17.12, Z_ALTAR + 0.68), (2.75, 0.06, 0.78))
+    add_cylinder(bm_gold, Vector((0.0, 18.0, Z_ALTAR + 1.47)), Vector((0.0, 18.0, Z_ALTAR + 1.56)), 0.18, 0.12, segments=10)
+    add_cylinder(bm_gold, Vector((0.0, 18.0, Z_ALTAR + 1.56)), Vector((0.0, 18.0, Z_ALTAR + 2.38)), 0.042, 0.032, segments=8)
+    add_cylinder(bm_gold, Vector((-0.28, 18.0, Z_ALTAR + 2.12)), Vector((0.28, 18.0, Z_ALTAR + 2.12)), 0.035, 0.035, segments=8)
     # Gaudí's iconic hexagonal suspended canopy (Baldachin) at Z = 13.5m above the altar
     bal_z = 13.5
     bal_r = 5.6
@@ -404,8 +411,6 @@ def build_interior() -> None:
                 add_box(bm_vault, (px + sx * 3.75, sy * 7.6, 38.5), (2.2, 0.95, 16.0))
                 add_box(bm_vault, (px, sy * 7.6, 44.0), (5.6, 0.95, 3.6))
                 add_box(bm_vault, (px, sy * 7.6, 32.0), (5.6, 0.95, 3.0))
-                # Clerestory warm/cool glass panes filling the transept clerestory bays
-                add_box(bm_vault, (px, sy * 7.6, 38.0), (5.4, 0.25, 9.2))
     # Seal North transition walls between Crossing/Apse and North Transept side aisles (X = ±15..±23, Y = +15.2)
     for sx in (-1, 1):
         add_box(bm_vault, (sx * 16.5, 15.2, 38.5), (17.5, 1.2, 16.5))
@@ -467,24 +472,32 @@ def build_interior() -> None:
             # Clerestory stained glass at X = ±7.6 (Z = 33..42.2)
             add_box(bm_glass, (sx * 7.6, y_center, 37.6), (0.14, 5.1, 9.2))
 
-    # Transept North & South Side Walls with Stained Glass + 3D Stone Tracery (X = ±15..±29)
+    # Transept Clerestory stained glass panes (X = ±11.25..±26.25, Y = ±7.6, Z = 33..42.2)
+    for sx, bm_glass in ((1, bm_glass_east), (-1, bm_glass_west)):
+        for sy in (-1, 1):
+            for cx_bay in (11.25, 18.75, 26.25):
+                add_box(bm_glass, (sx * cx_bay, sy * 7.6, 38.0), (5.4, 0.16, 9.2))
+
+    # Transept North & South Exterior Side Walls (strictly outside Nave X = ±22.8..±30.2 so Side Aisles & Emporen stay 100% OPEN!)
     for sx, bm_glass in ((1, bm_glass_east), (-1, bm_glass_west)):
         for sy in (-1, 1):
             wy = sy * 15.2
-            for cx in (18.75, 26.25):
-                x_pos = sx * cx
-                add_box(bm_walls, (x_pos - sx * 3.75, wy, 16.0), (1.9, 1.4, 31.0))
-                add_box(bm_walls, (x_pos, wy, 1.8), (5.7, 1.2, 3.6))
-                add_box(bm_walls, (x_pos, wy, 14.6), (5.7, 1.2, 2.4))
-                add_box(bm_walls, (x_pos, wy, 30.2), (5.7, 1.4, 2.8))
-                add_box(bm_glass, (x_pos, wy, 8.5), (5.2, 0.16, 9.8))
-                add_gaudi_window_tracery(bm_walls, (x_pos, wy - sy * 0.22, 8.5), 5.2, 9.8, facing="Y")
-                add_box(bm_glass, (x_pos, wy, 22.3), (5.2, 0.16, 13.0))
-                add_gaudi_window_tracery(bm_walls, (x_pos, wy - sy * 0.22, 22.3), 5.2, 13.0, facing="Y")
+            x_pos = sx * 26.4
+            add_box(bm_walls, (sx * 22.8, wy, 16.0), (1.8, 1.6, 31.0))
+            add_box(bm_walls, (sx * 30.0, wy, 16.0), (1.8, 1.6, 31.0))
+            add_box(bm_walls, (x_pos, wy, 1.8), (6.4, 1.2, 3.6))
+            add_box(bm_walls, (x_pos, wy, 14.6), (6.4, 1.2, 2.4))
+            add_box(bm_walls, (x_pos, wy, 30.2), (6.4, 1.4, 2.8))
+            add_box(bm_glass, (x_pos, wy, 8.5), (5.8, 0.16, 9.8))
+            add_gaudi_window_tracery(bm_walls, (x_pos, wy - sy * 0.22, 8.5), 5.8, 9.8, facing="Y")
+            add_box(bm_glass, (x_pos, wy, 22.3), (5.8, 0.16, 13.0))
+            add_gaudi_window_tracery(bm_walls, (x_pos, wy - sy * 0.22, 22.3), 5.8, 13.0, facing="Y")
 
-    # Semicircular Apse Enclosure Wall (7 Radiating Chapels with Tall Stained Glass + 3D Tracery)
+    # Semicircular Apse Enclosure Wall (7 Watertight Radiating Chapels — ZERO sky slits beside stained glass!)
     num_chapels = 7
     r_apse = 18.8
+    d_ang = math.pi * 0.92 / num_chapels
+    chord_w = 2.0 * r_apse * math.sin(0.5 * d_ang)  # ~7.76m exact span between pier centers
     for i in range(num_chapels):
         a0 = math.pi * (0.04 + 0.92 * i / num_chapels)
         a1 = math.pi * (0.04 + 0.92 * (i + 1) / num_chapels)
@@ -496,18 +509,30 @@ def build_interior() -> None:
             add_box(
                 bm_walls,
                 (r_apse * math.cos(a_pier), 16.5 + r_apse * math.sin(a_pier), 22.0),
-                (1.8, 2.4, 44.0),
+                (1.9, 2.4, 44.0),
                 rot_euler=(0.0, 0.0, a_pier - math.pi / 2.0),
             )
-        add_box(bm_walls, (px, py, 2.0), (5.6, 1.2, 4.0), rot_euler=(0.0, 0.0, rot_z))
-        add_box(bm_walls, (px, py, 14.5), (5.6, 1.2, 2.2), rot_euler=(0.0, 0.0, rot_z))
-        add_box(bm_walls, (px, py, 41.0), (5.8, 1.4, 6.0), rot_euler=(0.0, 0.0, rot_z))
-        add_box(bm_glass_apse, (px, py, 8.8), (4.6, 0.16, 9.5), rot_euler=(0.0, 0.0, rot_z))
-        add_box(bm_glass_apse, (px, py, 27.0), (4.6, 0.16, 22.5), rot_euler=(0.0, 0.0, rot_z))
-        # 3D stone mullions & rose tracery on inner side of apse stained glass
+        # Full-chord stone dado, gallery spandrel & cornice overlapping piers cleanly
+        add_box(bm_walls, (px, py, 2.05), (chord_w + 0.2, 1.25, 4.1), rot_euler=(0.0, 0.0, rot_z))
+        add_box(bm_walls, (px, py, 14.5), (chord_w + 0.2, 1.25, 2.3), rot_euler=(0.0, 0.0, rot_z))
+        add_box(bm_walls, (px, py, 41.0), (chord_w + 0.4, 1.45, 6.2), rot_euler=(0.0, 0.0, rot_z))
+        # Exact pier-to-pier stained glass panes + stone mullions (zero daylight leaks!)
+        glass_w = chord_w - 1.35
+        add_box(bm_glass_apse, (px, py, 8.75), (glass_w, 0.16, 9.7), rot_euler=(0.0, 0.0, rot_z))
+        add_box(bm_glass_apse, (px, py, 27.0), (glass_w, 0.16, 23.0), rot_euler=(0.0, 0.0, rot_z))
         tx = (r_apse - 0.25) * math.cos(am)
         ty = 16.5 + (r_apse - 0.25) * math.sin(am)
-        add_gaudi_window_tracery(bm_walls, (tx, ty, 27.0), 4.6, 22.0, rot_z=rot_z)
+        add_gaudi_window_tracery(bm_walls, (tx, ty, 8.75), glass_w, 9.5, rot_z=rot_z)
+        add_gaudi_window_tracery(bm_walls, (tx, ty, 27.0), glass_w, 22.6, rot_z=rot_z)
+
+    # Diagonal Watertight Apse-to-North-Transept Return Walls sealing East & West corners (X = ±18.6..±22.8, Y = 15.2..18.9)
+    for sx in (-1, 1):
+        p_apse_end = Vector((sx * r_apse * math.cos(math.pi * 0.04), 16.5 + r_apse * math.sin(math.pi * 0.04), 0.0))
+        p_tran_end = Vector((sx * 22.8, 15.2, 0.0))
+        mid_ret = (p_apse_end + p_tran_end) * 0.5
+        ret_len = (p_tran_end - p_apse_end).length + 1.2
+        ret_ang = math.atan2(p_tran_end.y - p_apse_end.y, p_tran_end.x - p_apse_end.x)
+        add_box(bm_walls, (mid_ret.x, mid_ret.y, 16.0), (ret_len, 1.5, 32.0), rot_euler=(0.0, 0.0, ret_ang))
 
     # Graceful tapering warm-sandstone parabolic Apse dome-skirt (Z = 41.5m r=18.5 -> Z = 74.8m r=6.8)
     # Matches the golden Catalan stone of the Neo-Gothic Apse gables & tapers seamlessly into the Virgin Mary Tower!

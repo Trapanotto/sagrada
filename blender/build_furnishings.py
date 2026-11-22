@@ -25,6 +25,7 @@ from common import (
     finalize_bmesh_object,
     get_materials,
     reset_scene,
+    save_candle_anchors,
 )
 
 
@@ -129,6 +130,7 @@ def build_furnishings() -> None:
     bm_iron = bmesh.new()
     bm_glow = bmesh.new()
     bm_glass = bmesh.new()
+    candle_anchors: list[tuple[float, float, float, float]] = []
 
     # ── 1. Royal Crimson & Gold Ceremonial Carpet (Central Nave + Presbytery Sanctuary) ──
     # Long ceremonial runner from South Glory entrance to Presbytery stairs (X: -2.1..+2.1, Y: -44..+7.5)
@@ -145,30 +147,63 @@ def build_furnishings() -> None:
     add_box(bm_marble, (ax, ay, Z_ALTAR + 1.38), (1.15, 0.85, 0.22))
     add_box(bm_gold, (ax, ay - 0.1, Z_ALTAR + 1.56), (0.85, 0.55, 0.10), rot_euler=(-0.35, 0.0, 0.0))
 
-    # 2b. Bishop's Cathedra (Throne) & Semicircular Carved Oak Clergy Choir Stalls behind High Altar (center 0, 17.5, r = 6.2m)
+    # 2b. Bishop's Cathedra (Throne) & Semicircular Carved Oak Clergy Choir Stalls behind High Altar (center 0, 17.5, r = 6.4m)
     for i in range(9):
         ang = math.pi * (0.18 + 0.64 * i / 8.0)  # Semicircle along North rear of sanctuary
         sx = 6.4 * math.cos(ang)
         sy = 17.5 + 6.4 * math.sin(ang)
         rot_z = ang + math.pi * 0.5
+        ca, sa = math.cos(ang), math.sin(ang)
+        tx, ty = -sa, ca  # Tangent along stall width
         is_cathedra = (i == 4)
-        w_s = 1.35 if is_cathedra else 1.05
-        h_back = 2.85 if is_cathedra else 1.95
-        add_box(bm_oak, (sx, sy, Z_ALTAR + 0.45), (w_s, 0.72, 0.90), rot_euler=(0, 0, rot_z))
-        # High carved gothic backrest
-        bx = sx + 0.30 * math.cos(ang)
-        by = sy + 0.30 * math.sin(ang)
-        add_box(bm_oak, (bx, by, Z_ALTAR + h_back * 0.5), (w_s, 0.16, h_back), rot_euler=(0, 0, rot_z))
-        if is_cathedra:
-            add_cylinder(bm_gold, Vector((bx, by, Z_ALTAR + h_back)), Vector((bx, by, Z_ALTAR + h_back + 0.75)), 0.12, 0.03, segments=8)
+        w_s = 1.38 if is_cathedra else 1.02
+        h_back = 2.95 if is_cathedra else 2.02
 
-    # 2c. 6 Tall Ornate Golden Sanctuary Candelabras flanking the High Altar
+        # Carved wooden base plinth & recessed under-seat panel (instead of solid heavy box!)
+        add_box(bm_oak, (sx, sy, Z_ALTAR + 0.06), (w_s, 0.72, 0.12), rot_euler=(0, 0, rot_z))
+        add_box(bm_oak, (sx + 0.06 * ca, sy + 0.06 * sa, Z_ALTAR + 0.28), (w_s - 0.14, 0.52, 0.34), rot_euler=(0, 0, rot_z))
+        # Contoured seat plank with slight front lip
+        add_box(bm_oak, (sx - 0.02 * ca, sy - 0.02 * sa, Z_ALTAR + 0.48), (w_s + 0.04, 0.64, 0.08), rot_euler=(0, 0, rot_z))
+        # Sculpted side armrest cheeks & rounded armrests
+        for side in (-1, 1):
+            ax_s = sx + side * (w_s * 0.46) * tx
+            ay_s = sy + side * (w_s * 0.46) * ty
+            add_box(bm_oak, (ax_s, ay_s, Z_ALTAR + 0.44), (0.10, 0.68, 0.76), rot_euler=(0, 0, rot_z))
+            add_box(bm_oak, (ax_s - 0.04 * ca, ay_s - 0.04 * sa, Z_ALTAR + 0.84), (0.14, 0.74, 0.08), rot_euler=(0, 0, rot_z))
+        # Paneled high gothic backrest + flanking stiles + molded cornice cap
+        bx = sx + 0.31 * ca
+        by = sy + 0.31 * sa
+        add_box(bm_oak, (bx, by, Z_ALTAR + h_back * 0.5), (w_s, 0.12, h_back), rot_euler=(0, 0, rot_z))
+        add_box(bm_oak, (bx - 0.06 * ca, by - 0.06 * sa, Z_ALTAR + h_back + 0.06), (w_s + 0.12, 0.24, 0.12), rot_euler=(0, 0, rot_z))
+        for side in (-1, 1):
+            px_s = bx + side * (w_s * 0.46) * tx - 0.05 * ca
+            py_s = by + side * (w_s * 0.46) * ty - 0.05 * sa
+            add_cylinder(bm_oak, Vector((px_s, py_s, Z_ALTAR + 0.48)), Vector((px_s, py_s, Z_ALTAR + h_back + 0.12)), 0.055, 0.045, segments=8)
+            add_cylinder(bm_gold, Vector((px_s, py_s, Z_ALTAR + h_back + 0.12)), Vector((px_s, py_s, Z_ALTAR + h_back + 0.34)), 0.05, 0.015, segments=6)
+        if is_cathedra:
+            # Grand gilded episcopal canopy crest & cross finial crowning the Bishop's Cathedra
+            add_box(bm_oak, (bx - 0.22 * ca, by - 0.22 * sa, Z_ALTAR + h_back + 0.18), (w_s + 0.20, 0.62, 0.14), rot_euler=(0, 0, rot_z))
+            add_cylinder(bm_gold, Vector((bx - 0.18 * ca, by - 0.18 * sa, Z_ALTAR + h_back + 0.25)), Vector((bx - 0.18 * ca, by - 0.18 * sa, Z_ALTAR + h_back + 1.05)), 0.12, 0.025, segments=8)
+            add_cylinder(bm_gold, Vector((bx - 0.18 * ca - 0.18 * tx, by - 0.18 * sa - 0.18 * ty, Z_ALTAR + h_back + 0.80)), Vector((bx - 0.18 * ca + 0.18 * tx, by - 0.18 * sa + 0.18 * ty, Z_ALTAR + h_back + 0.80)), 0.03, 0.03, segments=6)
+
+    # 2c. 6 Tall Ornate Golden Sanctuary Candelabras flanking the High Altar (exact wick tips exported to candles.json!)
     for sx in (-4.4, -3.2, -2.1, 2.1, 3.2, 4.4):
         cy_c = 19.2 if abs(sx) > 3.0 else 18.2
-        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR)), Vector((sx, cy_c, Z_ALTAR + 0.16)), 0.32, 0.18, segments=10)
-        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR + 0.16)), Vector((sx, cy_c, Z_ALTAR + 1.55)), 0.065, 0.055, segments=8)
-        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR + 1.52)), Vector((sx, cy_c, Z_ALTAR + 1.60)), 0.22, 0.14, segments=10)
-        add_cylinder(bm_glow, Vector((sx, cy_c, Z_ALTAR + 1.60)), Vector((sx, cy_c, Z_ALTAR + 2.12)), 0.065, 0.055, segments=8)
+        # Multi-tiered octagonal brass base
+        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR)), Vector((sx, cy_c, Z_ALTAR + 0.09)), 0.34, 0.28, segments=8)
+        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR + 0.09)), Vector((sx, cy_c, Z_ALTAR + 0.22)), 0.26, 0.14, segments=10)
+        # Turned tapered brass stem with ornate central nodus sphere & upper collar
+        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR + 0.22)), Vector((sx, cy_c, Z_ALTAR + 0.86)), 0.072, 0.052, segments=10)
+        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR + 0.84)), Vector((sx, cy_c, Z_ALTAR + 0.96)), 0.115, 0.115, segments=10)
+        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR + 0.96)), Vector((sx, cy_c, Z_ALTAR + 1.50)), 0.058, 0.048, segments=10)
+        # Wide sculpted brass wax drip saucer + candle socket cup
+        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR + 1.48)), Vector((sx, cy_c, Z_ALTAR + 1.56)), 0.11, 0.24, segments=12)
+        add_cylinder(bm_gold, Vector((sx, cy_c, Z_ALTAR + 1.56)), Vector((sx, cy_c, Z_ALTAR + 1.63)), 0.23, 0.09, segments=12)
+        # Tall ivory liturgical altar candle + tiny dark wick
+        z_tip = Z_ALTAR + 2.14
+        add_cylinder(bm_glow, Vector((sx, cy_c, Z_ALTAR + 1.61)), Vector((sx, cy_c, z_tip)), 0.062, 0.056, segments=10)
+        add_cylinder(bm_iron, Vector((sx, cy_c, z_tip)), Vector((sx, cy_c, z_tip + 0.035)), 0.008, 0.006, segments=5)
+        candle_anchors.append((sx, cy_c, z_tip + 0.028, 1.05))
 
     # 2d. Ornate Bronze & Marble Presbytery Altar Rail (leaving wide open central approach X = -2.4..+2.4)
     for k in range(18):
@@ -180,13 +215,13 @@ def build_furnishings() -> None:
         add_cylinder(bm_bronze, Vector((px, py, Z_NAVE)), Vector((px, py, Z_NAVE + 1.05)), 0.075, 0.065, segments=8)
         add_cylinder(bm_gold, Vector((px, py, Z_NAVE + 1.02)), Vector((px, py, Z_NAVE + 1.12)), 0.11, 0.09, segments=8)
 
-    # 2e. Grand Carved Oak Pipe Organ Casing in the Apse Gallery (Y = +30.6, Z = 14.5m)
-    add_box(bm_oak, (0.0, 30.8, Z_GALLERY + 2.4), (13.6, 1.6, 4.8))
-    for ox in (-6.4, -3.2, 0.0, 3.2, 6.4):
-        add_box(bm_oak, (ox, 30.2, Z_GALLERY + 4.4), (0.85, 1.9, 8.8))
-        add_cylinder(bm_gold, Vector((ox, 30.2, Z_GALLERY + 8.8)), Vector((ox, 30.2, Z_GALLERY + 10.2)), 0.35, 0.06, segments=8)
+    # 2e. Grand Carved Oak Pipe Organ Casing cleanly seated on the curved Apse Gallery (Y = +29.8, Z = 14.5m)
+    add_box(bm_oak, (0.0, 30.1, Z_GALLERY + 2.4), (11.2, 1.5, 4.8))
+    for ox in (-5.2, -2.6, 0.0, 2.6, 5.2):
+        add_box(bm_oak, (ox, 29.6, Z_GALLERY + 4.3), (0.82, 1.7, 8.6))
+        add_cylinder(bm_gold, Vector((ox, 29.6, Z_GALLERY + 8.6)), Vector((ox, 29.6, Z_GALLERY + 9.9)), 0.32, 0.06, segments=8)
 
-    # ── 3. Seven Radiating Apse Votive Chapels (Side Altars + Saint Statues + Glowing Candle Stands) ──
+    # ── 3. Seven Radiating Apse Votive Chapels (Side Altars + Saint Statues + 2-Tier Wrought-Iron Votive Stands) ──
     r_chapel = 16.0
     for i in range(7):
         ang = math.pi * (0.08 + 0.84 * i / 6.0)
@@ -214,15 +249,38 @@ def build_furnishings() -> None:
         add_cylinder(bm_marble, Vector((st_x, st_y, Z_NAVE)), Vector((st_x, st_y, Z_NAVE + 1.1)), 0.45, 0.38, segments=10)
         add_statue_silhouette(bm_marble, Vector((st_x, st_y, Z_NAVE + 1.1)), scale=0.92, rot_z=ang + math.pi)
 
-        # Wrought-Iron Votive Candle Stand covered in glowing warm candles!
+        # Sculpted 2-Tier Wrought-Iron & Brass Votive Candle Rack (exact candle tips exported to candles.json!)
         vx = cx + 1.55 * math.sin(ang) + in_x * 0.65
         vy = cy - 1.55 * math.cos(ang) + in_y * 0.65
-        add_box(bm_iron, (vx, vy, Z_NAVE + 0.48), (1.35, 0.48, 0.96), rot_euler=(0, 0, rot_z))
+        tx_v, ty_v = math.cos(rot_z), math.sin(rot_z)
+        # Side legs + central offering box + brass sand/drip tray
+        for side in (-0.60, 0.60):
+            lx = vx + side * tx_v
+            ly = vy + side * ty_v
+            add_cylinder(bm_iron, Vector((lx, ly, Z_NAVE)), Vector((lx, ly, Z_NAVE + 0.96)), 0.045, 0.038, segments=8)
+        add_box(bm_iron, (vx, vy, Z_NAVE + 0.42), (0.68, 0.36, 0.72), rot_euler=(0, 0, rot_z))
+        add_box(bm_gold, (vx, vy, Z_NAVE + 0.94), (1.38, 0.54, 0.07), rot_euler=(0, 0, rot_z))
+        # Upper rear tier bar
+        add_box(bm_iron, (vx - in_x * 0.13, vy - in_y * 0.13, Z_NAVE + 1.07), (1.28, 0.16, 0.05), rot_euler=(0, 0, rot_z))
+        # 5 rear votive candles + 4 front votive candles seated cleanly on the trays
         for ci in range(5):
             off = -0.48 + ci * 0.24
-            kx = vx + off * math.cos(rot_z)
-            ky = vy + off * math.sin(rot_z)
-            add_cylinder(bm_glow, Vector((kx, ky, Z_NAVE + 0.96)), Vector((kx, ky, Z_NAVE + 1.24)), 0.045, 0.04, segments=6)
+            kx = vx + off * tx_v - in_x * 0.13
+            ky = vy + off * ty_v - in_y * 0.13
+            z_base_k = Z_NAVE + 1.09
+            z_top_k = z_base_k + 0.24 + (0.04 if ci % 2 == 0 else 0.0)
+            add_cylinder(bm_glow, Vector((kx, ky, z_base_k)), Vector((kx, ky, z_top_k)), 0.036, 0.033, segments=7)
+            add_cylinder(bm_iron, Vector((kx, ky, z_top_k)), Vector((kx, ky, z_top_k + 0.025)), 0.006, 0.005, segments=4)
+            candle_anchors.append((kx, ky, z_top_k + 0.02, 0.62))
+        for ci in range(4):
+            off = -0.36 + ci * 0.24
+            kx = vx + off * tx_v + in_x * 0.12
+            ky = vy + off * ty_v + in_y * 0.12
+            z_base_k = Z_NAVE + 0.97
+            z_top_k = z_base_k + 0.20 + (0.03 if ci % 2 == 1 else 0.0)
+            add_cylinder(bm_glow, Vector((kx, ky, z_base_k)), Vector((kx, ky, z_top_k)), 0.034, 0.031, segments=7)
+            add_cylinder(bm_iron, Vector((kx, ky, z_top_k)), Vector((kx, ky, z_top_k + 0.025)), 0.006, 0.005, segments=4)
+            candle_anchors.append((kx, ky, z_top_k + 0.02, 0.56))
 
     # ── 4. Baptistery (Taufbecken) in East Transept (+19.0, -9.5) + 6 Clam-Shell Holy-Water Fonts ──
     bx, by = 19.2, -9.8
@@ -249,8 +307,8 @@ def build_furnishings() -> None:
     ):
         add_holy_water_font(bm_marble, bm_gold, fx, fy)
 
-    # ── 5. 6 Carved Catalan Oak Confessionals along Outer East & West Nave Walls ──
-    for cy_c in (-18.75, -26.25, -33.75):
+    # ── 5. 6 Carved Catalan Oak Confessionals along Outer East & West Nave Walls (leaving Y=-33.75 Cloister Doorway 100% OPEN!) ──
+    for cy_c in (-18.75, -26.25, -41.25):
         add_confessional(bm_oak, bm_gold, bm_glow, 21.1, cy_c, facing_x=-1.0)
         add_confessional(bm_oak, bm_gold, bm_glow, -21.1, cy_c, facing_x=1.0)
 
@@ -382,6 +440,7 @@ def build_furnishings() -> None:
     finalize_bmesh_object(bm_glow, "Furnish_LanternAndCandleGlow", mats["candle_glow"], smooth=True, uv_scale=0.50, bake_ao=False)
     finalize_bmesh_object(bm_glass, "Furnish_MuseumGlassCases", mats["glass_case"], smooth=False, uv_scale=0.40, bake_ao=False)
 
+    save_candle_anchors("furnishings", candle_anchors)
     export_glb(os.path.join(MODEL_DIR, "furnishings.glb"))
 
 

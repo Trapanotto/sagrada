@@ -10,7 +10,8 @@
     "build:assets": "blender --background --python blender/build_all.py"
   },
   "dependencies": {
-    "three": "^0.175.0"
+    "three": "^0.175.0",
+    "three-mesh-bvh": "^0.9.18"
   },
   "devDependencies": {
     "@types/three": "^0.175.0",

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
+import re
+import struct
 import bpy
 import bmesh
 from mathutils import Matrix, Vector
@@ -11,10 +14,14 @@ from mathutils.bvhtree import BVHTree
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TEX_DIR = os.path.join(ROOT_DIR, "public", "textures")
+PBR_TEX_DIR = os.path.join(TEX_DIR, "pbr")
+DATA_DIR = os.path.join(ROOT_DIR, "public", "data")
 SRC_TEX_DIR = os.path.join(ROOT_DIR, "blender", "textures_src")
 CC0_DIR = os.path.join(SRC_TEX_DIR, "cc0")
 MODEL_DIR = os.path.join(ROOT_DIR, "public", "models")
 os.makedirs(MODEL_DIR, exist_ok=True)
+os.makedirs(PBR_TEX_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # ─── Real-world Sagrada Família Metric Grid (1 unit = 1 meter) ───
 # Blender Z-up coordinate system:
@@ -72,6 +79,11 @@ def _load_image(
         existing = bpy.data.images.get(cal_name)
         if existing is not None:
             return existing
+        if os.path.exists(cal_path):
+            cal_img = bpy.data.images.load(cal_path, check_existing=True)
+            cal_img.name = cal_name
+            cal_img.colorspace_settings.name = "sRGB"
+            return cal_img
         # Bake authentic Catalan stone / foliage color calibration directly into pixel data
         # (fixes Blender glTF exporter dropping chained ShaderNodeMix tint nodes!)
         src_img = bpy.data.images.load(path, check_existing=True)
@@ -973,8 +985,150 @@ def create_hyperboloid_vault_bay(
     )
 
 
+def save_candle_anchors(group_name: str, anchors_blender: list[tuple[float, float, float, float]]) -> None:
+    """Persist exact candle flame tip coordinates (converted Blender Z-up -> Three.js Y-up) to public/data/candles.json."""
+    candles_path = os.path.join(DATA_DIR, "candles.json")
+    data: dict[str, list[list[float]]] = {}
+    if os.path.exists(candles_path):
+        try:
+            with open(candles_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    data = loaded
+        except Exception:
+            data = {}
+    # Blender (x, y, z) -> Three.js (x, z, -y)
+    data[group_name] = [
+        [round(bx, 4), round(bz, 4), round(-by, 4), round(sc, 3)]
+        for bx, by, bz, sc in anchors_blender
+    ]
+    with open(candles_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    print(f"[Candles] Saved {len(anchors_blender)} exact wick anchors for '{group_name}' -> public/data/candles.json")
+
+
+def _externalize_glb_textures(filepath: str) -> None:
+    """Replace embedded WebP image bufferViews inside a GLB with shared ../textures/pbr/<name>.webp URIs."""
+    with open(filepath, "rb") as f:
+        raw = f.read()
+
+    if len(raw) < 28 or raw[:4] != b"glTF":
+        return
+
+    json_len = struct.unpack_from("<I", raw, 12)[0]
+    json_type = raw[16:20]
+    if json_type != b"JSON":
+        return
+    gltf = json.loads(raw[20 : 20 + json_len].decode("utf-8"))
+
+    bin_header_off = 20 + json_len
+    if bin_header_off + 8 > len(raw):
+        return
+    bin_len = struct.unpack_from("<I", raw, bin_header_off)[0]
+    bin_data = raw[bin_header_off + 8 : bin_header_off + 8 + bin_len]
+
+    images = gltf.get("images")
+    buffer_views = gltf.get("bufferViews")
+    if not images or not buffer_views:
+        return
+
+    removed_bvs: set[int] = set()
+    for idx, im in enumerate(images):
+        bv_idx = im.get("bufferView")
+        if bv_idx is None:
+            continue
+        raw_name = im.get("name") or f"tex_{idx}"
+        clean_stem = re.sub(r"\.\d+$", "", os.path.splitext(raw_name)[0])
+        mime = im.get("mimeType", "image/webp")
+        ext = ".webp" if "webp" in mime else (".jpg" if "jpeg" in mime else ".png")
+        out_name = clean_stem + ext
+        out_path = os.path.join(PBR_TEX_DIR, out_name)
+
+        if not os.path.exists(out_path):
+            bv = buffer_views[bv_idx]
+            off = bv.get("byteOffset", 0)
+            blen = bv["byteLength"]
+            with open(out_path, "wb") as out_f:
+                out_f.write(bin_data[off : off + blen])
+
+        removed_bvs.add(bv_idx)
+        im.pop("bufferView", None)
+        im.pop("mimeType", None)
+        im["uri"] = f"../textures/pbr/{out_name}"
+
+    if not removed_bvs:
+        return
+
+    # Rebuild compact BIN chunk containing ONLY non-image bufferViews (4-byte aligned)
+    new_bvs = []
+    bv_remap: dict[int, int] = {}
+    new_bin_parts: list[bytes] = []
+    cursor = 0
+
+    for old_idx, bv in enumerate(buffer_views):
+        if old_idx in removed_bvs:
+            continue
+        off = bv.get("byteOffset", 0)
+        blen = bv["byteLength"]
+        chunk = bin_data[off : off + blen]
+        pad = (4 - (cursor % 4)) % 4
+        if pad:
+            new_bin_parts.append(b"\x00" * pad)
+            cursor += pad
+        nbv = dict(bv)
+        nbv["byteOffset"] = cursor
+        bv_remap[old_idx] = len(new_bvs)
+        new_bvs.append(nbv)
+        new_bin_parts.append(chunk)
+        cursor += blen
+
+    # Pad final BIN chunk to 4-byte boundary
+    end_pad = (4 - (cursor % 4)) % 4
+    if end_pad:
+        new_bin_parts.append(b"\x00" * end_pad)
+        cursor += end_pad
+
+    gltf["bufferViews"] = new_bvs
+    if gltf.get("buffers"):
+        gltf["buffers"][0]["byteLength"] = cursor
+
+    # Remap all remaining bufferView references
+    for acc in gltf.get("accessors", []):
+        if "bufferView" in acc:
+            acc["bufferView"] = bv_remap[acc["bufferView"]]
+        sparse = acc.get("sparse")
+        if sparse:
+            if "indices" in sparse and "bufferView" in sparse["indices"]:
+                sparse["indices"]["bufferView"] = bv_remap[sparse["indices"]["bufferView"]]
+            if "values" in sparse and "bufferView" in sparse["values"]:
+                sparse["values"]["bufferView"] = bv_remap[sparse["values"]["bufferView"]]
+    for mesh in gltf.get("meshes", []):
+        for prim in mesh.get("primitives", []):
+            draco = prim.get("extensions", {}).get("KHR_draco_mesh_compression")
+            if draco and "bufferView" in draco:
+                draco["bufferView"] = bv_remap[draco["bufferView"]]
+
+    new_json_bytes = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    j_pad = (4 - (len(new_json_bytes) % 4)) % 4
+    if j_pad:
+        new_json_bytes += b" " * j_pad
+
+    new_bin_bytes = b"".join(new_bin_parts)
+    total_len = 12 + 8 + len(new_json_bytes) + 8 + len(new_bin_bytes)
+
+    out_glb = bytearray()
+    out_glb += struct.pack("<4sII", b"glTF", 2, total_len)
+    out_glb += struct.pack("<I4s", len(new_json_bytes), b"JSON")
+    out_glb += new_json_bytes
+    out_glb += struct.pack("<I4s", len(new_bin_bytes), b"BIN\x00")
+    out_glb += new_bin_bytes
+
+    with open(filepath, "wb") as f:
+        f.write(out_glb)
+
+
 def export_glb(filepath: str) -> None:
-    """Export current Blender scene to a highly compressed glTF Binary (.glb) with Draco + WebP textures."""
+    """Export current Blender scene to a highly compressed glTF Binary (.glb) with Draco + shared external WebP textures."""
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     bpy.ops.export_scene.gltf(
         filepath=filepath,
@@ -984,11 +1138,12 @@ def export_glb(filepath: str) -> None:
         export_tangents=False,
         export_materials="EXPORT",
         export_image_format="WEBP",
-        export_image_quality=84,
+        export_image_quality=80,
         export_draco_mesh_compression_enable=True,
         export_draco_mesh_compression_level=6,
         export_apply=True,
         export_yup=True,
     )
+    _externalize_glb_textures(filepath)
     size_mb = os.path.getsize(filepath) / (1024 * 1024)
-    print(f"[Export] {os.path.basename(filepath)} -> {size_mb:.2f} MB (Draco + WebP)")
+    print(f"[Export] {os.path.basename(filepath)} -> {size_mb:.2f} MB (Draco + shared WebP)")
