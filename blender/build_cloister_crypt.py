@@ -184,23 +184,29 @@ def build_crypt(
     # Central stone keystone boss
     add_cylinder(bm_crypt, Vector((cx, cy, z_boss - 0.30)), Vector((cx, cy, z_boss + 0.05)), 1.35, 0.95, segments=16, cap=True)
 
-    # Outer circular Neo-Gothic crypt wall (exact height meeting z_wall_top seamlessly)
-    wall_h = z_wall_top - Z_CRYPT + 0.15
-    segs = 20
+    # Outer circular Neo-Gothic crypt wall (watertight 360° masonry with exact arched doorway to staircase tunnel!)
+    wall_h = z_wall_top - Z_CRYPT + 0.35
+    segs = 24
+    # Exact doorway direction from Crypt center (0, 21) toward staircase bottom (-10.5, 12.0): atan2(-9, -10.5) ≈ 3.85 rad
+    door_ang = math.atan2(12.0 - cy, -10.5 - cx) % (2.0 * math.pi)
     for k in range(segs):
         a0 = 2.0 * math.pi * k / segs
         a1 = 2.0 * math.pi * (k + 1) / segs
         am = 0.5 * (a0 + a1)
-        is_entry = (-2.55 < am < -1.95) or (3.73 < am < 4.33)
-        if not is_entry:
-            wx = cx + r_main * math.cos(am)
-            wy = cy + r_main * math.sin(am)
-            seg_w = 2.0 * r_main * math.sin(math.pi / segs) + 0.3
-            add_box(bm_crypt, (wx, wy, Z_CRYPT + wall_h * 0.5), (seg_w, 0.9, wall_h), rot_euler=(0, 0, am - math.pi / 2.0))
+        wx = cx + r_main * math.cos(am)
+        wy = cy + r_main * math.sin(am)
+        seg_w = 2.0 * r_main * math.sin(math.pi / segs) + 0.55
+        ang_diff = abs(((am - door_ang + math.pi) % (2.0 * math.pi)) - math.pi)
+        if ang_diff < 0.16:
+            # Stone doorway lintel header above the 2.9m tall stairwell entrance (leaves clean walkable archway!)
+            lintel_h = max(0.8, wall_h - 2.95)
+            add_box(bm_crypt, (wx, wy, Z_CRYPT + 2.95 + lintel_h * 0.5), (seg_w, 1.1, lintel_h), rot_euler=(0, 0, am - math.pi / 2.0))
+        else:
+            add_box(bm_crypt, (wx, wy, Z_CRYPT + wall_h * 0.5 - 0.1), (seg_w, 1.1, wall_h + 0.2), rot_euler=(0, 0, am - math.pi / 2.0))
         add_cylinder(
             bm_crypt,
-            Vector((cx + (r_main - 0.4) * math.cos(a0), cy + (r_main - 0.4) * math.sin(a0), Z_CRYPT)),
-            Vector((cx + (r_main - 0.4) * math.cos(a0), cy + (r_main - 0.4) * math.sin(a0), z_wall_top + 0.05)),
+            Vector((cx + (r_main - 0.45) * math.cos(a0), cy + (r_main - 0.45) * math.sin(a0), Z_CRYPT)),
+            Vector((cx + (r_main - 0.45) * math.cos(a0), cy + (r_main - 0.45) * math.sin(a0), z_wall_top + 0.1)),
             0.42,
             0.38,
             segments=8,
@@ -255,14 +261,30 @@ def build_crypt(
             segments=8,
         )
 
-    # Walkable Descending Stone Staircase from West Apse Cloister (-22.0, +16.5, Z=1.2) -> Crypt Entry (-11.0, +12.5, Z=-5.5)
+    # Watertight Enclosed Stone Stairwell Tunnel: West Apse Cloister (-21.5, +16.5, Z=1.2) -> Crypt Entry (-10.5, +12.0, Z=-5.5)
     num_steps = 28
     p_top = Vector((-21.5, 16.5, Z_NAVE))
     p_bot = Vector((-10.5, 12.0, Z_CRYPT))
+    stair_dir = (p_bot - p_top)
+    stair_ang = math.atan2(stair_dir.y, stair_dir.x)
+    nx = -math.sin(stair_ang)
+    ny = math.cos(stair_ang)
+    tunnel_half_w = 1.95
     for s in range(num_steps):
         t = s / (num_steps - 1)
         pos = p_top.lerp(p_bot, t)
-        add_box(bm_crypt, (pos.x, pos.y, pos.z - 0.15), (0.65, 2.8, 0.32), rot_euler=(0, 0, -0.38))
+        # Solid stone step + masonry sub-base
+        add_box(bm_crypt, (pos.x, pos.y, pos.z - 0.45), (0.85, tunnel_half_w * 2.0 + 0.4, 0.90), rot_euler=(0, 0, stair_ang))
+        # Left & right watertight stone tunnel walls sealing the stairwell completely from the underground void!
+        for side in (-1, 1):
+            wx = pos.x + nx * side * tunnel_half_w
+            wy = pos.y + ny * side * tunnel_half_w
+            add_box(bm_crypt, (wx, wy, pos.z + 1.85), (0.95, 0.55, 4.4), rot_euler=(0, 0, stair_ang))
+        # Sloped vaulted stone tunnel ceiling (stops near top entrance so player walks cleanly up into Nave!)
+        if t > 0.22:
+            add_box(bm_crypt, (pos.x, pos.y, pos.z + 3.65), (0.95, tunnel_half_w * 2.0 + 0.8, 0.55), rot_euler=(0, 0, stair_ang))
+    # Rear stone backing wall sealing the upper vestibule entrance behind the top step
+    add_box(bm_crypt, (p_top.x - math.cos(stair_ang) * 0.9, p_top.y - math.sin(stair_ang) * 0.9, p_top.z + 1.4), (0.55, tunnel_half_w * 2.0 + 0.8, 3.8), rot_euler=(0, 0, stair_ang))
 
 
 def build_cloister_and_crypt() -> None:

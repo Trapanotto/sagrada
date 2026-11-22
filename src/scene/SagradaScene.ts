@@ -81,7 +81,6 @@ export class SagradaScene {
   private eixampleNightMats: THREE.MeshStandardMaterial[] = [];
   private internalStairMeshes: THREE.Object3D[] = [];
   private interiorOnlyRoots: THREE.Object3D[] = [];
-  private pondFrameSkip = 0;
 
   constructor(private renderer: THREE.WebGLRenderer) {
     this.scene = new THREE.Scene();
@@ -203,7 +202,6 @@ export class SagradaScene {
     const pondGeo = new THREE.PlaneGeometry(29.0, 34.0);
     const mobile = isMobileDevice();
     const reflRes = mobile ? 256 : 384;
-    const reflEvery = mobile ? 3 : 2;
     const reflector = new Reflector(pondGeo, {
       clipBias: 0.003,
       textureWidth: reflRes,
@@ -213,9 +211,8 @@ export class SagradaScene {
     const origBeforeRender = reflector.onBeforeRender.bind(reflector);
     reflector.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
       if (scene.overrideMaterial !== null) return;
-      // Throttle reflection re-render & hide interior-only meshes (cuts reflection GPU cost by ~75%!)
-      this.pondFrameSkip = (this.pondFrameSkip + 1) % reflEvery;
-      if (this.pondFrameSkip !== 0) return;
+      // Render pond reflection EVERY frame in 1:1 lockstep with camera (ZERO judder/stutter when strafing!)
+      // while hiding interior-only meshes to keep reflection cost ~70% lighter!
       const savedVis: Array<[THREE.Object3D, boolean]> = [];
       for (const obj of [...this.interiorOnlyRoots, ...this.internalStairMeshes, this.candles.group, this.glassCarpets.group]) {
         savedVis.push([obj, obj.visible]);
