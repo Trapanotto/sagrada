@@ -10,46 +10,29 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Basílica de la Sagrada Família — Begehbares 3D-Architekturmodell</title>
+    <!-- Start fetching Draco WASM & 3 exterior startup models at t=0ms in parallel with JS bundle! -->
+    <link rel="preload" href="./draco/draco_decoder.wasm" as="fetch" crossorigin />
+    <link rel="preload" href="./models/facades.glb" as="fetch" crossorigin />
+    <link rel="preload" href="./models/towers.glb" as="fetch" crossorigin />
+    <link rel="preload" href="./models/eixample.glb" as="fetch" crossorigin />
   </head>
   <body>
     <div id="app">
       <canvas id="scene-canvas"></canvas>
 
-      <!-- Loading screen -->
+      <!-- Ultra-simple minimal loading screen with smooth percentage readout -->
       <div id="loading-screen">
-        <div class="loading-card">
-          <div class="loading-crest">✦</div>
-          <h1>Basílica de la Sagrada Família</h1>
-          <p class="loading-subtitle">
-            Vollständiger Entwurf · Alle 18 Türme · Innenraum, Krypta, Kreuzgang &amp; Eixample
-          </p>
+        <div class="loading-minimal">
+          <div class="loading-title">SAGRADA FAMÍLIA</div>
           <div class="loading-bar-track">
             <div id="loading-bar-fill"></div>
           </div>
-          <div id="loading-status">Initialisiere Architektur-Module…</div>
+          <div id="loading-percent">0 %</div>
         </div>
       </div>
 
       <!-- Pointer lock crosshair -->
       <div id="crosshair" class="hidden"></div>
-
-      <!-- Direct Ego-Shooter FPS Start Overlay (1 click launches immediate Pointer Lock mouse-look!) -->
-      <div id="fps-start-overlay" class="hidden">
-        <div class="fps-start-card">
-          <div class="fps-start-icon">✦</div>
-          <h2>First-Person Modus starten</h2>
-          <p>Ein Klick aktiviert sofort die freie Ego-Shooter-Maussteuerung</p>
-          <div class="fps-keys-row">
-            <span><strong>Maus</strong> Umsehen</span>
-            <span><strong>WASD</strong> Gehen</span>
-            <span><strong>Leertaste</strong> Springen</span>
-            <span><strong>F</strong> Flugmodus</span>
-            <span><strong>L</strong> Glas-Aufzug</span>
-            <span><strong>ESC</strong> Menü</span>
-          </div>
-          <div class="fps-start-cta">Klicken zum Erkunden</div>
-        </div>
-      </div>
 
       <!-- Contextual Glass Panorama Elevator prompt -->
       <div id="elevator-prompt" class="hud-panel hidden"></div>

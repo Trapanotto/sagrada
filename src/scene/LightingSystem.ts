@@ -205,7 +205,6 @@ export class LightingSystem {
     this.scene.add(this.skyMesh);
 
     this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
-    this.pmremGenerator.compileEquirectangularShader();
 
     // 2. Hemisphere + Crisp 2048px Cached Directional Sun Light
     this.hemiLight = new THREE.HemisphereLight('#bfd9f5', '#877258', 0.85);
@@ -229,14 +228,14 @@ export class LightingSystem {
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // 3. 4 Wide Textured SpotLight.map Stained-Glass Projectors (Joan Vila-Grau patterns!)
+    // 3. 4 Wide Textured SpotLight.map Stained-Glass Projectors (Joan Vila-Grau patterns, tiny 46KB WebP!)
     const texLoader = new THREE.TextureLoader();
-    const texEast = texLoader.load('./textures/stained_glass_east.png');
+    const texEast = texLoader.load('./textures/stained_glass_east.webp');
     texEast.colorSpace = THREE.SRGBColorSpace;
     texEast.wrapS = THREE.ClampToEdgeWrapping;
     texEast.wrapT = THREE.ClampToEdgeWrapping;
 
-    const texWest = texLoader.load('./textures/stained_glass_west.png');
+    const texWest = texLoader.load('./textures/stained_glass_west.webp');
     texWest.colorSpace = THREE.SRGBColorSpace;
     texWest.wrapS = THREE.ClampToEdgeWrapping;
     texWest.wrapT = THREE.ClampToEdgeWrapping;
@@ -353,6 +352,7 @@ export class LightingSystem {
    * so the loading screen NEVER stalls on 15 MB of .hdr parsing!
    */
   public loadRealHdrisInBackground(): void {
+    this.pmremGenerator.compileEquirectangularShader();
     const rgbe = new RGBELoader();
     const prep = (t: THREE.DataTexture) => {
       t.mapping = THREE.EquirectangularReflectionMapping;

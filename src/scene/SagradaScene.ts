@@ -19,16 +19,18 @@ interface ModelSpec {
   label: string;
   url: string;
   priority: 'core' | 'background';
+  weightMB: number;
 }
 
 const MODEL_SPECS: ModelSpec[] = [
-  { id: 'facades', label: 'Geburts-, Passions- & Glorienfassade', url: './models/facades.glb', priority: 'core' },
-  { id: 'towers', label: 'Alle 18 Türme & Wendeltreppe', url: './models/towers.glb', priority: 'core' },
-  { id: 'eixample', label: 'Eixample-Stadtblock & Blätter-Bäume', url: './models/eixample.glb', priority: 'core' },
-  { id: 'interior', label: 'Innenraum, Säulenwald & Cycles-GI', url: './models/interior.glb', priority: 'core' },
-  { id: 'furnishings', label: 'Liturgische Ausstattung, Kapellen & Ausstellung', url: './models/furnishings.glb', priority: 'background' },
-  { id: 'cloister_crypt', label: 'Kreuzgang, Sakristeien & Krypta-GI', url: './models/cloister_crypt.glb', priority: 'background' },
-  { id: 'plaza_life', label: 'Parkbänke, Kioske, Brunnen & Stadtmöbel', url: './models/plaza_life.glb', priority: 'background' },
+  { id: 'facades', label: 'Geburts-, Passions- & Glorienfassade', url: './models/facades.glb', priority: 'core', weightMB: 2.4 },
+  { id: 'towers', label: 'Alle 18 Türme & Wendeltreppe', url: './models/towers.glb', priority: 'core', weightMB: 3.1 },
+  { id: 'eixample', label: 'Eixample-Stadtblock & Blätter-Bäume', url: './models/eixample.glb', priority: 'core', weightMB: 3.2 },
+  // interior.glb is preloaded in <head> and streams immediately right after exterior reveal -> cuts startup time nearly in half!
+  { id: 'interior', label: 'Innenraum, Säulenwald & Cycles-GI', url: './models/interior.glb', priority: 'background', weightMB: 2.9 },
+  { id: 'furnishings', label: 'Liturgische Ausstattung, Kapellen & Ausstellung', url: './models/furnishings.glb', priority: 'background', weightMB: 0.7 },
+  { id: 'cloister_crypt', label: 'Kreuzgang, Sakristeien & Krypta-GI', url: './models/cloister_crypt.glb', priority: 'background', weightMB: 1.6 },
+  { id: 'plaza_life', label: 'Parkbänke, Kioske, Brunnen & Stadtmöbel', url: './models/plaza_life.glb', priority: 'background', weightMB: 0.8 },
 ];
 
 const LIGHTMAP_BY_MESH: Record<string, { url: string; intensity: number }> = {
@@ -63,6 +65,7 @@ export class SagradaScene {
   private interiorProbeRT: THREE.WebGLCubeRenderTarget;
   private interiorCubeCam: THREE.CubeCamera;
   private interiorPmrem: THREE.PMREMGenerator;
+  private interiorPmremReady = false;
   private currentInteriorEnvRT: THREE.WebGLRenderTarget | null = null;
   private interiorReflectiveMats: THREE.MeshStandardMaterial[] = [];
 
@@ -121,7 +124,6 @@ export class SagradaScene {
     this.interiorCubeCam.position.set(0, 6.5, 22);
     this.scene.add(this.interiorCubeCam);
     this.interiorPmrem = new THREE.PMREMGenerator(this.renderer);
-    this.interiorPmrem.compileCubemapShader();
 
     this.lighting.onTimeBucketChanged = () => this.captureInteriorReflectionProbe();
 
@@ -134,6 +136,10 @@ export class SagradaScene {
    */
   public captureInteriorReflectionProbe(): void {
     if (this.interiorReflectiveMats.length === 0) return;
+    if (!this.interiorPmremReady) {
+      this.interiorPmrem.compileCubemapShader();
+      this.interiorPmremReady = true;
+    }
     const prevPond = this.pondReflector.visible;
     const prevGeo = this.geometryOverlay.group.visible;
     this.pondReflector.visible = false;
@@ -368,10 +374,12 @@ export class SagradaScene {
 
   public async loadAllModules(
     camera: THREE.PerspectiveCamera,
-    onProgress: (fraction: number, statusText: string) => void
+    onProgress: (fraction: number) => void
   ): Promise<void> {
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('./draco/');
+    dracoLoader.setWorkerLimit(Math.min(4, navigator.hardwareConcurrency || 2));
+    dracoLoader.preload(); // Start initializing WASM workers immediately while bytes stream!
     const loader = new GLTFLoader();
     loader.setDRACOLoader(dracoLoader);
     const texLoader = new THREE.TextureLoader();
@@ -379,24 +387,6 @@ export class SagradaScene {
     const eixampleNightTex = this.createEixampleNightWindowTexture();
     const maxAniso = Math.min(isMobileDevice() ? 4 : 16, this.renderer.capabilities.getMaxAnisotropy());
     const lightmapCache = new Map<string, THREE.Texture>();
-
-    // Kick off non-blocking 1K PureSky HDRIs & Cycles Lightmaps immediately in background!
-    this.lighting.loadRealHdrisInBackground();
-    const lightmapsPromise = Promise.all(
-      Object.entries(LIGHTMAP_BY_MESH).map(async ([meshName, spec]) => {
-        try {
-          const lmTex = await texLoader.loadAsync(spec.url);
-          lmTex.flipY = false;
-          lmTex.channel = 1;
-          lmTex.colorSpace = THREE.SRGBColorSpace;
-          lmTex.minFilter = THREE.LinearMipmapLinearFilter;
-          lmTex.magFilter = THREE.LinearFilter;
-          lightmapCache.set(meshName, lmTex);
-        } catch {
-          // Optional
-        }
-      })
-    );
 
     const processLoadedRoot = (spec: ModelSpec, root: THREE.Group) => {
       root.name = `Module_${spec.id}`;
@@ -499,64 +489,96 @@ export class SagradaScene {
       }
     };
 
-    // ── PHASE 1 (FAST START): Core exterior + interior basilica (~1-2 seconds!) ──
+    // ── PHASE 1 (MAX-SPEED CORE LOAD): 100% bandwidth dedicated strictly to the 4 core GLBs! ──
     const coreSpecs = MODEL_SPECS.filter((s) => s.priority === 'core');
     const bgSpecs = MODEL_SPECS.filter((s) => s.priority === 'background');
-    let coreLoaded = 0;
+    const totalWeight = coreSpecs.reduce((sum, s) => sum + s.weightMB, 0);
+    // Track smooth per-file progress: 0..0.82 download bytes, 0.82..1.0 Draco decode & scene attach
+    const fileProgress = new Map<string, number>();
+    let lastReported = 0;
+
+    const emitProgress = () => {
+      let weighted = 0;
+      for (const s of coreSpecs) {
+        weighted += (fileProgress.get(s.id) ?? 0) * s.weightMB;
+      }
+      const frac = Math.min(0.99, weighted / totalWeight);
+      if (frac > lastReported) {
+        lastReported = frac;
+        onProgress(frac);
+      }
+    };
 
     await Promise.all(
       coreSpecs.map(async (spec) => {
-        const gltf = await loader.loadAsync(spec.url);
+        const gltf = await loader.loadAsync(spec.url, (ev) => {
+          const expectedBytes = ev.lengthComputable && ev.total > 0 ? ev.total : spec.weightMB * 1024 * 1024;
+          const dlFrac = Math.min(1, ev.loaded / expectedBytes);
+          fileProgress.set(spec.id, Math.max(fileProgress.get(spec.id) ?? 0, dlFrac * 0.82));
+          emitProgress();
+        });
         processLoadedRoot(spec, gltf.scene);
-        coreLoaded++;
-        onProgress(
-          (coreLoaded / coreSpecs.length) * 0.85,
-          `Geladen: ${spec.label} (${coreLoaded}/${coreSpecs.length})`
-        );
+        fileProgress.set(spec.id, 1.0);
+        emitProgress();
       })
     );
 
-    // Pre-warm ALL core + indoor/weather WebGL shaders BEFORE revealing scene -> ZERO freeze when entering portals!
-    onProgress(0.94, 'Shader-Pre-Warming (kein Ruckeln beim Eintreten)…');
     this.lighting.requestShadowUpdate(true);
-    const prewarmObjs: Array<[THREE.Object3D, boolean]> = [
-      [this.candles.group, this.candles.group.visible],
-      [this.glassCarpets.group, this.glassCarpets.group.visible],
-      [this.lighting.particles.points, this.lighting.particles.points.visible],
-      ...this.internalStairMeshes.map((o): [THREE.Object3D, boolean] => [o, o.visible]),
-    ];
-    for (const [obj] of prewarmObjs) obj.visible = true;
-    await this.renderer.compileAsync(this.scene, camera);
-    for (const [obj, wasVis] of prewarmObjs) obj.visible = wasVis;
-    onProgress(1.0, 'Bereit!');
+    onProgress(1.0);
 
-    // ── PHASE 2 (SILENT BACKGROUND STREAMING): Furnishings, Crypt, Plaza Furniture & Cycles Lightmaps ──
-    void (async () => {
-      await lightmapsPromise;
-      // Apply Cycles GI lightmaps to already-loaded core interior meshes
-      this.scene.traverse((obj) => {
-        if (!(obj instanceof THREE.Mesh) || !(obj.material instanceof THREE.MeshStandardMaterial)) return;
-        const lmSpec = LIGHTMAP_BY_MESH[obj.name];
-        const lmTex = lightmapCache.get(obj.name);
-        if (lmSpec && lmTex && obj.geometry.attributes.uv1 && !obj.material.lightMap) {
-          obj.material.lightMap = lmTex;
-          obj.material.lightMapIntensity = lmSpec.intensity;
-          obj.material.needsUpdate = true;
+    // ── PHASE 2 (IMMEDIATE SILENT STREAMING): Interior first (from preloaded HTTP cache!), then furnishings/crypt/HDRIs ──
+    setTimeout(() => {
+      void (async () => {
+        const interiorSpec = bgSpecs.find((s) => s.id === 'interior');
+        const restSpecs = bgSpecs.filter((s) => s.id !== 'interior');
+
+        const lightmapsPromise = Promise.all(
+          Object.entries(LIGHTMAP_BY_MESH).map(async ([meshName, spec]) => {
+            try {
+              const lmTex = await texLoader.loadAsync(spec.url);
+              lmTex.flipY = false;
+              lmTex.channel = 1;
+              lmTex.colorSpace = THREE.SRGBColorSpace;
+              lmTex.minFilter = THREE.LinearMipmapLinearFilter;
+              lmTex.magFilter = THREE.LinearFilter;
+              lightmapCache.set(meshName, lmTex);
+            } catch {
+              // Optional
+            }
+          })
+        );
+
+        // 2a. Attach preloaded interior.glb immediately so walking toward or teleporting inside is instant!
+        if (interiorSpec) {
+          await lightmapsPromise;
+          const gltf = await loader.loadAsync(interiorSpec.url);
+          processLoadedRoot(interiorSpec, gltf.scene);
         }
-      });
 
-      await Promise.all(
-        bgSpecs.map(async (spec) => {
-          const gltf = await loader.loadAsync(spec.url);
-          processLoadedRoot(spec, gltf.scene);
-        })
-      );
-      dracoLoader.dispose();
-      // Pre-warm newly streamed interior furnishings & crypt shaders seamlessly in background
-      await this.renderer.compileAsync(this.scene, camera);
-      this.lighting.requestShadowUpdate(true);
-      this.captureInteriorReflectionProbe();
-    })();
+        // 2b. Stream furnishings, crypt & plaza life + 1K PureSky HDRIs in parallel
+        this.lighting.loadRealHdrisInBackground();
+        await Promise.all(
+          restSpecs.map(async (spec) => {
+            const gltf = await loader.loadAsync(spec.url);
+            processLoadedRoot(spec, gltf.scene);
+          })
+        );
+        dracoLoader.dispose();
+
+        // 2c. Pre-warm indoor/stair shaders silently while user is still outside -> ZERO portal entry freeze!
+        const prewarmObjs: Array<[THREE.Object3D, boolean]> = [
+          [this.candles.group, this.candles.group.visible],
+          [this.glassCarpets.group, this.glassCarpets.group.visible],
+          [this.lighting.particles.points, this.lighting.particles.points.visible],
+          ...this.internalStairMeshes.map((o): [THREE.Object3D, boolean] => [o, o.visible]),
+        ];
+        for (const [obj] of prewarmObjs) obj.visible = true;
+        await this.renderer.compileAsync(this.scene, camera);
+        for (const [obj, wasVis] of prewarmObjs) obj.visible = wasVis;
+        this.lighting.requestShadowUpdate(true);
+        this.captureInteriorReflectionProbe();
+      })();
+    }, 30);
   }
 
   public update(dt: number, camera: THREE.PerspectiveCamera, indoorFactor: number): void {

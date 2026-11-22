@@ -69,7 +69,7 @@ async function bootstrap(): Promise<void> {
   // UI Elements
   const loadingScreen = document.getElementById('loading-screen')!;
   const loadingFill = document.getElementById('loading-bar-fill')!;
-  const loadingStatus = document.getElementById('loading-status')!;
+  const loadingPercent = document.getElementById('loading-percent')!;
 
   const hudPanels = [
     document.getElementById('hud-top')!,
@@ -79,7 +79,6 @@ async function bootstrap(): Promise<void> {
     document.getElementById('controls-banner')!,
   ];
   const crosshairEl = document.getElementById('crosshair')!;
-  const fpsStartOverlay = document.getElementById('fps-start-overlay')!;
   const elevatorPrompt = document.getElementById('elevator-prompt')!;
   const zoneBadge = document.getElementById('zone-badge')!;
   const compassDir = document.getElementById('compass-dir')!;
@@ -497,7 +496,6 @@ async function bootstrap(): Promise<void> {
 
   // Start immediately into live 3D view with ZERO confirmation modal!
   // Single click anywhere on the canvas locks mouse pointer into direct Ego-Shooter FPS control.
-  fpsStartOverlay.classList.add('hidden');
   player.onPointerLockChange = () => {};
 
   window.addEventListener('keydown', (e) => {
@@ -515,21 +513,22 @@ async function bootstrap(): Promise<void> {
     else if (tour.active && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Escape'].includes(e.code)) tour.stop();
   });
 
-  // Fast Progressive Loading + Asynchronous Shader Pre-Warming (0ms freeze on portal entry!)
+  // Ultra-fast parallel core load with smooth real-time percentage readout (0 % -> 100 %)
   try {
-    await sagrada.loadAllModules(camera, (fraction, status) => {
-      loadingFill.style.width = `${Math.round(fraction * 100)}%`;
-      loadingStatus.textContent = status;
+    await sagrada.loadAllModules(camera, (fraction) => {
+      const pct = Math.min(100, Math.max(0, Math.round(fraction * 100)));
+      loadingFill.style.width = `${pct}%`;
+      loadingPercent.textContent = `${pct} %`;
     });
   } catch (err) {
-    loadingStatus.textContent = `Fehler beim Laden der 3D-Modelle: ${String(err)}`;
+    loadingPercent.textContent = 'Ladefehler';
     console.error(err);
     return;
   }
 
-  // Reveal scene & HUD immediately (zero confirmation dialog!)
+  // Reveal scene & HUD immediately with crisp 240ms fade!
   loadingScreen.classList.add('fade-out');
-  setTimeout(() => loadingScreen.classList.add('hidden'), 650);
+  setTimeout(() => loadingScreen.classList.add('hidden'), 260);
   hudPanels.forEach((p) => p.classList.remove('hidden'));
 
   // Handle Resize

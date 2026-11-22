@@ -17,12 +17,12 @@ export class StainedGlassCarpets {
     this.group.name = 'Nave_StainedGlassCarpets';
     const texLoader = new THREE.TextureLoader();
 
-    const texEast = texLoader.load('./textures/stained_glass_east.png');
+    const texEast = texLoader.load('./textures/stained_glass_east.webp');
     texEast.colorSpace = THREE.SRGBColorSpace;
     texEast.wrapS = THREE.RepeatWrapping;
     texEast.wrapT = THREE.ClampToEdgeWrapping;
 
-    const texWest = texLoader.load('./textures/stained_glass_west.png');
+    const texWest = texLoader.load('./textures/stained_glass_west.webp');
     texWest.colorSpace = THREE.SRGBColorSpace;
     texWest.wrapS = THREE.RepeatWrapping;
     texWest.wrapT = THREE.ClampToEdgeWrapping;
