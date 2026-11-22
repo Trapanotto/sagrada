@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { AtmosphericParticles } from './AtmosphericParticles';
+import { isMobileDevice } from '../utils/device';
 
 interface TrackedMaterials {
   east: THREE.MeshStandardMaterial[];
@@ -210,9 +211,11 @@ export class LightingSystem {
     this.hemiLight = new THREE.HemisphereLight('#bfd9f5', '#877258', 0.85);
     this.scene.add(this.hemiLight);
 
-    this.sunLight = new THREE.DirectionalLight('#fff6e3', 3.0);
+    const mobile = isMobileDevice();
+    this.sunLight = new THREE.DirectionalLight('#fff6e3', 2.0);
     this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.set(2048, 2048);
+    const shadowSize = mobile ? 1024 : 2048;
+    this.sunLight.shadow.mapSize.set(shadowSize, shadowSize);
     this.sunLight.shadow.camera.near = 25;
     this.sunLight.shadow.camera.far = 420;
     const d = 132;
@@ -338,7 +341,7 @@ export class LightingSystem {
 
     // 8. Soft GLSL Fresnel Volumetric Stained-Glass Sunbeams + Drifting Dust Motes
     this.buildVolumetricBeams();
-    this.particles = new AtmosphericParticles(900);
+    this.particles = new AtmosphericParticles(mobile ? 300 : 900);
     this.scene.add(this.particles.points);
 
     this.setTimeOfDay(this.timeHours, true);

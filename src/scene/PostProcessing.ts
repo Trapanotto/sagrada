@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { isMobileDevice } from '../utils/device';
 
 export type GraphicsTier = 'aaa' | 'ultra' | 'fast';
 
@@ -73,6 +74,8 @@ export class PostProcessingPipeline {
 
   public tier: GraphicsTier = 'aaa';
   public dofEnabled = false;
+  private mobileDrsScale = 1.0;
+  private drsCooldown = 0;
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -155,10 +158,9 @@ export class PostProcessingPipeline {
       this.gradePass.enabled = true;
       this.bokehPass.enabled = this.dofEnabled;
     } else if (tier === 'aaa') {
-      // High-FPS AAA Default (45-60 FPS on Intel Iris Xe!):
-      // Single-pass native WebGL2 hardware MSAA + AgX Filmic ToneMapping + Baked Cycles GI + BVH AO!
-      // Eliminates the 51 MB HalfFloat MSAA resolve & 12-pass Gaussian Bloom bottleneck unless Photo DoF is toggled on.
-      const dpr = Math.min(window.devicePixelRatio, 1.1);
+      // High-FPS AAA Default (Mobile caps at 1.0 DPR + Dynamic Resolution Scaling so 3x Retina phones stay silky smooth!)
+      const mobileCap = isMobileDevice() ? this.mobileDrsScale : 1.1;
+      const dpr = Math.min(window.devicePixelRatio, mobileCap);
       this.renderer.setPixelRatio(dpr);
       this.composer.setPixelRatio(dpr);
       this.gtaoPass.enabled = false;
@@ -166,7 +168,7 @@ export class PostProcessingPipeline {
       this.gradePass.enabled = false;
       this.bokehPass.enabled = this.dofEnabled;
     } else {
-      const dpr = Math.min(window.devicePixelRatio, 0.85);
+      const dpr = Math.min(window.devicePixelRatio, isMobileDevice() ? 0.72 : 0.85);
       this.renderer.setPixelRatio(dpr);
       this.gtaoPass.enabled = false;
       this.bloomPass.enabled = false;
@@ -174,6 +176,30 @@ export class PostProcessingPipeline {
       this.bokehPass.enabled = false;
     }
     this.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  /**
+   * Automatic Mobile Dynamic Resolution Scaling (DRS):
+   * Smoothly scales render resolution between 0.72x and 1.05x on smartphones/tablets to lock fluid framerates!
+   */
+  public updateMobileDrs(dt: number, currentFps: number): void {
+    if (!isMobileDevice() || this.tier !== 'aaa') return;
+    this.drsCooldown += dt;
+    if (this.drsCooldown < 1.8) return;
+    this.drsCooldown = 0;
+
+    let next = this.mobileDrsScale;
+    if (currentFps < 28 && next > 0.72) {
+      next = Math.max(0.72, next - 0.10);
+    } else if (currentFps > 48 && next < 1.05) {
+      next = Math.min(1.05, next + 0.08);
+    }
+    if (Math.abs(next - this.mobileDrsScale) > 0.01) {
+      this.mobileDrsScale = next;
+      const dpr = Math.min(window.devicePixelRatio, this.mobileDrsScale);
+      this.renderer.setPixelRatio(dpr);
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
   }
 
   public cycleTier(): GraphicsTier {

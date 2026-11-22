@@ -12,6 +12,7 @@ import { CandleFlames } from './CandleFlames';
 import { StainedGlassCarpets } from './StainedGlassCarpets';
 import { WeatherSystem } from './WeatherSystem';
 import { JesusElevator } from './JesusElevator';
+import { isMobileDevice } from '../utils/device';
 
 interface ModelSpec {
   id: string;
@@ -91,10 +92,11 @@ export class SagradaScene {
     this.timeline = new ConstructionTimeline();
     this.scene.add(this.geometryOverlay.group);
 
-    this.birds = new FlockingBirds(16);
+    const mobile = isMobileDevice();
+    this.birds = new FlockingBirds(mobile ? 8 : 16);
     this.scene.add(this.birds.group);
 
-    this.fountain = new FountainParticles(420);
+    this.fountain = new FountainParticles(mobile ? 200 : 420);
     this.scene.add(this.fountain.points);
 
     this.candles = new CandleFlames();
@@ -109,8 +111,9 @@ export class SagradaScene {
     this.elevator = new JesusElevator();
     this.scene.add(this.elevator.group);
 
-    // Prepare cached interior reflection probe
-    this.interiorProbeRT = new THREE.WebGLCubeRenderTarget(256, {
+    // Prepare cached interior reflection probe (128px on mobile for lower VRAM, 256px on desktop)
+    const probeRes = mobile ? 128 : 256;
+    this.interiorProbeRT = new THREE.WebGLCubeRenderTarget(probeRes, {
       generateMipmaps: true,
       minFilter: THREE.LinearMipmapLinearFilter,
       type: THREE.HalfFloatType,
@@ -198,17 +201,20 @@ export class SagradaScene {
 
   private buildReflectivePond(): void {
     const pondGeo = new THREE.PlaneGeometry(29.0, 34.0);
+    const mobile = isMobileDevice();
+    const reflRes = mobile ? 256 : 384;
+    const reflEvery = mobile ? 3 : 2;
     const reflector = new Reflector(pondGeo, {
       clipBias: 0.003,
-      textureWidth: 384,
-      textureHeight: 384,
+      textureWidth: reflRes,
+      textureHeight: reflRes,
       color: 0x6f90a1,
     });
     const origBeforeRender = reflector.onBeforeRender.bind(reflector);
     reflector.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
       if (scene.overrideMaterial !== null) return;
-      // Throttle reflection re-render to every 2nd frame & hide interior-only meshes (cuts reflection GPU cost by ~75%!)
-      this.pondFrameSkip = (this.pondFrameSkip + 1) % 2;
+      // Throttle reflection re-render & hide interior-only meshes (cuts reflection GPU cost by ~75%!)
+      this.pondFrameSkip = (this.pondFrameSkip + 1) % reflEvery;
       if (this.pondFrameSkip !== 0) return;
       const savedVis: Array<[THREE.Object3D, boolean]> = [];
       for (const obj of [...this.interiorOnlyRoots, ...this.internalStairMeshes, this.candles.group, this.glassCarpets.group]) {
@@ -374,7 +380,7 @@ export class SagradaScene {
     const texLoader = new THREE.TextureLoader();
 
     const eixampleNightTex = this.createEixampleNightWindowTexture();
-    const maxAniso = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
+    const maxAniso = Math.min(isMobileDevice() ? 4 : 16, this.renderer.capabilities.getMaxAnisotropy());
     const lightmapCache = new Map<string, THREE.Texture>();
 
     // Kick off non-blocking 1K PureSky HDRIs & Cycles Lightmaps immediately in background!

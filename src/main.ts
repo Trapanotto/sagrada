@@ -12,6 +12,7 @@ import { TELEPORT_PRESETS, FloorLevel } from './data/teleports';
 import { Minimap } from './ui/Minimap';
 import { HotspotPanel } from './ui/HotspotPanel';
 import { PerfMonitor } from './ui/PerfMonitor';
+import { isMobileDevice, isTouchDevice, triggerHaptic } from './utils/device';
 
 function formatHours(h: number): string {
   const hh = Math.floor(h) % 24;
@@ -34,7 +35,7 @@ async function bootstrap(): Promise<void> {
     antialias: true, // Used cleanly in 'fast' single-pass mode; 'aaa'/'ultra' use 4x MSAA HalfFloat RT
     powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobileDevice() ? 1.0 : 1.1));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.autoUpdate = false; // Cached 2K sun shadows: only re-rendered when sun moves or scene loads!
@@ -52,6 +53,13 @@ async function bootstrap(): Promise<void> {
   const player = new PlayerController(camera, canvas, collision);
   const touchControls = new TouchControls(canvas);
   touchControls.onLookDelta = (dx, dy) => player.applyLookDelta(dx, dy);
+  touchControls.onJump = () => player.triggerJump();
+  touchControls.onToggleFly = () => player.setFlyMode(!player.flyMode);
+  touchControls.onElevator = () => sagrada.elevator.triggerAction(camera.position);
+  touchControls.onPinchZoom = (deltaFov) => {
+    camera.fov = THREE.MathUtils.clamp(camera.fov + deltaFov, 40, 78);
+    camera.updateProjectionMatrix();
+  };
   const tour = new CinematicTour(camera);
   const audio = new AmbienceAudio();
 
@@ -86,6 +94,45 @@ async function bootstrap(): Promise<void> {
   const btnTour = document.getElementById('btn-tour') as HTMLButtonElement;
   const btnPhoto = document.getElementById('btn-photo') as HTMLButtonElement;
   const btnAudio = document.getElementById('btn-audio') as HTMLButtonElement;
+  const btnMobileSun = document.getElementById('btn-mobile-sun') as HTMLButtonElement;
+  const btnMobileMenu = document.getElementById('btn-mobile-menu') as HTMLButtonElement;
+  const hudActionsMenu = document.getElementById('hud-actions-menu')!;
+  const hudTimePanel = document.getElementById('hud-time')!;
+
+  // Mobile Collapsible Top-Bar Drawers (keeps >90% of smartphone screen completely open!)
+  const closeMobileDrawers = () => {
+    hudActionsMenu.classList.remove('mobile-open');
+    hudTimePanel.classList.remove('mobile-open');
+    btnMobileMenu.classList.remove('active');
+    btnMobileSun.classList.remove('active');
+  };
+  btnMobileSun.addEventListener('click', (e) => {
+    e.stopPropagation();
+    triggerHaptic(10);
+    const willOpen = !hudTimePanel.classList.contains('mobile-open');
+    closeMobileDrawers();
+    if (willOpen) {
+      hudTimePanel.classList.add('mobile-open');
+      btnMobileSun.classList.add('active');
+    }
+  });
+  btnMobileMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
+    triggerHaptic(10);
+    const willOpen = !hudActionsMenu.classList.contains('mobile-open');
+    closeMobileDrawers();
+    if (willOpen) {
+      hudActionsMenu.classList.add('mobile-open');
+      btnMobileMenu.classList.add('active');
+    }
+  });
+  canvas.addEventListener('touchstart', closeMobileDrawers, { passive: true });
+
+  // Make Glass Panorama Elevator prompt tappable directly on touchscreens & desktop!
+  elevatorPrompt.addEventListener('click', () => {
+    triggerHaptic(14);
+    sagrada.elevator.triggerAction(camera.position);
+  });
 
   const tourBar = document.getElementById('tour-bar')!;
   const tourTitle = document.getElementById('tour-chapter-title')!;
@@ -135,6 +182,7 @@ async function bootstrap(): Promise<void> {
     btn.textContent = preset.shortLabel;
     btn.title = preset.label;
     btn.addEventListener('click', () => {
+      triggerHaptic(10);
       tpButtons.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       minimap.setLevel(preset.level);
@@ -496,12 +544,11 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
-  // Reveal scene, HUD & Direct FPS Ego-Shooter Click-to-Start Overlay (desktop)
+  // Reveal scene, HUD & Direct FPS Ego-Shooter Click-to-Start Overlay (desktop only — phones jump straight into touch!)
   loadingScreen.classList.add('fade-out');
   setTimeout(() => loadingScreen.classList.add('hidden'), 650);
   hudPanels.forEach((p) => p.classList.remove('hidden'));
-  const isTouchDevice = 'ontouchstart' in window && navigator.maxTouchPoints > 0 && window.innerWidth < 1024;
-  if (!isTouchDevice) {
+  if (!isTouchDevice() && !isMobileDevice()) {
     fpsStartOverlay.classList.remove('hidden');
   }
 
@@ -531,7 +578,13 @@ async function bootstrap(): Promise<void> {
       camera.position.y += elevDeltaY;
     }
 
-    player.setTouchInput(touchControls.moveX, touchControls.moveY, touchControls.flyY);
+    touchControls.updateInertia(dt);
+    player.setTouchInput(
+      touchControls.moveX,
+      touchControls.moveY,
+      touchControls.flyY,
+      touchControls.isSprinting
+    );
 
     if (tour.active) {
       tour.update(dt);
@@ -581,11 +634,17 @@ async function bootstrap(): Promise<void> {
       audio.updateSpatial(0.08, indoorFactor, camera.position, sagrada.weather.rainFactor);
 
       const elevMsg = !tour.active && !photoMode ? sagrada.elevator.getPromptText(camera.position) : null;
+      touchControls.setElevatorAvailable(!!elevMsg);
       if (elevMsg) {
         elevatorPrompt.innerHTML = elevMsg;
         elevatorPrompt.classList.remove('hidden');
       } else {
         elevatorPrompt.classList.add('hidden');
+      }
+
+      const fpsText = parseInt(document.getElementById('perf-fps-pill')?.textContent || '60', 10);
+      if (!Number.isNaN(fpsText)) {
+        post.updateMobileDrs(0.08, fpsText);
       }
 
       if (!minimapContainer.classList.contains('hidden')) {

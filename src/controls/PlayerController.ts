@@ -26,6 +26,7 @@ export class PlayerController {
   private touchMoveX = 0;
   private touchMoveY = 0;
   private touchFlyY = 0;
+  private touchSprint = false;
 
   // Smooth teleport transition state
   private transition: {
@@ -157,16 +158,25 @@ export class PlayerController {
     return this.yaw;
   }
 
-  public setTouchInput(moveX: number, moveY: number, flyY = 0): void {
+  public setTouchInput(moveX: number, moveY: number, flyY = 0, sprint = false): void {
     this.touchMoveX = moveX;
     this.touchMoveY = moveY;
     this.touchFlyY = flyY;
+    this.touchSprint = sprint;
+  }
+
+  public triggerJump(): void {
+    if (!this.flyMode && (this.onGround || this.coyoteTime > 0)) {
+      this.velY = 7.6;
+      this.onGround = false;
+      this.coyoteTime = 0;
+    }
   }
 
   public applyLookDelta(dx: number, dy: number): void {
     if (this.transition.active) return;
-    this.yaw -= dx * 0.0052;
-    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0052, -Math.PI * 0.48, Math.PI * 0.48);
+    this.yaw -= dx * 0.0046;
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0046, -Math.PI * 0.48, Math.PI * 0.48);
   }
 
   public syncFromCamera(): void {
@@ -247,7 +257,7 @@ export class PlayerController {
     if (Math.abs(this.touchMoveY) > 0.05) move.addScaledVector(forward, this.touchMoveY);
     if (Math.abs(this.touchMoveX) > 0.05) move.addScaledVector(right, this.touchMoveX);
 
-    const sprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+    const sprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint;
 
     if (this.flyMode) {
       if (this.keys.has('KeyE') || this.keys.has('Space') || this.touchFlyY > 0.2) move.y += 1;

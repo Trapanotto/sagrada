@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isMobileDevice } from '../utils/device';
 
 export type WeatherMode = 'clear' | 'mist' | 'rain';
 
@@ -36,7 +37,8 @@ export class WeatherSystem {
     this.group.name = 'Atmosphere_WeatherSystem';
 
     // ── 1. GPU Rain Streak Volume (follows camera seamlessly, masked outside basilica footprint!) ──
-    const rainCount = 1600;
+    const mobile = isMobileDevice();
+    const rainCount = mobile ? 650 : 1600;
     const rainPos = new Float32Array(rainCount * 3);
     const rainSeed = new Float32Array(rainCount);
     for (let i = 0; i < rainCount; i++) {
@@ -100,7 +102,7 @@ export class WeatherSystem {
     this.group.add(this.rainPoints);
 
     // ── 2. Rising Golden Sanctuary Incense Smoke above High Altar (0, 3..24m, -17.5) ──
-    const incCount = 64;
+    const incCount = mobile ? 32 : 64;
     const incPos = new Float32Array(incCount * 3);
     const incSeed = new Float32Array(incCount);
     for (let i = 0; i < incCount; i++) {
