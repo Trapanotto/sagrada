@@ -27,6 +27,8 @@ from common import (
 def add_chamfered_eixample_block(
     bm_wall: bmesh.types.BMesh,
     bm_roof: bmesh.types.BMesh,
+    bm_iron: bmesh.types.BMesh,
+    bm_awning: bmesh.types.BMesh,
     cx: float,
     cy: float,
     w: float = 72.0,
@@ -34,12 +36,12 @@ def add_chamfered_eixample_block(
     h: float = 22.0,
     chamfer: float = 12.0,
     courtyard_inset: float = 16.0,
+    add_street_detail: bool = False,
 ) -> None:
-    """Authentic Ildefons Cerdà Barcelona Eixample octagonal chamfered apartment block with inner courtyard."""
+    """Authentic Ildefons Cerdà Barcelona Eixample octagonal chamfered apartment block with 3D balconies & shop awnings."""
     hw, hd = w * 0.5, d * 0.5
     c = min(chamfer, hw * 0.45, hd * 0.45)
 
-    # 8 outer vertices (counter-clockwise)
     outer_pts = [
         (cx - hw + c, cy - hd),
         (cx + hw - c, cy - hd),
@@ -64,7 +66,6 @@ def add_chamfered_eixample_block(
         (cx - ihw, cy - ihd + ic),
     ]
 
-    # Build perimeter building walls (outer + inner courtyard faces) and flat Catalan roof terrace
     n = len(outer_pts)
     ob = [bm_wall.verts.new((x, y, Z_STREET)) for x, y in outer_pts]
     ot = [bm_wall.verts.new((x, y, Z_STREET + h)) for x, y in outer_pts]
@@ -79,6 +80,35 @@ def add_chamfered_eixample_block(
         bm_wall.faces.new((ob[i], ob[ni], ot[ni], ot[i]))
         bm_wall.faces.new((ib[ni], ib[i], it[i], it[ni]))
         bm_roof.faces.new((rob[i], rob[ni], rib[ni], rib[i]))
+
+        # Real projecting 3D wrought-iron balconies & ground-floor Catalan shop awnings on faces overlooking the basilica!
+        if add_street_detail:
+            p0 = Vector((outer_pts[i][0], outer_pts[i][1], 0.0))
+            p1 = Vector((outer_pts[ni][0], outer_pts[ni][1], 0.0))
+            edge = p1 - p0
+            elen = edge.length
+            if elen < 14.0:
+                continue
+            tang = edge.normalized()
+            out_n = Vector((tang.y, -tang.x, 0.0))  # Outward normal
+            rot_z = math.atan2(tang.y, tang.x)
+            # Only detail the sides facing toward the Sagrada Família center (0, 0) for lean triangle budget!
+            mid = (p0 + p1) * 0.5
+            if out_n.dot(-mid.normalized()) < 0.25:
+                continue
+            # Roof cornice ledge
+            add_box(bm_wall, (mid.x + out_n.x * 0.4, mid.y + out_n.y * 0.4, Z_STREET + h - 0.25), (elen + 0.4, 0.9, 0.55), rot_euler=(0, 0, rot_z))
+            # Ground-floor Catalan café/shopfront awnings (Z = 3.8m)
+            for k in range(3):
+                frac = 0.2 + 0.3 * k
+                ap = p0.lerp(p1, frac) + out_n * 1.15
+                add_box(bm_awning, (ap.x, ap.y, Z_STREET + 3.8), (8.5, 2.2, 0.24), rot_euler=(0.26, 0.0, rot_z))
+            # Projecting 3D wrought-iron balconies across upper floors (Z = 7.5m, 11.5m, 15.5m)
+            for bz in (7.6, 11.6, 15.6):
+                bp = mid + out_n * 0.65
+                add_box(bm_wall, (bp.x, bp.y, Z_STREET + bz), (elen * 0.86, 1.2, 0.22), rot_euler=(0, 0, rot_z))
+                bp_rail = mid + out_n * 1.22
+                add_box(bm_iron, (bp_rail.x, bp_rail.y, Z_STREET + bz + 0.55), (elen * 0.86, 0.08, 0.95), rot_euler=(0, 0, rot_z))
 
 
 def _add_organic_canopy_lobe(bm: bmesh.types.BMesh, center: Vector, rx: float, ry: float, rz: float, seed: float) -> None:
@@ -184,6 +214,8 @@ def build_eixample() -> None:
     bm_stone = bmesh.new()
     bm_facade = bmesh.new()
     bm_roof = bmesh.new()
+    bm_iron = bmesh.new()
+    bm_awning = bmesh.new()
 
     # ── 1. Ground Street Grid (Asphalt base at Z = -0.14m so sidewalks sit slightly elevated at Z = 0.0) ──
     add_box(bm_asphalt, (0.0, 0.0, -0.34), (460.0, 460.0, 0.4))
@@ -241,7 +273,7 @@ def build_eixample() -> None:
     ]
     for bx, by, bh in block_centers:
         add_box(bm_panot, (bx, by, -0.07), (80.0, 80.0, 0.14))
-        add_chamfered_eixample_block(bm_facade, bm_roof, bx, by, w=72.0, d=72.0, h=bh)
+        add_chamfered_eixample_block(bm_facade, bm_roof, bm_iron, bm_awning, bx, by, w=72.0, d=72.0, h=bh, add_street_detail=True)
 
     finalize_bmesh_object(bm_asphalt, "Eixample_Streets", mats["asphalt"], smooth=False, uv_scale=0.05)
     finalize_bmesh_object(bm_panot, "Eixample_Sidewalks", mats["panot_paving"], smooth=False, uv_scale=0.35)
@@ -249,6 +281,8 @@ def build_eixample() -> None:
     finalize_bmesh_object(bm_stone, "Eixample_PondBasin", mats["sandstone_warm"], smooth=False, uv_scale=0.25)
     finalize_bmesh_object(bm_facade, "Eixample_Buildings", mats["eixample_facade"], smooth=False, uv_scale=0.045)
     finalize_bmesh_object(bm_roof, "Eixample_Roofs", mats["eixample_terracotta"], smooth=False, uv_scale=0.08)
+    finalize_bmesh_object(bm_iron, "Eixample_BalconiesIron", mats["iron_dark"], smooth=False, uv_scale=0.25, bake_ao=False)
+    finalize_bmesh_object(bm_awning, "Eixample_ShopAwnings", mats["carpet_crimson"], smooth=False, uv_scale=0.25, bake_ao=False)
 
     # ── 6. Instanced Park Trees (Plane Trees & Cypresses) + Barcelona Street Lamps ──
     m_plane_t, m_plane_l = create_tree_mesh("Tree_Plane", mats["tree_bark"], mats["foliage_park"], cypress=False)

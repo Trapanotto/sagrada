@@ -1,6 +1,7 @@
 import './styles.css';
 import * as THREE from 'three';
 import { SagradaScene } from './scene/SagradaScene';
+import { WeatherMode } from './scene/WeatherSystem';
 import { PostProcessingPipeline } from './scene/PostProcessing';
 import { CollisionSystem } from './scene/CollisionSystem';
 import { PlayerController } from './controls/PlayerController';
@@ -70,6 +71,8 @@ async function bootstrap(): Promise<void> {
     document.getElementById('controls-banner')!,
   ];
   const crosshairEl = document.getElementById('crosshair')!;
+  const fpsStartOverlay = document.getElementById('fps-start-overlay')!;
+  const elevatorPrompt = document.getElementById('elevator-prompt')!;
   const zoneBadge = document.getElementById('zone-badge')!;
   const compassDir = document.getElementById('compass-dir')!;
   const altitudeReadout = document.getElementById('altitude-readout')!;
@@ -415,7 +418,7 @@ async function bootstrap(): Promise<void> {
     });
   });
 
-  // Time-of-day controls
+  // Time-of-day controls (default: dramatic Barcelona Golden Hour 17:15!)
   const timeChipBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.chip-btn[data-time]'));
   const applyTime = (hours: number) => {
     sagrada.lighting.setTimeOfDay(hours);
@@ -432,10 +435,42 @@ async function bootstrap(): Promise<void> {
   timeChipBtns.forEach((btn) => {
     btn.addEventListener('click', () => applyTime(parseFloat(btn.dataset.time!)));
   });
-  applyTime(10.5);
+  applyTime(17.15);
+
+  // Weather Atmosphere Controls (Klar / Nebel / Regen)
+  const weatherBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.weather-btn[data-weather]'));
+  const applyWeather = (mode: WeatherMode) => {
+    sagrada.weather.setMode(mode);
+    weatherBtns.forEach((b) => b.classList.toggle('active', b.dataset.weather === mode));
+  };
+  weatherBtns.forEach((btn) => {
+    btn.addEventListener('click', () => applyWeather(btn.dataset.weather as WeatherMode));
+  });
+
+  // Direct First-Person Ego-Shooter Start Overlay (1 click -> instant Pointer Lock mouse-look!)
+  const dismissFpsStart = (lockNow: boolean) => {
+    fpsStartOverlay.classList.add('hidden');
+    if (lockNow) {
+      player.requestPointerLock();
+    }
+  };
+  fpsStartOverlay.addEventListener('click', () => dismissFpsStart(true));
+  player.onPointerLockChange = (locked) => {
+    if (locked) fpsStartOverlay.classList.add('hidden');
+  };
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (!fpsStartOverlay.classList.contains('hidden')) {
+      if (e.code === 'Escape') {
+        dismissFpsStart(false);
+        return;
+      }
+      if (e.code === 'Enter' || e.code === 'Space') {
+        dismissFpsStart(true);
+        return;
+      }
+    }
     if (e.code === 'KeyG') toggleGeometry();
     else if (e.code === 'KeyH') toggleHotspots();
     else if (e.code === 'KeyM') toggleMinimap();
@@ -444,6 +479,7 @@ async function bootstrap(): Promise<void> {
     else if (e.code === 'KeyB') selectLeftTab(paneHistory.classList.contains('hidden') ? 'history' : 'sun');
     else if (e.code === 'KeyT') tour.toggle();
     else if (e.code === 'KeyP') setPhotoMode(!photoMode);
+    else if (e.code === 'KeyL') sagrada.elevator.triggerAction(camera.position);
     else if (e.code === 'KeyV' && photoMode) setPhotoClean(!photoCleanCanvas);
     else if (tour.active && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Escape'].includes(e.code)) tour.stop();
   });
@@ -460,10 +496,14 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
-  // Reveal scene & HUD
+  // Reveal scene, HUD & Direct FPS Ego-Shooter Click-to-Start Overlay (desktop)
   loadingScreen.classList.add('fade-out');
   setTimeout(() => loadingScreen.classList.add('hidden'), 650);
   hudPanels.forEach((p) => p.classList.remove('hidden'));
+  const isTouchDevice = 'ontouchstart' in window && navigator.maxTouchPoints > 0 && window.innerWidth < 1024;
+  if (!isTouchDevice) {
+    fpsStartOverlay.classList.remove('hidden');
+  }
 
   // Handle Resize
   window.addEventListener('resize', () => {
@@ -483,6 +523,14 @@ async function bootstrap(): Promise<void> {
     lastTime = now;
 
     sagrada.timeline.update(dt);
+    // Update central Jesus Tower glass panorama elevator & carry player smoothly if riding inside!
+    const wasInElevator = !player.flyMode && sagrada.elevator.isPlayerInside(camera.position);
+    const elevDeltaY = sagrada.elevator.update(dt);
+    collision.elevatorFloorY = sagrada.elevator.currentY;
+    if (wasInElevator && Math.abs(elevDeltaY) > 0.0001) {
+      camera.position.y += elevDeltaY;
+    }
+
     player.setTouchInput(touchControls.moveX, touchControls.moveY, touchControls.flyY);
 
     if (tour.active) {
@@ -492,7 +540,7 @@ async function bootstrap(): Promise<void> {
     }
     const indoorFactor = collision.getIndoorFactor(camera.position);
     sagrada.update(dt, camera, indoorFactor);
-    post.render();
+    post.render(dt);
 
     const lightStats = sagrada.lighting.getPerfLightStats();
     perfMonitor.sampleFrame(dt, renderer, {
@@ -514,7 +562,16 @@ async function bootstrap(): Promise<void> {
       zoneBadge.textContent = collision.detectZone(camera.position);
       compassDir.textContent = yawToCompass(player.getYaw());
       altitudeReadout.textContent = `H: ${camera.position.y.toFixed(1)} m`;
-      audio.updateIndoorBlend(indoorFactor);
+      audio.updateSpatial(0.08, indoorFactor, camera.position, sagrada.weather.rainFactor);
+
+      const elevMsg = !tour.active && !photoMode ? sagrada.elevator.getPromptText(camera.position) : null;
+      if (elevMsg) {
+        elevatorPrompt.innerHTML = elevMsg;
+        elevatorPrompt.classList.remove('hidden');
+      } else {
+        elevatorPrompt.classList.add('hidden');
+      }
+
       if (!minimapContainer.classList.contains('hidden')) {
         minimap.render(camera.position, player.getYaw());
       }

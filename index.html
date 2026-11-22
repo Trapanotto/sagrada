@@ -27,6 +27,27 @@
       <!-- Pointer lock crosshair -->
       <div id="crosshair" class="hidden"></div>
 
+      <!-- Direct Ego-Shooter FPS Start Overlay (1 click launches immediate Pointer Lock mouse-look!) -->
+      <div id="fps-start-overlay" class="hidden">
+        <div class="fps-start-card">
+          <div class="fps-start-icon">✦</div>
+          <h2>First-Person Modus starten</h2>
+          <p>Ein Klick aktiviert sofort die freie Ego-Shooter-Maussteuerung</p>
+          <div class="fps-keys-row">
+            <span><strong>Maus</strong> Umsehen</span>
+            <span><strong>WASD</strong> Gehen</span>
+            <span><strong>Leertaste</strong> Springen</span>
+            <span><strong>F</strong> Flugmodus</span>
+            <span><strong>L</strong> Glas-Aufzug</span>
+            <span><strong>ESC</strong> Menü</span>
+          </div>
+          <div class="fps-start-cta">Klicken zum Erkunden</div>
+        </div>
+      </div>
+
+      <!-- Contextual Glass Panorama Elevator prompt -->
+      <div id="elevator-prompt" class="hud-panel hidden"></div>
+
       <!-- Top bar -->
       <header id="hud-top" class="hud-panel hidden">
         <div class="hud-brand">
@@ -79,14 +100,19 @@
         <div id="pane-sun" class="card-pane">
           <div class="panel-header">
             <span>Barcelona 41,4° N</span>
-            <span id="time-display" class="mono-val">10:30</span>
+            <span id="time-display" class="mono-val">17:09</span>
           </div>
-          <input id="time-slider" type="range" min="0" max="24" step="0.05" value="10.5" />
+          <input id="time-slider" type="range" min="0" max="24" step="0.05" value="17.15" />
           <div class="time-presets">
             <button class="chip-btn" data-time="8.2">Morgenlicht</button>
             <button class="chip-btn" data-time="12.5">Mittag</button>
-            <button class="chip-btn" data-time="17.8">Abendrot</button>
+            <button class="chip-btn active" data-time="17.15">Golden Hour</button>
             <button class="chip-btn" data-time="22.0">Nacht</button>
+          </div>
+          <div class="weather-presets" aria-label="Wetter-Atmosphäre">
+            <button class="chip-btn weather-btn active" data-weather="clear">☀ Klar</button>
+            <button class="chip-btn weather-btn" data-weather="mist">🌫 Nebel</button>
+            <button class="chip-btn weather-btn" data-weather="rain">🌧 Regen</button>
           </div>
         </div>
 
@@ -158,8 +184,8 @@
       <!-- Start / Pointer lock prompt -->
       <div id="controls-banner" class="hud-panel hidden">
         <span
-          ><strong>Klick &amp; Ziehen</strong> / <strong>Doppelklick</strong> Mausblick · <strong>WASD</strong> Bewegen ·
-          <strong>F</strong> Flugmodus · <strong>T</strong> Cinematic Tour · <strong>P</strong> Foto-Studio</span
+          ><strong>Klick</strong> FPS-Mausblick (<strong>ESC</strong> Menü) · <strong>WASD</strong> Bewegen ·
+          <strong>F</strong> Flug · <strong>L</strong> Glas-Aufzug · <strong>T</strong> Tour · <strong>P</strong> Foto</span
         >
       </div>
 

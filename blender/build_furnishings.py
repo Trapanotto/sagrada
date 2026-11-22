@@ -268,9 +268,44 @@ def build_furnishings() -> None:
     for cy_s in (-15.0, -22.5, -30.0, -37.5):
         for sx in (-1, 1):
             px_s = sx * 21.6
-            # Carved stone wall corbel bracket at Z = 4.6m
             add_cylinder(bm_marble, Vector((px_s, cy_s, Z_NAVE + 3.0)), Vector((px_s, cy_s, Z_NAVE + 3.6)), 0.16, 0.48, segments=10)
             add_statue_silhouette(bm_marble, Vector((px_s, cy_s, Z_NAVE + 3.6)), scale=1.05, rot_z=math.pi if sx > 0 else 0.0)
+
+    # ── 7b. 4 Ornate Golden Evangelist Tetramorph Medallions on the Crossing Porphyry Capitals + Vault Starbursts ──
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cx_e, cy_e = sx * 7.5, sy * 7.5
+            # Sculpted circular gilded evangelist medallion facing inward toward the crossing center
+            in_ang = math.atan2(-sy, -sx)
+            mx_e = cx_e + 1.52 * math.cos(in_ang)
+            my_e = cy_e + 1.52 * math.sin(in_ang)
+            add_cylinder(bm_gold, Vector((mx_e, my_e, 19.6)), Vector((mx_e, my_e, 21.6)), 0.82, 0.82, segments=16)
+            add_cylinder(bm_marble, Vector((mx_e + 0.12 * math.cos(in_ang), my_e + 0.12 * math.sin(in_ang), 19.8)), Vector((mx_e + 0.12 * math.cos(in_ang), my_e + 0.12 * math.sin(in_ang), 21.4)), 0.62, 0.62, segments=12)
+            # Crown of 8 golden rays around each porphyry crossing capital knot
+            for k in range(8):
+                ka = k * math.pi * 0.25
+                p0 = Vector((cx_e + 1.35 * math.cos(ka), cy_e + 1.35 * math.sin(ka), 20.6))
+                p1 = Vector((cx_e + 1.85 * math.cos(ka), cy_e + 1.85 * math.sin(ka), 21.2))
+                add_cylinder(bm_gold, p0, p1, 0.08, 0.03, segments=6)
+
+    # Golden Starburst Rosette Rays around the Central Crossing Oculus (Z = 60.5m) & Main Nave Oculi (Z = 45.6m)
+    for ox, oy, oz, r0, r1, count in (
+        (0.0, 0.0, 60.4, 3.3, 5.2, 16),
+        (0.0, -11.25, 45.5, 1.75, 3.1, 12),
+        (0.0, -18.75, 45.5, 1.75, 3.1, 12),
+        (0.0, -26.25, 45.5, 1.75, 3.1, 12),
+        (0.0, -33.75, 45.5, 1.75, 3.1, 12),
+    ):
+        for k in range(count):
+            ka = 2.0 * math.pi * k / count
+            add_cylinder(
+                bm_gold,
+                Vector((ox + r0 * math.cos(ka), oy + r0 * math.sin(ka), oz)),
+                Vector((ox + r1 * math.cos(ka), oy + r1 * math.sin(ka), oz - 0.45)),
+                0.09,
+                0.03,
+                segments=6,
+            )
 
     # ── 8. Gaudí Exhibition Showcase in West Outer Aisle (-18.8, Y = -40..-35 & -22..-17) ──
     # 8a. Iconic Inverted Hanging-Chain Funicular Model ("Hängemodell") at (-18.6, -39.5)

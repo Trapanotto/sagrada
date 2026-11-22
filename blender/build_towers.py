@@ -79,12 +79,16 @@ def add_parabolic_bell_tower(
                 cap=False,
             )
 
-    # 3. Horizontal acoustic louver rings (giving the iconic Sagrada Família honeycombed texture)
+    # 3. Horizontal acoustic louver rings + SANCTUS / HOSANNA ceramic trencadís collar bands!
     for bi in range(louver_bands):
         t = (bi + 0.5) / louver_bands
         z = z_base + 4.0 + t * (shaft_h - 6.0)
         r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.72)) * 0.96
-        add_cylinder(bm_stone, Vector((cx, cy, z - 0.35)), Vector((cx, cy, z + 0.35)), r, r * 0.98, segments=ribs, cap=False)
+        if bi in (louver_bands - 3, louver_bands - 1):
+            # Iconic colorful Venetian ceramic SANCTUS / EXCELSIS mosaic band near the top of every bell tower!
+            add_cylinder(bm_mosaic, Vector((cx, cy, z - 0.55)), Vector((cx, cy, z + 0.55)), r * 1.03, r * 1.01, segments=ribs, cap=False)
+        else:
+            add_cylinder(bm_stone, Vector((cx, cy, z - 0.35)), Vector((cx, cy, z + 0.35)), r, r * 0.98, segments=ribs, cap=False)
 
     # 4. Colorful Venetian-glass trencadís mosaic finial pinnacle (miter / bishop's staff / cross)
     # Lower flaring crown collar
@@ -126,11 +130,48 @@ def add_star_12_points(bm_star: bmesh.types.BMesh, center: Vector, radius: float
         add_cylinder(bm_star, center + dn * (radius * 0.25), center + dn * radius, radius * 0.24, 0.04, segments=4, cap=True)
 
 
+def add_spiral_stair_shaft(
+    bm_stone: bmesh.types.BMesh,
+    bm_gold: bmesh.types.BMesh,
+    cx: float,
+    cy: float,
+    z0: float,
+    z1: float,
+    r_mid: float = 1.85,
+    tread_w: float = 1.45,
+    turns_per_10m: float = 1.55,
+    step_rise: float = 0.42,
+    clockwise: bool = True,
+) -> None:
+    """Sculpted Gaudí open-centered helical spiral staircase inside any of the 18 tower shafts."""
+    span = max(2.0, z1 - z0)
+    steps = max(12, int(span / step_rise))
+    turns = (span / 10.0) * turns_per_10m
+    sgn = 1.0 if clockwise else -1.0
+    r_rail = max(0.55, r_mid - tread_w * 0.46)
+
+    for si in range(steps):
+        t = si / max(1, steps - 1)
+        ang = sgn * t * turns * 2.0 * math.pi
+        z = z0 + t * span
+        sx = cx + r_mid * math.cos(ang)
+        sy = cy + r_mid * math.sin(ang)
+        add_box(bm_stone, (sx, sy, z), (tread_w, 0.56, 0.20), rot_euler=(0.0, 0.0, ang))
+        if si < steps - 1 and si % 2 == 0:
+            t_n = min(1.0, (si + 2) / max(1, steps - 1))
+            ang_n = sgn * t_n * turns * 2.0 * math.pi
+            z_n = z0 + t_n * span
+            p0 = Vector((cx + r_rail * math.cos(ang), cy + r_rail * math.sin(ang), z + 0.92))
+            p1 = Vector((cx + r_rail * math.cos(ang_n), cy + r_rail * math.sin(ang_n), z_n + 0.92))
+            add_cylinder(bm_gold, p0, p1, 0.05, 0.05, segments=5, cap=False)
+
+
 def add_jesus_christ_tower(
     bm_stone: bmesh.types.BMesh,
     bm_mosaic: bmesh.types.BMesh,
     bm_gold: bmesh.types.BMesh,
     bm_cross: bmesh.types.BMesh,
+    bm_glass: bmesh.types.BMesh,
 ) -> None:
     """Central Tower of Jesus Christ (172.5m) with parabolic stone ribs, viewpoint at 136m & 17m four-armed cross."""
     z_base = 56.0
@@ -184,6 +225,30 @@ def add_jesus_christ_tower(
         z = z_base + 4.0 + t * (z_gallery - z_base - 6.0)
         r = (r_neck + (r_base - r_neck) * ((1.0 - t) ** 0.85)) * 0.96
         add_cylinder(bm_stone, Vector((0, 0, z - 0.5)), Vector((0, 0, z + 0.5)), r, r * 0.98, segments=ribs, cap=False)
+
+    # 1b. Central Glass Panorama Elevator Shaft + Sculpted Double Helical Stone Staircase (1.2m -> 56m -> 136m)!
+    # Subtle gilded floor boarding ring at Nave Crossing (Z=1.24m) & slender vertical guide cables up to Z=56m
+    for k in range(8):
+        a0 = 2.0 * math.pi * k / 8.0
+        add_box(bm_gold, (2.25 * math.cos(a0), 2.25 * math.sin(a0), 1.24), (1.75, 0.16, 0.08), rot_euler=(0, 0, a0 + math.pi / 2.0))
+    for k in range(4):
+        ang = 2.0 * math.pi * k / 4.0 + math.pi / 4.0
+        add_cylinder(bm_gold, Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), 1.25)), Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_base)), 0.055, 0.055, segments=6)
+
+    # Walkable Crossing Vault Gallery Ring Deck at Z = 56.0m (connects elevator <-> Jesus Tower spiral staircase!)
+    for k in range(16):
+        a0 = 2.0 * math.pi * k / 16.0
+        r_deck = 5.2
+        add_box(bm_stone, (r_deck * math.cos(a0), r_deck * math.sin(a0), z_base - 0.35), (2.5, 5.4, 0.7), rot_euler=(0, 0, a0 + math.pi / 2.0))
+        add_box(bm_gold, (2.3 * math.cos(a0), 2.3 * math.sin(a0), z_base + 0.55), (0.95, 0.09, 1.05), rot_euler=(0, 0, a0 + math.pi / 2.0))
+
+    # Slender gilded steel elevator guide rails + circular glass shaft enclosing the central panorama lift (56m -> 140m)
+    for k in range(6):
+        ang = 2.0 * math.pi * k / 6.0
+        add_cylinder(bm_gold, Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_base)), Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_gallery + 4.5)), 0.11, 0.11, segments=6)
+    add_cylinder(bm_glass, Vector((0, 0, z_base)), Vector((0, 0, z_gallery + 4.0)), 2.08, 2.08, segments=12, cap=False)
+    # Walkable helical stone staircase spiraling smoothly around the glass elevator core up to the 136m gallery!
+    add_spiral_stair_shaft(bm_stone, bm_gold, 0.0, 0.0, z_base, z_gallery, r_mid=3.65, tread_w=1.85, turns_per_10m=1.1, step_rise=0.52, clockwise=True)
 
     # 2. Walkable Panoramic Viewpoint Gallery Floor & Safety Parapet at Z = 136.0m!
     add_cylinder(bm_stone, Vector((0, 0, z_gallery - 1.2)), Vector((0, 0, z_gallery)), 6.8, 6.8, segments=16, cap=True)
@@ -352,92 +417,83 @@ def build_towers() -> None:
     bm_marble = bmesh.new()
     bm_star = bmesh.new()
     bm_cross = bmesh.new()
+    bm_glass = bmesh.new()
 
-    # ── 1. Tower of Jesus Christ (172.5m) at Crossing Center (0, 0) ──
-    add_jesus_christ_tower(bm_warm_stone, bm_mosaic, bm_gold, bm_cross)
+    # ── 1. Tower of Jesus Christ (172.5m) with Glass Panorama Elevator Shaft & Helical Staircase ──
+    add_jesus_christ_tower(bm_warm_stone, bm_mosaic, bm_gold, bm_cross, bm_glass)
 
-    # ── 2. Tower of the Virgin Mary (138.0m) over Apse (0, +22.5) ──
+    # ── 2. Tower of the Virgin Mary (138.0m) over Apse (0, +22.5) + Internal Spiral Staircase ──
     add_mary_tower(bm_warm_stone, bm_mosaic, bm_star)
+    add_spiral_stair_shaft(bm_warm_stone, bm_gold, 0.0, 22.5, 52.0, 118.0, r_mid=2.85, tread_w=1.45, turns_per_10m=1.25, step_rise=0.55)
 
-    # ── 3. Four Towers of the Evangelists (135.0m) at (±11.5, ±11.5) ──
+    # ── 3. Four Towers of the Evangelists (135.0m) at (±11.5, ±11.5) + Internal Spiral Staircases ──
     for sx in (-1, 1):
         for sy in (-1, 1):
             ang = math.atan2(sy, sx)
             add_evangelist_tower(bm_warm_stone, bm_marble, bm_gold, sx * 11.5, sy * 11.5, ang)
+            add_spiral_stair_shaft(bm_warm_stone, bm_gold, sx * 11.5, sy * 11.5, 52.0, 114.0, r_mid=2.05, tread_w=1.25, turns_per_10m=1.35, step_rise=0.58, clockwise=(sx * sy > 0))
 
-    # ── 4. Four Apostles Towers — Nativity Facade (East, X = +31.5) ──
+    # ── 4. Four Apostles Towers — Nativity Facade (East, X = +31.5) + ALL 4 Internal Spiral Staircases ──
     nativity_specs = [
         (31.5, -10.8, 98.4, 3.55),
         (31.5, -3.6, 107.0, 3.85),
         (31.5, 3.6, 107.0, 3.85),
         (31.5, 10.8, 98.4, 3.55),
     ]
-    for cx, cy, z_top, r_b in nativity_specs:
+    for idx, (cx, cy, z_top, r_b) in enumerate(nativity_specs):
         add_parabolic_bell_tower(bm_nativity_stone, bm_mosaic, bm_gold, cx, cy, 26.0, z_top, r_b, 1.55)
+        add_cylinder(bm_nativity_stone, Vector((cx, cy, 13.8)), Vector((cx, cy, 27.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
+        add_spiral_stair_shaft(bm_nativity_stone, bm_gold, cx, cy, 14.5, 65.0, r_mid=1.92, tread_w=1.55, turns_per_10m=1.68, step_rise=0.45 if idx == 1 else 0.56, clockwise=(idx % 2 == 1))
 
-    # Walkable Nativity Tower Skybridge between inner East towers at Z = 65.0m!
-    add_box(bm_nativity_stone, (31.5, 0.0, 64.6), (3.4, 8.2, 0.8))
-    add_box(bm_nativity_stone, (33.1, 0.0, 65.6), (0.35, 8.2, 1.3))
-    add_box(bm_nativity_stone, (29.9, 0.0, 65.6), (0.35, 8.2, 1.3))
+    # Walkable Nativity Tower Skybridge connecting all East towers at Z = 65.0m!
+    add_box(bm_nativity_stone, (31.5, 0.0, 64.6), (3.4, 21.8, 0.8))
+    add_box(bm_nativity_stone, (33.1, 0.0, 65.6), (0.35, 21.8, 1.3))
+    add_box(bm_nativity_stone, (29.9, 0.0, 65.6), (0.35, 21.8, 1.3))
 
-    # Walkable Gaudí Fibonacci Snail-Shell Spiral Staircase inside inner SE Nativity Tower (31.5, -3.6, Z = 14.5m -> 65.0m)!
-    st_cx, st_cy = 31.5, -3.6
-    st_z0, st_z1 = 14.5, 65.0
-    st_steps = 156
-    st_turns = 8.5
-    # Hollow dramatic central spiral well with thin outer tower cylinder drum (Z = 14..27m below tower shaft)
-    add_cylinder(bm_nativity_stone, Vector((st_cx, st_cy, 13.8)), Vector((st_cx, st_cy, 27.0)), 3.85, 3.85, segments=16, cap=False)
-    for si in range(st_steps):
-        t = si / (st_steps - 1)
-        ang = t * st_turns * 2.0 * math.pi
-        z = st_z0 + t * (st_z1 - st_z0)
-        r_mid = 1.92
-        sx = st_cx + r_mid * math.cos(ang)
-        sy = st_cy + r_mid * math.sin(ang)
-        # Cantilevered sculpted stone tread around hollow central oculus well
-        add_box(bm_nativity_stone, (sx, sy, z), (1.75, 0.62, 0.24), rot_euler=(0.0, 0.0, ang))
-        # Inner sculpted spiral handrail balustrade along the open snail-shell eye (r = 1.05m)
-        if si < st_steps - 1:
-            t_n = (si + 1) / (st_steps - 1)
-            ang_n = t_n * st_turns * 2.0 * math.pi
-            z_n = st_z0 + t_n * (st_z1 - st_z0)
-            p_rail0 = Vector((st_cx + 1.05 * math.cos(ang), st_cy + 1.05 * math.sin(ang), z + 0.95))
-            p_rail1 = Vector((st_cx + 1.05 * math.cos(ang_n), st_cy + 1.05 * math.sin(ang_n), z_n + 0.95))
-            add_cylinder(bm_gold, p_rail0, p_rail1, 0.06, 0.06, segments=6, cap=False)
-            if si % 3 == 0:
-                add_cylinder(
-                    bm_nativity_stone,
-                    Vector((st_cx + 1.05 * math.cos(ang), st_cy + 1.05 * math.sin(ang), z)),
-                    p_rail0,
-                    0.055,
-                    0.055,
-                    segments=6,
-                )
-
-    # ── 5. Four Apostles Towers — Passion Facade (West, X = -31.5) ──
+    # ── 5. Four Apostles Towers — Passion Facade (West, X = -31.5) + ALL 4 Internal Spiral Staircases ──
     passion_specs = [
         (-31.5, -10.8, 107.4, 3.65),
         (-31.5, -3.6, 112.2, 3.95),
         (-31.5, 3.6, 112.2, 3.95),
         (-31.5, 10.8, 107.4, 3.65),
     ]
-    for cx, cy, z_top, r_b in passion_specs:
+    for idx, (cx, cy, z_top, r_b) in enumerate(passion_specs):
         add_parabolic_bell_tower(bm_passion_stone, bm_mosaic, bm_gold, cx, cy, 26.0, z_top, r_b, 1.60)
+        add_cylinder(bm_passion_stone, Vector((cx, cy, 13.8)), Vector((cx, cy, 27.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
+        add_spiral_stair_shaft(bm_passion_stone, bm_gold, cx, cy, 14.5, 65.0, r_mid=1.95, tread_w=1.55, turns_per_10m=1.68, step_rise=0.45 if idx == 1 else 0.56, clockwise=(idx % 2 == 0))
 
-    # Passion Tower Skybridge at Z = 65.0m (with Ascension sculpture plinth)
-    add_box(bm_passion_stone, (-31.5, 0.0, 64.6), (3.4, 8.2, 0.8))
-    add_box(bm_passion_stone, (-33.1, 0.0, 65.6), (0.35, 8.2, 1.3))
-    add_box(bm_passion_stone, (-29.9, 0.0, 65.6), (0.35, 8.2, 1.3))
+    # Walkable Passion Tower Skybridge connecting all West towers at Z = 65.0m!
+    add_box(bm_passion_stone, (-31.5, 0.0, 64.6), (3.4, 21.8, 0.8))
+    add_box(bm_passion_stone, (-33.1, 0.0, 65.6), (0.35, 21.8, 1.3))
+    add_box(bm_passion_stone, (-29.9, 0.0, 65.6), (0.35, 21.8, 1.3))
 
-    # ── 6. Four Apostles Towers — Glory Facade (South, Y = -49.5, completed design) ──
+    # ── 6. Four Apostles Towers — Glory Facade (South, Y = -49.5) + ALL 4 Internal Spiral Staircases ──
     glory_specs = [
         (-11.4, -49.5, 112.0, 3.75),
         (-3.8, -49.5, 120.0, 4.10),
         (3.8, -49.5, 120.0, 4.10),
         (11.4, -49.5, 112.0, 3.75),
     ]
-    for cx, cy, z_top, r_b in glory_specs:
+    for idx, (cx, cy, z_top, r_b) in enumerate(glory_specs):
         add_parabolic_bell_tower(bm_warm_stone, bm_mosaic, bm_gold, cx, cy, 28.0, z_top, r_b, 1.65)
+        add_cylinder(bm_warm_stone, Vector((cx, cy, 13.8)), Vector((cx, cy, 29.0)), r_b * 0.96, r_b * 0.96, segments=14, cap=False)
+        add_spiral_stair_shaft(bm_warm_stone, bm_gold, cx, cy, 14.5, 72.0, r_mid=2.0, tread_w=1.55, turns_per_10m=1.62, step_rise=0.54, clockwise=(idx % 2 == 1))
+
+    # Walkable Glory Tower Skybridge at Z = 72.0m!
+    add_box(bm_warm_stone, (0.0, -49.5, 71.6), (22.8, 3.4, 0.8))
+    add_box(bm_warm_stone, (0.0, -47.9, 72.6), (22.8, 0.35, 1.3))
+    add_box(bm_warm_stone, (0.0, -51.1, 72.6), (22.8, 0.35, 1.3))
+
+    # ── 7. Walkable Gallery-to-Tower Access Bridges at Z = 14.5m (West Passion & South Glory!) ──
+    # West Empore (-21, -14.5) -> Inner SW Passion Tower Spiral Base (-31.5, -3.6)
+    add_box(bm_passion_stone, (-26.2, -9.0, 14.1), (12.8, 12.6, 0.8))
+    add_box(bm_passion_stone, (-26.2, -2.7, 15.1), (12.8, 0.38, 1.2))
+    add_box(bm_passion_stone, (-26.2, -15.3, 15.1), (12.8, 0.38, 1.2))
+    # South Choir Gallery (±3.8, -43.5) -> Inner Glory Tower Spiral Bases (±3.8, -49.5)
+    for sx in (-3.8, 3.8):
+        add_box(bm_warm_stone, (sx, -46.5, 14.1), (3.4, 7.2, 0.8))
+        add_box(bm_warm_stone, (sx - 1.6, -46.5, 15.1), (0.32, 7.2, 1.2))
+        add_box(bm_warm_stone, (sx + 1.6, -46.5, 15.1), (0.32, 7.2, 1.2))
 
     finalize_bmesh_object(bm_nativity_stone, "Towers_Nativity", mats["nativity_stone"], smooth=True, uv_scale=0.14)
     finalize_bmesh_object(bm_passion_stone, "Towers_Passion", mats["passion_stone"], smooth=True, uv_scale=0.14)
@@ -447,6 +503,7 @@ def build_towers() -> None:
     finalize_bmesh_object(bm_marble, "Towers_EvangelistSculptures", mats["white_marble"], smooth=True, uv_scale=0.25)
     finalize_bmesh_object(bm_star, "Tower_MaryStar", mats["luminous_star"], smooth=False, uv_scale=0.35)
     finalize_bmesh_object(bm_cross, "Tower_JesusCross", mats["luminous_cross"], smooth=False, uv_scale=0.25)
+    finalize_bmesh_object(bm_glass, "Tower_JesusElevatorShaftGlass", mats["glass_case"], smooth=True, uv_scale=0.25, bake_ao=False)
 
     export_glb(os.path.join(MODEL_DIR, "towers.glb"))
 

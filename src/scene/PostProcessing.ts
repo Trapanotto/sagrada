@@ -12,9 +12,10 @@ export type GraphicsTier = 'aaa' | 'ultra' | 'fast';
 const CinematicGradeShader = {
   uniforms: {
     tDiffuse: { value: null },
-    uVignette: { value: 0.24 },
-    uSaturation: { value: 1.07 },
-    uContrast: { value: 1.04 },
+    uVignette: { value: 0.28 },
+    uSaturation: { value: 1.11 },
+    uContrast: { value: 1.07 },
+    uTime: { value: 0.0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -28,6 +29,7 @@ const CinematicGradeShader = {
     uniform float uVignette;
     uniform float uSaturation;
     uniform float uContrast;
+    uniform float uTime;
     varying vec2 vUv;
 
     void main() {
@@ -38,9 +40,18 @@ const CinematicGradeShader = {
       col = mix(vec3(luma), col, uSaturation);
       col = (col - 0.5) * uContrast + 0.5;
 
+      // Subtle architectural cinema Split-Toning: cool Mediterranean indigo shadows + warm golden highlights
+      vec3 shadowTint = vec3(0.95, 0.98, 1.05);
+      vec3 highlightTint = vec3(1.045, 1.01, 0.95);
+      col *= mix(shadowTint, highlightTint, smoothstep(0.18, 0.78, luma));
+
+      // Ultra-subtle organic 35mm film grain (breaks sky banding without noise)
+      float grain = fract(sin(dot(vUv * 512.0 + fract(uTime * 0.7), vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+      col += grain * 0.0085;
+
       vec2 centered = vUv * 2.0 - 1.0;
       float vig = 1.0 - dot(centered, centered) * uVignette * 0.42;
-      col *= clamp(vig, 0.65, 1.0);
+      col *= clamp(vig, 0.62, 1.0);
 
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), texel.a);
     }
@@ -187,7 +198,10 @@ export class PostProcessingPipeline {
     this.bloomPass.setSize(Math.max(1, Math.floor(width * 0.5)), Math.max(1, Math.floor(height * 0.5)));
   }
 
-  public render(): void {
+  public render(dt = 0.016): void {
+    if (this.gradePass.uniforms.uTime) {
+      this.gradePass.uniforms.uTime.value = (this.gradePass.uniforms.uTime.value + dt) % 1000.0;
+    }
     if (this.tier === 'fast') {
       this.renderer.render(this.scene, this.camera);
     } else {

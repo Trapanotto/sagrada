@@ -8,6 +8,10 @@ import { FlockingBirds } from './FlockingBirds';
 import { FountainParticles } from './FountainParticles';
 import { optimizeWithAutoInstancing } from './AutoInstancer';
 import { ConstructionTimeline } from './ConstructionTimeline';
+import { CandleFlames } from './CandleFlames';
+import { StainedGlassCarpets } from './StainedGlassCarpets';
+import { WeatherSystem } from './WeatherSystem';
+import { JesusElevator } from './JesusElevator';
 
 interface ModelSpec {
   id: string;
@@ -40,6 +44,10 @@ export class SagradaScene {
   public readonly timeline: ConstructionTimeline;
   public readonly birds: FlockingBirds;
   public readonly fountain: FountainParticles;
+  public readonly candles: CandleFlames;
+  public readonly glassCarpets: StainedGlassCarpets;
+  public readonly weather: WeatherSystem;
+  public readonly elevator: JesusElevator;
 
   public instancedGroups = 0;
   public savedDrawCalls = 0;
@@ -62,6 +70,7 @@ export class SagradaScene {
     uSunDir: { value: new THREE.Vector3(0.6, 0.7, 0.2) },
     uSunColor: { value: new THREE.Color('#fff5dc') },
     uNightFactor: { value: 0.0 },
+    uRainFactor: { value: 0.0 },
   };
   private windUniform = { value: 0 };
   private hazeUniforms = {
@@ -84,6 +93,18 @@ export class SagradaScene {
 
     this.fountain = new FountainParticles(420);
     this.scene.add(this.fountain.points);
+
+    this.candles = new CandleFlames();
+    this.scene.add(this.candles.group);
+
+    this.glassCarpets = new StainedGlassCarpets();
+    this.scene.add(this.glassCarpets.group);
+
+    this.weather = new WeatherSystem();
+    this.scene.add(this.weather.group);
+
+    this.elevator = new JesusElevator();
+    this.scene.add(this.elevator.group);
 
     // Prepare cached interior reflection probe
     this.interiorProbeRT = new THREE.WebGLCubeRenderTarget(256, {
@@ -210,6 +231,7 @@ export class SagradaScene {
         uniform vec3 uSunDir;
         uniform vec3 uSunColor;
         uniform float uNightFactor;
+        uniform float uRainFactor;
         varying vec2 vUv;
         varying vec3 vWorldPos;
 
@@ -220,10 +242,22 @@ export class SagradaScene {
           float ringWave = sin(distC * 3.8 - uTime * 4.2) * exp(-distC * 0.14);
           float foamRing = smoothstep(0.65, 0.98, sin(distC * 2.5 - uTime * 3.2)) * exp(-abs(distC - 2.4) * 1.4) * 0.55;
 
+          // Raindrop micro-ripples dancing across the pond surface when Weather = Rain!
+          float rainRipple = 0.0;
+          if (uRainFactor > 0.01) {
+            vec2 rp = vWorldPos.xz * 1.45;
+            vec2 cell = floor(rp);
+            vec2 f = fract(rp) - 0.5;
+            float seed = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+            float tR = fract(uTime * 1.65 + seed);
+            float dR = length(f);
+            rainRipple = sin((dR - tR * 0.45) * 42.0) * exp(-dR * 8.0) * (1.0 - tR) * uRainFactor;
+          }
+
           float w1 = sin(p.x * 1.35 + uTime * 1.25) * cos(p.y * 1.2 - uTime * 0.9);
           float w2 = sin((p.x * 0.9 - p.y * 1.1) * 2.1 + uTime * 1.65);
-          float dx = cos(p.x * 1.35 + uTime * 1.25) * 0.03 + ringWave * 0.06;
-          float dz = -sin(p.y * 1.2 - uTime * 0.9) * 0.03 + ringWave * 0.06;
+          float dx = cos(p.x * 1.35 + uTime * 1.25) * 0.03 + ringWave * 0.06 + rainRipple * 0.09;
+          float dz = -sin(p.y * 1.2 - uTime * 0.9) * 0.03 + ringWave * 0.06 + rainRipple * 0.09;
           vec3 N = normalize(vec3(dx, 1.0, dz));
 
           vec3 V = normalize(cameraPosition - vWorldPos);
@@ -360,7 +394,7 @@ export class SagradaScene {
           obj.name.includes('Streets') ||
           obj.name.includes('Sidewalks') ||
           obj.name.includes('ParkLawns');
-        const isGlassCase = obj.name.includes('GlassCases') || matName.includes('GlassCase');
+        const isGlassCase = obj.name.includes('GlassCases') || obj.name.includes('ElevatorShaftGlass') || matName.includes('GlassCase');
         const isFoliage = matName.includes('FoliagePark') || matName.includes('FoliageCypress');
 
         obj.castShadow = !isStainedGlass && !isGroundOrFloor && !isGlassCase;
@@ -433,6 +467,9 @@ export class SagradaScene {
       this.scene.add(root);
       this.lighting.registerLoadedMaterials(root);
       this.timeline.registerModule(root);
+      if (spec.id === 'eixample' || spec.id === 'plaza_life') {
+        this.weather.registerExteriorGroundMaterials(root);
+      }
     };
 
     // ── PHASE 1 (FAST START): Core exterior + interior basilica (~1-2 seconds!) ──
@@ -520,7 +557,19 @@ export class SagradaScene {
 
     this.lighting.update(dt, cameraPos, indoorFactor);
 
-    this.birds.group.visible = indoorFactor < 0.85 && this.lighting.dayFactor > 0.12;
+    // Update GPU candle flames, stained-glass floor carpets, weather (rain/mist/incense/streetlamp cones)
+    this.candles.group.visible = indoorFactor > 0.1 || cameraPos.y < 10.0;
+    if (this.candles.group.visible) {
+      this.candles.update(dt);
+    }
+    this.glassCarpets.group.visible = indoorFactor > 0.05 && cameraPos.y > -1.0 && cameraPos.y < 52.0;
+    if (this.glassCarpets.group.visible) {
+      this.glassCarpets.update(this.lighting.eastSunHit, this.lighting.westSunHit, this.lighting.sunDir.y);
+    }
+    this.weather.update(dt, cameraPos, indoorFactor, this.lighting.nightFactor, this.lighting.dayFactor, this.scene);
+    this.waterUniforms.uRainFactor.value = this.weather.rainFactor;
+
+    this.birds.group.visible = indoorFactor < 0.85 && this.lighting.dayFactor > 0.12 && this.weather.rainFactor < 0.5;
     if (this.birds.group.visible) {
       this.birds.update(dt, this.lighting.dayFactor);
     }

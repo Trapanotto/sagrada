@@ -124,9 +124,16 @@ def build_nativity_facade(
                     0.09,
                     segments=6,
                 )
-        # Organic botanical pinnacles / sculpted niches flanking the upper gable
+        # Organic botanical pinnacles, Gothic crocket spires & sculpted tympanum figure reliefs flanking the gable!
         for sy in (-1, 1):
-            add_cylinder(bm_nat, Vector((fx + 2.9, py + sy * (p_w * 0.55), p_h + 1.2)), Vector((fx + 2.8, py + sy * (p_w * 0.52), p_h + 9.5)), 0.58, 0.14, segments=8)
+            add_cylinder(bm_nat, Vector((fx + 2.9, py + sy * (p_w * 0.55), p_h + 1.2)), Vector((fx + 2.8, py + sy * (p_w * 0.52), p_h + 10.5)), 0.58, 0.12, segments=8)
+            add_cylinder(bm_nat, Vector((fx + 3.3, py + sy * (p_w * 0.36), p_h + 4.0)), Vector((fx + 3.1, py + sy * (p_w * 0.32), p_h + 14.5)), 0.42, 0.09, segments=7)
+            # Carved sculptural niche canopy + figure silhouette beside each portal jamb
+            add_cylinder(bm_nat, Vector((fx + 3.25, py + sy * (p_w * 0.52), Z_NAVE + 2.2)), Vector((fx + 3.25, py + sy * (p_w * 0.52), Z_NAVE + 5.0)), 0.42, 0.28, segments=8)
+            add_cylinder(bm_white, Vector((fx + 3.45, py + sy * (p_w * 0.52), Z_NAVE + 2.4)), Vector((fx + 3.45, py + sy * (p_w * 0.52), Z_NAVE + 4.5)), 0.24, 0.16, segments=8)
+        # Sculpted tympanum narrative relief cluster over portal arch
+        for fi in (-1.2, -0.4, 0.4, 1.2):
+            add_cylinder(bm_nat, Vector((fx + 2.95, py + fi, p_h + 0.6)), Vector((fx + 2.95, py + fi, p_h + 2.6 - abs(fi) * 0.4)), 0.28, 0.18, segments=7)
 
         # Sculpted bronze doors folded open against the portal jambs (so walkthrough is clear!)
         for sy in (-1, 1):

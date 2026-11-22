@@ -51,6 +51,7 @@ export class PlayerController {
 
   public onModeChange?: (flyMode: boolean) => void;
   public onStep?: () => void;
+  public onPointerLockChange?: (locked: boolean) => void;
   private stepAccum = 0;
 
   constructor(
@@ -78,19 +79,31 @@ export class PlayerController {
       this.keys.delete(e.code);
     });
 
-    // Click canvas for Pointer Lock OR drag to look around smoothly
+    // True Ego-Shooter FPS control: single left-click on canvas immediately locks mouse pointer!
     this.domElement.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (!this.isPointerLocked) {
-        this.isDragging = true;
-        this.lastDragX = e.clientX;
-        this.lastDragY = e.clientY;
-      }
-    });
-
-    this.domElement.addEventListener('dblclick', () => {
-      if (!this.isPointerLocked && this.domElement.requestPointerLock) {
-        this.domElement.requestPointerLock();
+        if (this.domElement.requestPointerLock) {
+          try {
+            const p = this.domElement.requestPointerLock() as unknown as Promise<void> | undefined;
+            if (p && typeof p.catch === 'function') {
+              p.catch(() => {
+                // Graceful fallback if pointer lock is restricted
+                this.isDragging = true;
+                this.lastDragX = e.clientX;
+                this.lastDragY = e.clientY;
+              });
+            }
+          } catch {
+            this.isDragging = true;
+            this.lastDragX = e.clientX;
+            this.lastDragY = e.clientY;
+          }
+        } else {
+          this.isDragging = true;
+          this.lastDragX = e.clientX;
+          this.lastDragY = e.clientY;
+        }
       }
     });
 
@@ -115,12 +128,19 @@ export class PlayerController {
 
     document.addEventListener('pointerlockchange', () => {
       this.isPointerLocked = document.pointerLockElement === this.domElement;
+      if (this.isPointerLocked) this.isDragging = false;
+      this.onPointerLockChange?.(this.isPointerLocked);
     });
   }
 
   public requestPointerLock(): void {
     if (this.domElement.requestPointerLock) {
-      this.domElement.requestPointerLock();
+      try {
+        const p = this.domElement.requestPointerLock() as unknown as Promise<void> | undefined;
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch {
+        // Ignore if blocked by browser
+      }
     }
   }
 

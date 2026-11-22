@@ -114,6 +114,29 @@ def add_canaletes_fountain(bm_kiosk: bmesh.types.BMesh, bm_gold: bmesh.types.BMe
     add_cylinder(bm_gold, Vector((cx, cy, Z_STREET + 2.60)), Vector((cx, cy, Z_STREET + 3.05)), 0.24, 0.16, segments=8)
 
 
+def add_barcelona_taxi(
+    bm_iron: bmesh.types.BMesh,
+    bm_gold: bmesh.types.BMesh,
+    bm_glow: bmesh.types.BMesh,
+    cx: float,
+    cy: float,
+    rot_z: float = 0.0,
+) -> None:
+    """Iconic black-and-yellow Barcelona taxi parked along Carrer de la Marina / Sardenya!"""
+    # Black body + yellow doors/side stripes (Barcelona's unmistakable taxi livery!)
+    add_box(bm_iron, (cx, cy, 0.42), (1.85, 4.4, 0.68), rot_euler=(0, 0, rot_z))
+    add_box(bm_gold, (cx, cy, 0.44), (1.90, 2.2, 0.56), rot_euler=(0, 0, rot_z))
+    # Cabin roof + glowing green/amber roof taxi sign
+    add_box(bm_iron, (cx, cy - 0.15, 1.05), (1.62, 2.15, 0.62), rot_euler=(0, 0, rot_z))
+    add_box(bm_glow, (cx, cy, 1.44), (0.42, 0.24, 0.18), rot_euler=(0, 0, rot_z))
+    # Warm headlights
+    ca, sa = math.cos(rot_z), math.sin(rot_z)
+    for dx in (-0.65, 0.65):
+        hx = cx + dx * ca - 2.22 * sa
+        hy = cy + dx * sa + 2.22 * ca
+        add_box(bm_glow, (hx, hy, 0.48), (0.28, 0.10, 0.16), rot_euler=(0, 0, rot_z))
+
+
 def build_plaza_life() -> None:
     reset_scene()
     mats = get_materials()
@@ -198,12 +221,28 @@ def build_plaza_life() -> None:
     # White pedestrian crosswalk stripes spanning Carrer de Marina (+53.5), Sardenya (-53.5), Provença (+59), Mallorca (-81)
     for stripe in range(-4, 5):
         off = stripe * 1.15
-        # East (Carrer de la Marina) & West (Carrer de Sardenya) crosswalks connecting plazas to basilica
         add_box(bm_white, (53.5, off, -0.115), (7.5, 0.55, 0.03))
         add_box(bm_white, (-53.5, off, -0.115), (7.5, 0.55, 0.03))
-        # North (Carrer de Provença) & South (Carrer de Mallorca) crosswalks
         add_box(bm_white, (off, 60.0, -0.115), (0.55, 7.5, 0.03))
         add_box(bm_white, (off, -78.0, -0.115), (0.55, 7.5, 0.03))
+
+    # Iconic Black-and-Yellow Barcelona Taxis along Carrer de la Marina (East) & Carrer de Sardenya (West)!
+    for tx, ty, tr in (
+        (51.8, -26.0, 0.0),
+        (51.8, -34.0, 0.0),
+        (55.4, 24.0, math.pi),
+        (-51.8, 22.0, math.pi),
+        (-55.4, -22.0, 0.0),
+        (16.0, 56.5, math.pi * 0.5),
+    ):
+        add_barcelona_taxi(bm_iron, bm_gold, bm_glow, tx, ty, rot_z=tr)
+
+    # Sculpted stone tree grates (Baumscheiben) framing the avenue plane trees
+    for tx, ty in (
+        (45, -45), (45, -24), (45, 24), (45, 45),
+        (-45, -45), (-45, -24), (-45, 24), (-45, 45),
+    ):
+        add_box(bm_iron, (tx, ty, 0.02), (2.2, 2.2, 0.06))
 
     finalize_bmesh_object(bm_stone, "Plaza_FountainAndPlanters", mats["sandstone_warm"], smooth=True, uv_scale=0.35)
     finalize_bmesh_object(bm_kiosk, "Plaza_BarcelonaKiosks", mats["kiosk_green"], smooth=False, uv_scale=0.30)

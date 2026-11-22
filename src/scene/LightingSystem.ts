@@ -18,11 +18,11 @@ export class LightingSystem {
   public readonly particles: AtmosphericParticles;
   public readonly sunDir = new THREE.Vector3(0.6, 0.7, 0.2);
 
-  public timeHours = 10.5;
+  public timeHours = 17.15;
   public dayFactor = 1.0;
   public nightFactor = 0.0;
-  public eastSunHit = 0.7;
-  public westSunHit = 0.0;
+  public eastSunHit = 0.0;
+  public westSunHit = 0.85;
 
   private skyUniforms: {
     uTime: { value: number };
@@ -527,7 +527,7 @@ export class LightingSystem {
     const targetClimbY = THREE.MathUtils.lerp(7.5, 1.2, THREE.MathUtils.clamp(elevation / 0.65, 0, 1));
     const beamTilt = THREE.MathUtils.lerp(1.12, 0.48, THREE.MathUtils.clamp(elevation / 1.0, 0, 1));
 
-    this.baseEastInt = 18 * dayFactor + eastSunHit * 440;
+    this.baseEastInt = 14 * dayFactor + eastSunHit * 520;
     for (let i = 0; i < this.eastProjectors.length; i++) {
       const es = this.eastProjectors[i];
       es.intensity = this.baseEastInt;
@@ -538,11 +538,11 @@ export class LightingSystem {
       const eb = this.eastBeams[i];
       eb.rotation.z = beamTilt;
       eb.position.x = 21.4 - Math.sin(beamTilt) * 11.5;
-      (eb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.16;
+      (eb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.21;
       eb.visible = eastSunHit > 0.03;
     }
 
-    this.baseWestInt = 18 * dayFactor + westSunHit * 460;
+    this.baseWestInt = 14 * dayFactor + westSunHit * 560;
     for (let i = 0; i < this.westProjectors.length; i++) {
       const ws = this.westProjectors[i];
       ws.intensity = this.baseWestInt;
@@ -553,21 +553,22 @@ export class LightingSystem {
       const wb = this.westBeams[i];
       wb.rotation.z = -beamTilt;
       wb.position.x = -21.4 + Math.sin(beamTilt) * 11.5;
-      (wb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.17;
+      (wb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.23;
       wb.visible = westSunHit > 0.03;
     }
 
-    this.baseApseInt = 18 * dayFactor + 18;
+    this.baseApseInt = 16 * dayFactor + 18;
     this.apseGlassLight.intensity = this.baseApseInt;
 
-    const ambientGlass = 0.30 * dayFactor + 0.16;
-    const eastGlow = ambientGlass + eastSunHit * 2.6;
-    const westGlow = ambientGlass + westSunHit * 2.8;
+    const ambientGlass = 0.34 * dayFactor + 0.18;
+    const eastGlow = ambientGlass + eastSunHit * 3.1;
+    const westGlow = ambientGlass + westSunHit * 3.4;
     for (const m of this.trackedMats.east) m.emissiveIntensity = eastGlow;
     for (const m of this.trackedMats.west) m.emissiveIntensity = westGlow;
-    for (const m of this.trackedMats.apse) m.emissiveIntensity = 0.65 + dayFactor * 1.25;
+    for (const m of this.trackedMats.apse) m.emissiveIntensity = 0.72 + dayFactor * 1.45;
 
-    this.baseInteriorInt = THREE.MathUtils.lerp(42, 68, nightFactor);
+    // Dramatic Chiaroscuro balance: lower flat interior fill so stained-glass light shafts & candles shine!
+    this.baseInteriorInt = THREE.MathUtils.lerp(28, 56, nightFactor);
     for (const il of this.interiorFillLights) {
       il.intensity = this.baseInteriorInt;
     }
