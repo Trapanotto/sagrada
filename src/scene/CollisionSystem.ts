@@ -182,7 +182,7 @@ function distToSegment2D(px: number, pz: number, x0: number, z0: number, x1: num
 
 export class CollisionSystem {
   public readonly eyeHeight = EYE_HEIGHT;
-  public elevatorFloorY = 1.2;
+  public elevatorFloorY = 56.0;
   public bvhTriangles = 0;
   public bvhReady = false;
 
@@ -446,8 +446,8 @@ export class CollisionSystem {
 
     const rCenter = Math.hypot(cx, cz);
 
-    // 1. Central Glass Panorama Elevator Cabin Floor (0, elevatorFloorY, 0)
-    if (rCenter < 2.02 && Math.abs(feetY - this.elevatorFloorY) < 2.6) {
+    // 1. Central Glass Panorama Elevator Cabin Floor inside Tower of Jesus Christ (56m <-> 136m)
+    if (feetY >= 53.0 && rCenter < 2.02 && Math.abs(feetY - this.elevatorFloorY) < 2.6) {
       consider(this.elevatorFloorY);
     }
 
@@ -636,7 +636,7 @@ export class CollisionSystem {
 
   public detectZone(pos: THREE.Vector3): string {
     const rCenter = Math.hypot(pos.x, pos.z);
-    if (rCenter < 2.25 && pos.y >= 1.5 && pos.y < 138.0 && Math.abs(pos.y - 1.75 - this.elevatorFloorY) < 2.5) {
+    if (rCenter < 2.25 && pos.y >= 54.0 && pos.y < 138.0 && Math.abs(pos.y - 1.75 - this.elevatorFloorY) < 2.5) {
       return `Panorama-Aufzug · Turm Jesu Christi (${pos.y.toFixed(0)} m)`;
     }
     if (pos.y > 132 && rCenter < 10) return 'Turm Jesu Christi · Aussicht 136 m';

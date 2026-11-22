@@ -16,7 +16,7 @@ export const ARCHITECTURAL_HOTSPOTS: ArchitecturalHotspot[] = [
     category: 'Zentralturm',
     metrics: ['Höhe: 172,5 m', 'Kreuz: 17 m (vierarmig)', 'Aussichtsgalerie: 136 m'],
     description:
-      'Der höchste der 18 Türme erhebt sich über der Vierung und macht die Sagrada Família zur höchsten Kirche der Welt. Seine 172,5 m bleiben bewusst knapp unter dem 177 m hohen Hausberg Montjuïc – Gaudí wollte kein Menschenwerk über die Schöpfung Gottes erheben. Das 17 m hohe vierarmige Kreuz aus Keramik und Glas ist von allen Seiten als Kreuz erkennbar.',
+      'Der höchste der 18 Türme erhebt sich über der Vierung und macht die Sagrada Família zur höchsten Kirche der Welt. Seine 172,5 m bleiben bewusst knapp unter dem 177 m hohen Hausberg Montjuïc – Gaudí wollte kein Menschenwerk über die Schöpfung Gottes erheben. Im hohlen Steinkern oberhalb des 60 m hohen Vierungsgewölbes fährt ein echter, aufgehängter Glas- und Edelstahl-Aufzug (umgeben von einer steinernen Wendeltreppe) hinauf unter das 17 m hohe vierarmige Kreuz.',
     position: [0, 156, 0],
     cameraTarget: [55, 142, 55],
     flyMode: true,

@@ -235,32 +235,29 @@ def add_jesus_christ_tower(
                     v_d = bm_glass.verts.new(Vector((p01.x * 0.94, p01.y * 0.94, p01.z)))
                     bm_glass.faces.new((v_a, v_b, v_c, v_d))
 
-    # 1b. Central Glass Panorama Elevator Shaft + Sculpted Double Helical Stone Staircase (1.2m -> 56m -> 136m)!
-    # Subtle gilded floor boarding ring at Nave Crossing (Z=1.24m) & slender vertical guide cables up to Z=56m
-    for k in range(8):
-        a0 = 2.0 * math.pi * k / 8.0
-        add_box(bm_gold, (2.25 * math.cos(a0), 2.25 * math.sin(a0), 1.24), (1.75, 0.16, 0.08), rot_euler=(0, 0, a0 + math.pi / 2.0))
-    for k in range(4):
-        ang = 2.0 * math.pi * k / 4.0 + math.pi / 4.0
-        add_cylinder(bm_gold, Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), 1.25)), Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_base)), 0.055, 0.055, segments=6)
+    # 1b. Authentic Suspended Central Glass & Steel Panorama Elevator Shaft INSIDE Tower of Jesus Christ (56m -> 136m)
+    # Real-life fidelity: NO elevator cables or rings descend into the sacred open 60m Nave Crossing below!
+    # The glass lift begins strictly inside the hollow stone core of the Tower of Jesus Christ above the crossing vault.
 
-    # Walkable Crossing Vault Gallery Ring Deck at Z = 56.0m (connects elevator <-> Jesus Tower spiral staircase!)
+    # Walkable Crossing Vault Gallery Ring Deck at Z = 56.0m (connects Roof Skybridges <-> Glass Lift <-> Jesus Spiral Stair!)
     for k in range(16):
         a0 = 2.0 * math.pi * k / 16.0
         r_deck = 5.2
         add_box(bm_stone, (r_deck * math.cos(a0), r_deck * math.sin(a0), z_base - 0.35), (2.5, 5.4, 0.7), rot_euler=(0, 0, a0 + math.pi / 2.0))
-        add_box(bm_gold, (2.3 * math.cos(a0), 2.3 * math.sin(a0), z_base + 0.55), (0.95, 0.09, 1.05), rot_euler=(0, 0, a0 + math.pi / 2.0))
+        # Leave South boarding doorway (Blender -Y = Three.js +Z, sin(a0) < -0.75) open for unobstructed elevator entry!
+        if math.sin(a0) >= -0.75:
+            add_box(bm_gold, (2.3 * math.cos(a0), 2.3 * math.sin(a0), z_base + 0.55), (0.95, 0.09, 1.05), rot_euler=(0, 0, a0 + math.pi / 2.0))
 
-    # Slender gilded steel elevator guide rails + circular glass shaft enclosing the central panorama lift (56m -> 140m)
-    # Anchored solidly into brass floor collar rings at Z = 56m and Z = 136m (ZERO floating rods!)
+    # Slender stainless/gilded elevator guide rails + circular glass shaft enclosing the central panorama lift (56m -> 142m)
+    # Anchored solidly into structural collar rings at Z = 56m and Z = 136m (ZERO elements hanging into the Nave below!)
     for z_ring in (z_base + 0.06, z_gallery + 0.06):
         for k in range(12):
             a0 = 2.0 * math.pi * k / 12.0
             add_box(bm_gold, (2.15 * math.cos(a0), 2.15 * math.sin(a0), z_ring), (1.15, 0.22, 0.14), rot_euler=(0, 0, a0 + math.pi / 2.0))
     for k in range(6):
         ang = 2.0 * math.pi * k / 6.0
-        add_cylinder(bm_gold, Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_base - 0.3)), Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_gallery + 4.5)), 0.11, 0.11, segments=6)
-    add_cylinder(bm_glass, Vector((0, 0, z_base)), Vector((0, 0, z_gallery + 4.0)), 2.08, 2.08, segments=12, cap=False)
+        add_cylinder(bm_gold, Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_base - 0.2)), Vector((2.15 * math.cos(ang), 2.15 * math.sin(ang), z_gallery + 6.5)), 0.09, 0.09, segments=6)
+    add_cylinder(bm_glass, Vector((0, 0, z_base)), Vector((0, 0, z_gallery + 4.5)), 2.08, 2.08, segments=16, cap=False)
 
     # 2. Walkable Panoramic Viewpoint Gallery Annular Ring Deck (r = 2.18..6.8m -> 100% OPEN central Elevator Shaft Opening!)
     for k in range(24):

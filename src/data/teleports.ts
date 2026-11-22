@@ -103,11 +103,11 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'jesus-elevator',
-    label: 'Glas-Panorama-Aufzug (Turm Jesu Christi)',
+    label: 'Glas-Aufzug im Turm Jesu Christi (ab 56 m über Gewölbe)',
     shortLabel: 'Aufzug [L]',
-    level: 'ground',
-    position: [0.0, 2.95, 6.2],
-    lookAt: [0.0, 3.35, 0.0],
+    level: 'towers',
+    position: [0.0, 57.75, 4.9],
+    lookAt: [0.0, 58.2, 0.0],
     flyMode: false,
   },
   {
