@@ -149,7 +149,7 @@ async function bootstrap(): Promise<void> {
   renderer.localClippingEnabled = false; // Enabled lazily ONLY when user inspects historical construction timelapse!
   // Blender 4/5 cinema standard: realistic physical exposure (0.74 outdoors -> auto-adapts gently indoors!)
   renderer.toneMapping = THREE.AgXToneMapping;
-  renderer.toneMappingExposure = 0.74;
+  renderer.toneMappingExposure = 1.0;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.25, 1100);
@@ -496,7 +496,7 @@ async function bootstrap(): Promise<void> {
 
   photoResetBtn.addEventListener('click', () => {
     photoFov.value = '62';
-    photoExposure.value = '0.76';
+    photoExposure.value = '1.00';
     photoFocus.value = '26';
     photoAperture.value = '0';
     updatePhotoCameraSettings();
@@ -537,7 +537,7 @@ async function bootstrap(): Promise<void> {
       post.setDof(false);
       camera.fov = 62;
       camera.updateProjectionMatrix();
-      renderer.toneMappingExposure = 0.74;
+      renderer.toneMappingExposure = 1.0;
       restoreNormalHud();
     }
   };
@@ -685,7 +685,7 @@ async function bootstrap(): Promise<void> {
   timeChipBtns.forEach((btn) => {
     btn.addEventListener('click', () => applyTime(parseFloat(btn.dataset.time!)));
   });
-  applyTime(17.55);
+  applyTime(9.5);
 
   // Weather Atmosphere Controls (Klar / Nebel / Regen)
   const weatherBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.weather-btn[data-weather]'));
@@ -948,10 +948,10 @@ async function bootstrap(): Promise<void> {
     if (!photoMode) {
       const targetExp =
         camera.position.y < -1.5
-          ? 0.96
+          ? 1.1
           : THREE.MathUtils.lerp(
-              THREE.MathUtils.lerp(0.73, 0.88, sagrada.lighting.nightFactor),
-              0.87,
+              THREE.MathUtils.lerp(1.0, 0.92, sagrada.lighting.nightFactor),
+              1.18,
               indoorFactor
             );
       renderer.toneMappingExposure = THREE.MathUtils.lerp(

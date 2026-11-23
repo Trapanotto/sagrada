@@ -114,9 +114,9 @@ const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
 const LIGHTMAP_BY_MESH: Record<string, { url: string; intensity: number }> = {
-  Interior_HyperboloidVaults: { url: './textures/lightmaps/lightmap_vaults.webp', intensity: 0.58 },
-  Interior_MarbleFloor: { url: './textures/lightmaps/lightmap_floor.webp', intensity: 0.48 },
-  Interior_NaveWalls: { url: './textures/lightmaps/lightmap_walls.webp', intensity: 0.52 },
+  Interior_HyperboloidVaults: { url: './textures/lightmaps/lightmap_vaults.webp', intensity: 1.4 },
+  Interior_MarbleFloor: { url: './textures/lightmaps/lightmap_floor.webp', intensity: 1.2 },
+  Interior_NaveWalls: { url: './textures/lightmaps/lightmap_walls.webp', intensity: 1.3 },
   Crypt_Architecture: { url: './textures/lightmaps/lightmap_crypt.webp', intensity: 0.65 },
 };
 

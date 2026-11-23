@@ -19,7 +19,7 @@ export class LightingSystem {
   public readonly particles: AtmosphericParticles;
   public readonly sunDir = new THREE.Vector3(0.6, 0.7, 0.2);
 
-  public timeHours = 17.55;
+  public timeHours = 9.5;
   public dayFactor = 1.0;
   public nightFactor = 0.0;
   public eastSunHit = 0.0;
@@ -573,7 +573,7 @@ export class LightingSystem {
 
     this.sunLight.color.copy(this.scratchSun);
     // Physically grounded solar intensity: strong crisp shadows without blowing out sandstone highlights!
-    this.baseSunInt = dayFactor * THREE.MathUtils.lerp(2.05, 1.48, goldenFactor * 0.75);
+    this.baseSunInt = dayFactor * THREE.MathUtils.lerp(3.3, 2.5, goldenFactor * 0.75);
     this.sunLight.intensity = this.baseSunInt;
     // castShadow stays permanently on: toggling it at dusk changed NUM_DIR_LIGHT_SHADOWS and forced every
     // lit material to recompile (visible hitch on the time slider / during the tour). At night the sun's
@@ -586,8 +586,8 @@ export class LightingSystem {
     // HDRI provides realistic sky ambient; HemiLight adds only subtle warm ground-bounce fill.
     this.hemiLight.color.copy(this.scratchTop).lerp(this.cHemiSkyDay, 0.35 * dayFactor);
     this.hemiLight.groundColor.copy(this.cHemiGroundDay).lerp(this.cHemiGroundNight, nightFactor * 0.92);
-    this.baseHemiInt = THREE.MathUtils.lerp(0.05, 0.22, dayFactor);
-    this.baseEnvInt = THREE.MathUtils.lerp(0.08, 0.44, dayFactor) * THREE.MathUtils.lerp(1.0, 0.78, goldenFactor);
+    this.baseHemiInt = THREE.MathUtils.lerp(0.05, 0.4, dayFactor);
+    this.baseEnvInt = THREE.MathUtils.lerp(0.08, 0.8, dayFactor) * THREE.MathUtils.lerp(1.0, 0.85, goldenFactor);
     this.hemiLight.intensity = this.baseHemiInt;
     this.scene.environmentIntensity = this.baseEnvInt;
 

@@ -103,7 +103,7 @@ export class PostProcessingStack {
 
     const halfW = Math.max(1, Math.floor(width * 0.5));
     const halfH = Math.max(1, Math.floor(height * 0.5));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(halfW, halfH), 0.16, 0.42, 1.48);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(halfW, halfH), 0.26, 0.5, 1.15);
     this.bokehPass = new BokehPass(scene, camera, { focus: 24, aperture: 0.00018, maxblur: 0.012 });
     this.bokehPass.enabled = false;
     this.gradePass = new ShaderPass(CinematicGradeShader);
@@ -165,8 +165,8 @@ export class PostProcessingStack {
   }
 
   public setNightBloomFactor(nightFactor: number): void {
-    this.bloomPass.strength = THREE.MathUtils.lerp(0.15, 0.34, nightFactor);
-    this.bloomPass.threshold = THREE.MathUtils.lerp(1.48, 1.12, nightFactor);
+    this.bloomPass.strength = THREE.MathUtils.lerp(0.26, 0.34, nightFactor);
+    this.bloomPass.threshold = THREE.MathUtils.lerp(1.15, 1.1, nightFactor);
   }
 
   public setPixelRatio(pr: number): void {
