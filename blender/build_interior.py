@@ -11,12 +11,8 @@ from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(__file__))
 from common import (
-    APSE_CENTER_Y,
-    APSE_RADIUS,
     GRID,
     MODEL_DIR,
-    NAVE_SOUTH_Y,
-    TRANSEPT_X,
     Z_AISLE_VAULT,
     Z_ALTAR,
     Z_APSE_VAULT,
@@ -24,41 +20,90 @@ from common import (
     Z_GALLERY,
     Z_NAVE,
     Z_NAVE_VAULT,
+    APSE_CENTER_Y,
+    APSE_RADIUS,
     add_box,
-    add_tree_canopy,
     add_cylinder,
+    add_ellipsoid,
     add_gaudi_window_tracery,
+    add_swept_tube,
     apply_box_uv,
     bake_bvh_vertex_ao,
-    build_gaudi_column_bmesh,
-    create_hyperboloid_vault_bay,
     export_glb,
     finalize_bmesh_object,
     get_materials,
     reset_scene,
 )
+from interior_lib import (
+    HyperboloidBay,
+    VaultField,
+    add_column_canopy,
+    build_double_twist_column_mesh,
+    build_hyperboloid_bay,
+    finalize_oriented,
+)
+
+# ── Target dimensions (Blender metres, floor of the nave at Z_NAVE = 1.2) ──
+# Plan (sagradafamilia.org / Wikipedia): Latin cross on a 7.5 m grid; nave of five aisles,
+# central nave 15 m between column axes, side aisles 7.5 m each (45 m); transept of three aisles,
+# 30 m wide, 60 m long. Vault collars above the nave floor: side aisles 30 m, central nave and
+# transept 45 m, crossing 60 m, apse 75 m (Z_* constants in common.py, kept).
+# Apse: the model keeps its established ring of 8 columns (r = 11.2 m about y = 16.5) and the
+# 7 radiating chapels (wall r = 18.8 m) because the altar, organ, candles and teleports are pinned
+# to them; the real apse ring is concentric with the crypt below (see build_cloister_crypt.py).
+APSE_RING_R = 11.2
+APSE_RING_CY = 16.5
+# Ambulatory vault collar (no published figure found; set so the ambulatory vault springs from the
+# apse-wall cornice at ~37.5 m and the full height of the apse windows stays visible)
+Z_AMB_VAULT = 42.0
+CLERESTORY_TRACERY = False
+APSE_DRUM_Z0 = 38.4  # foot of the apse clerestory drum (= ambulatory vault springing on the ring)
+AISLE_DEPTH, AISLE_THROAT = 3.0, 1.0      # 7.5 x 7.5 m bays
+NAVE_DEPTH, NAVE_THROAT = 4.0, 1.6        # 15 x 7.5 m bays (corners on the clerestory, below its 42.2 m glass top)
+CROSS_DEPTH, CROSS_THROAT = 5.5, 3.2      # 15 x 15 m crossing; the collar stays open for the glass elevator (r 2.25)
+APSE_DEPTH, APSE_THROAT = 18.0, 3.4       # great apse hyperboloid under the Mary tower
 
 
-def create_instanced_column_mesh(
-    name: str,
-    mat: bpy.types.Material,
-    base_z: float,
-    knot_z: float,
-    radius: float,
-    sides: int,
-) -> bpy.types.Mesh:
-    bm = bmesh.new()
-    build_gaudi_column_bmesh(bm, base_z=base_z, knot_z=knot_z, radius_base=radius, sides=sides, rings=16, radial_segs=24)
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    bm.normal_update()
-    apply_box_uv(bm, scale=0.22)
-    bake_bvh_vertex_ao(bm, max_dist=3.2, min_ao=0.52)
-    mesh = bpy.data.meshes.new(name)
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
-    mesh.materials.append(mat)
-    return mesh
+def build_vault_field() -> VaultField:
+    """All vault bays as hyperboloids clipped to their bay polygons (one per column bay)."""
+    f = VaultField()
+    for sx in (-1, 1):
+        for bx in (11.25, 18.75):
+            for by in (-18.75, -26.25, -33.75, -41.25):
+                f.add(HyperboloidBay.rect(sx * bx, by, GRID, GRID, Z_AISLE_VAULT, AISLE_DEPTH, AISLE_THROAT, "aisle"))
+        for bx in (11.25, 18.75, 26.25):
+            for sy in (-1, 1):
+                f.add(HyperboloidBay.rect(sx * bx, sy * 11.25, GRID, GRID, Z_AISLE_VAULT, AISLE_DEPTH, AISLE_THROAT, "aisle"))
+            f.add(HyperboloidBay.rect(sx * bx, 0.0, GRID, 2 * GRID, Z_NAVE_VAULT, NAVE_DEPTH, NAVE_THROAT, "nave"))
+    for by in (-11.25, -18.75, -26.25, -33.75, -41.25):
+        f.add(HyperboloidBay.rect(0.0, by, 2 * GRID, GRID, Z_NAVE_VAULT, NAVE_DEPTH, NAVE_THROAT, "nave"))
+    f.add(HyperboloidBay.rect(0.0, 0.0, 2 * GRID, 2 * GRID, Z_CROSSING_VAULT, CROSS_DEPTH, CROSS_THROAT, "crossing"))
+    # Apse: presbytery (x +-7.5, y 7.5..15) + the ring of apse columns
+    ring = [(APSE_RING_R * math.cos(math.pi * (i + 0.5) / 8.0), APSE_RING_CY + APSE_RING_R * math.sin(math.pi * (i + 0.5) / 8.0)) for i in range(8)]
+    apse_poly = [(-GRID, GRID), (GRID, GRID), (GRID, 2 * GRID)] + ring + [(-GRID, 2 * GRID)]
+    f.add(HyperboloidBay(0.0, 17.5, apse_poly, Z_APSE_VAULT, APSE_DEPTH, APSE_THROAT, "apse"))
+    # Ambulatory: one cell per chapel bay between consecutive ring columns, out to the apse wall
+    r_out = 18.2
+    for i in range(7):
+        a0, a1 = math.pi * (i + 0.5) / 8.0, math.pi * (i + 1.5) / 8.0
+        am = 0.5 * (a0 + a1)
+        poly = [
+            (APSE_RING_R * math.cos(a0), APSE_RING_CY + APSE_RING_R * math.sin(a0)),
+            (r_out * math.cos(a0), APSE_RING_CY + r_out * math.sin(a0)),
+            (r_out * math.cos(a1), APSE_RING_CY + r_out * math.sin(a1)),
+            (APSE_RING_R * math.cos(a1), APSE_RING_CY + APSE_RING_R * math.sin(a1)),
+        ]
+        rc = 0.5 * (APSE_RING_R + r_out)
+        f.add(HyperboloidBay(rc * math.cos(am), APSE_RING_CY + rc * math.sin(am), poly, Z_AMB_VAULT, 3.5, AISLE_THROAT, "ambulatory"))
+    return f
+
+
+def merge_bmesh_into(dst: bmesh.types.BMesh, src: bmesh.types.BMesh) -> None:
+    tmp = bpy.data.meshes.new("_merge_tmp")
+    src.to_mesh(tmp)
+    src.free()
+    dst.from_mesh(tmp)
+    bpy.data.meshes.remove(tmp)
 
 
 def place_instance(name: str, mesh: bpy.types.Mesh, loc: tuple[float, float, float], rot_z: float = 0.0) -> bpy.types.Object:
@@ -169,73 +214,95 @@ def build_interior() -> None:
         h = 6.5 - abs(i) * 0.22 + (1.2 if i % 2 == 0 else 0.0)
         add_cylinder(bm_gold, Vector((ox, 30.2, Z_GALLERY + 0.5)), Vector((ox, 30.2, Z_GALLERY + 0.5 + h)), 0.11, 0.11, segments=8)
 
-    # ── 3. Gaudí's Double-Twisted Forest of Columns (4 Stone Types) ──
-    mesh_porphyry = create_instanced_column_mesh("Mesh_Col_Porphyry", mats["porphyry_red"], Z_NAVE, 20.5, 1.15, sides=12)
-    mesh_basalt = create_instanced_column_mesh("Mesh_Col_Basalt", mats["basalt_dark"], Z_NAVE, 19.5, 0.86, sides=10)
-    mesh_granite = create_instanced_column_mesh("Mesh_Col_Granite", mats["granite_grey"], Z_NAVE, 17.8, 0.70, sides=8)
-    mesh_sandstone = create_instanced_column_mesh("Mesh_Col_Sandstone", mats["sandstone_warm"], Z_NAVE, 16.5, 0.56, sides=6)
+    # ── 3. Gaudí's forest of double-twist columns (4 stones / 4 star types) ──
+    # Target values (see interior_lib.column_dims): knot top = 2 x points [m] above the floor,
+    # diameter 0.175 m x points, shaft = 10 x diameter. Placement (sagradafamilia.org columns article,
+    # medium confidence for everything except the porphyry crossing columns):
+    #   12-point red porphyry  : the 4 crossing columns (carry the Jesus lantern + Evangelist towers)
+    #   10-point dark basalt   : the 8 columns ringing the crossing (+-7.5,+-15) / (+-15,+-7.5)
+    #    8-point grey granite  : central nave rows x = +-7.5, transept rows, apse ring
+    #    6-point sandstone     : side-aisle rows x = +-15 (lightest load: side aisles + choir galleries)
+    vault = build_vault_field()
+
+    col_meshes = {}
+    col_dims = {}
+    for n, key, mat_key in ((12, "Porphyry", "porphyry_red"), (10, "Basalt", "basalt_dark"), (8, "Granite", "granite_grey"), (6, "Sandstone", "sandstone_warm")):
+        col_meshes[key], col_dims[key] = build_double_twist_column_mesh(f"Mesh_Col_{key}", mats[mat_key], n)
 
     bm_branches = bmesh.new()
-    bm_lamps = bmesh.new()  # small glowing lamps set into the secondary knots (as on the real columns)
-
-    # 3a. 4 Massive Red Porphyry Crossing Columns at (±7.5, ±7.5)
+    bm_lamps = bmesh.new()  # lamps in the secondary knots + oculus lamps (CandleGlow = runtime lamp group)
+    diag = [math.pi * (0.25 + 0.5 * k) for k in range(4)]
+    # (type, x, y, foot z, branch angles, reach, branch radius, twigs)
+    columns: list[tuple[str, float, float, float, list[float], float, float, int]] = []
     for sx in (-1, 1):
         for sy in (-1, 1):
-            cx, cy = sx * GRID, sy * GRID
-            place_instance(f"Col_Porphyry_{sx}_{sy}", mesh_porphyry, (cx, cy, 0.0))
-            # Gilded tetramorph capital medallion ring
-            add_cylinder(bm_gold, Vector((cx, cy, 19.8)), Vector((cx, cy, 21.4)), 1.48, 1.48, segments=16, cap=False)
-            # Giant branching arms rising to the 60m crossing vault + 45m nave/transept vaults
-            add_tree_canopy(bm_branches, (cx, cy), 20.8, Z_CROSSING_VAULT - 2.0, 4.4, 4, 0.62, angle_offset=math.pi / 4.0, bm_lamps=bm_lamps)
-            add_tree_canopy(bm_branches, (cx, cy), 20.2, Z_NAVE_VAULT - 1.8, 5.2, 4, 0.48, angle_offset=0.0)
-
-    # 3b. Dark Basalt Columns (Central Nave rows X = ±7.5, Transept rows Y = ±7.5)
-    basalt_positions = []
-    for bay in range(2, 7):  # Y = -15.0, -22.5, -30.0, -37.5, -45.0
-        for sx in (-1, 1):
-            basalt_positions.append((sx * GRID, -bay * GRID))
-    for tx in (-2, -3, 2, 3):  # Transept X = ±15.0, ±22.5 at Y = ±7.5
-        for sy in (-1, 1):
-            basalt_positions.append((tx * GRID, sy * GRID))
-
-    for idx, (cx, cy) in enumerate(basalt_positions):
-        place_instance(f"Col_Basalt_{idx}", mesh_basalt, (cx, cy, 0.0))
-        add_cylinder(bm_gold, Vector((cx, cy, 19.0)), Vector((cx, cy, 20.1)), 1.05, 1.05, segments=14, cap=False)
-        add_tree_canopy(bm_branches, (cx, cy), 19.8, Z_NAVE_VAULT - 2.0, 4.2, 4, 0.44, angle_offset=math.pi / 4.0, bm_lamps=bm_lamps)
-        # Side branches reaching toward the 30m side aisles
-        add_tree_canopy(bm_branches, (cx, cy), 18.8, Z_AISLE_VAULT - 1.5, 4.0, 2, 0.36, angle_offset=0.0 if abs(cx) < 10 else math.pi / 2.0)
-
-    # 3c. Grey Granite Columns (Inner side aisles X = ±15.0, Y = -15..-45 & Transept outer)
-    granite_positions = []
-    for bay in range(2, 7):
-        for sx in (-1, 1):
-            granite_positions.append((sx * 2.0 * GRID, -bay * GRID))
+            columns.append(("Porphyry", sx * GRID, sy * GRID, Z_NAVE, [math.pi / 8 + k * math.pi / 4 for k in range(8)], 5.0, 0.42, 3))
     for sx in (-1, 1):
-        granite_positions.append((sx * 2.0 * GRID, 2.0 * GRID))  # North transept corners
+        for sy in (-1, 1):
+            # presbytery side (+y) columns stand on the raised sanctuary platform (Z_ALTAR)
+            columns.append(("Basalt", sx * GRID, sy * 2 * GRID, Z_ALTAR if sy > 0 else Z_NAVE, [k * math.pi / 3 + math.pi / 6 for k in range(6)], 4.4, 0.36, 3))
+            columns.append(("Basalt", sx * 2 * GRID, sy * GRID, Z_NAVE, [k * math.pi / 3 for k in range(6)], 4.4, 0.36, 3))
+    for bay in range(3, 7):  # nave central rows y = -22.5 .. -45
+        for sx in (-1, 1):
+            columns.append(("Granite", sx * GRID, -bay * GRID, Z_NAVE, diag, 3.8, 0.30, 3))
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            columns.append(("Granite", sx * 3 * GRID, sy * GRID, Z_NAVE, diag, 3.8, 0.30, 3))
+    for bay in range(2, 7):  # side-aisle rows x = +-15, y = -15 .. -45
+        for sx in (-1, 1):
+            columns.append(("Sandstone", sx * 2 * GRID, -bay * GRID, Z_NAVE, diag, 3.2, 0.24, 2))
+    for sx in (-1, 1):
+        columns.append(("Sandstone", sx * 2 * GRID, 2 * GRID, Z_NAVE, diag, 3.2, 0.24, 2))
 
-    for idx, (cx, cy) in enumerate(granite_positions):
-        place_instance(f"Col_Granite_{idx}", mesh_granite, (cx, cy, 0.0))
-        add_cylinder(bm_gold, Vector((cx, cy, 17.4)), Vector((cx, cy, 18.3)), 0.85, 0.85, segments=12, cap=False)
-        add_tree_canopy(bm_branches, (cx, cy), 18.1, Z_AISLE_VAULT - 1.6, 3.6, 4, 0.34, angle_offset=math.pi / 4.0, bm_lamps=bm_lamps)
+    counters: dict[str, int] = {}
+    for kind, cx, cy, z_foot, angs, reach, rb, tw in columns:
+        idx = counters.get(kind, 0)
+        counters[kind] = idx + 1
+        place_instance(f"Col_{kind}_{idx}", col_meshes[kind], (cx, cy, z_foot))
+        z_top = z_foot + col_dims[kind]["total"]
+        add_column_canopy(bm_branches, bm_lamps, cx, cy, z_top, angs, reach, rb, vault, twigs=tw, fallback_z=Z_AISLE_VAULT)
+        if kind == "Sandstone" and -41.0 < cy < -14.0:
+            # 6-point columns bear the choir galleries: short corbel branch up to the cantoria slab edge
+            sxs = 1.0 if cx > 0 else -1.0
+            add_swept_tube(bm_branches, [Vector((cx, cy, z_top - 0.2)), Vector((cx + sxs * 0.9, cy, z_top + 0.15)), Vector((cx + sxs * 1.85, cy, Z_GALLERY - 0.72))], [0.22, 0.2, 0.18], segments=6)
 
-    # 3d. Apse Ambulatory Columns (7 radial granite/porphyry columns around the sanctuary)
+    # Apse ring (8 granite columns between the 7 chapels): canopies reach out to the ambulatory vault,
+    # one vertical limb carries the apse clerestory drum built on the ring.
     for i in range(8):
         ang = math.pi * (i + 0.5) / 8.0
-        cx = 11.2 * math.cos(ang)
-        cy = 16.5 + 11.2 * math.sin(ang)
-        place_instance(f"Col_Apse_{i}", mesh_granite, (cx, cy, 0.0), rot_z=ang)
-        add_tree_canopy(bm_branches, (cx, cy), 18.2, Z_NAVE_VAULT - 2.5, 3.5, 4, 0.36, angle_offset=ang, bm_lamps=bm_lamps)
+        cx = APSE_RING_R * math.cos(ang)
+        cy = APSE_RING_CY + APSE_RING_R * math.sin(ang)
+        place_instance(f"Col_Granite_Apse_{i}", col_meshes["Granite"], (cx, cy, Z_NAVE), rot_z=ang)
+        z_top = Z_NAVE + col_dims["Granite"]["total"]
+        add_column_canopy(bm_branches, bm_lamps, cx, cy, z_top, [ang - 0.75, ang + 0.75], 3.8, 0.30, vault, twigs=3, fallback_z=Z_AMB_VAULT - 3.0)
+        add_swept_tube(bm_branches, [Vector((cx, cy, z_top - 0.2)), Vector((cx, cy, 0.5 * (z_top + APSE_DRUM_Z0))), Vector((cx, cy, APSE_DRUM_Z0))], [0.34, 0.30, 0.36], segments=7)
 
-    # 3e. Outer Sandstone Gallery Columns along East & West Nave Walls
-    for bay in range(2, 7):
-        for sx in (-1, 1):
-            cx, cy = sx * 21.8, -bay * GRID
-            place_instance(f"Col_Wall_{sx}_{bay}", mesh_sandstone, (cx, cy, 0.0))
-            add_tree_canopy(bm_branches, (cx, cy), 16.8, Z_AISLE_VAULT - 1.6, 2.6, 3, 0.28, angle_offset=math.pi if sx > 0 else 0.0, bm_lamps=bm_lamps)
+    # Evangelist symbols as lamps on the knots of the four porphyry crossing columns, facing the crossing.
+    # Column under each Evangelist tower: Matthew (angel) +x Glory side, Mark (lion) -x Glory side,
+    # Luke (ox) -x apse side, John (eagle) +x apse side.
+    evangelists = {(1, -1): "angel", (-1, -1): "lion", (-1, 1): "ox", (1, 1): "eagle"}
+    kd = col_dims["Porphyry"]
+    for (sx, sy), symbol in evangelists.items():
+        d = Vector((-sx, -sy, 0.0)).normalized()
+        c = Vector((sx * GRID, sy * GRID, Z_NAVE + kd["knot_c"])) + d * (kd["knot_r"] * 0.93)
+        rot = math.atan2(d.y, d.x)
+        add_ellipsoid(bm_gold, c - d * 0.08, (0.2, 0.72, 0.98), subdivisions=2, rot_z=rot)
+        add_ellipsoid(bm_lamps, c + d * 0.06, (0.16, 0.56, 0.80), subdivisions=2, rot_z=rot)
+        side = Vector((-d.y, d.x, 0.0))
+        front = c + d * 0.24
+        if symbol in ("angel", "eagle"):
+            for s in (-1, 1):
+                add_ellipsoid(bm_gold, front + side * (0.24 * s) + Vector((0, 0, 0.18)), (0.05, 0.22, 0.10), subdivisions=1, rot_z=rot, roll=0.5 * s)
+            add_ellipsoid(bm_gold, front + Vector((0, 0, 0.36 if symbol == "angel" else 0.26)), (0.06, 0.09, 0.09), subdivisions=1, rot_z=rot)
+        elif symbol == "ox":
+            for s in (-1, 1):
+                add_cylinder(bm_gold, front + side * (0.08 * s) + Vector((0, 0, 0.22)), front + side * (0.24 * s) + Vector((0, 0, 0.42)), 0.04, 0.012, segments=5)
+            add_ellipsoid(bm_gold, front + Vector((0, 0, 0.12)), (0.06, 0.13, 0.12), subdivisions=1, rot_z=rot)
+        else:  # lion: mane disc + head
+            add_ellipsoid(bm_gold, front + Vector((0, 0, 0.2)), (0.05, 0.2, 0.2), subdivisions=1, rot_z=rot)
+            add_ellipsoid(bm_gold, front + d * 0.05 + Vector((0, 0, 0.2)), (0.05, 0.1, 0.1), subdivisions=1, rot_z=rot)
 
     finalize_bmesh_object(bm_branches, "Interior_ColumnBranches", mats["sandstone_warm"], smooth=True, uv_scale=0.22, ao_dist=1.8, ao_vert_limit=90000)
-    # 'LanternAndCandleGlow' keeps the knot lamps out of the collision BVH; 'CandleGlow' material = runtime lamp group
-    finalize_bmesh_object(bm_lamps, "Interior_KnotLamps_LanternAndCandleGlow", mats["candle_glow"], smooth=True, uv_scale=0.5, bake_ao=False)
 
     # ── 4. Walkable Organically Wavy Cantories (Emporen at Z = 14.5m) with OPEN Corner Stairwell Cutouts! ──
     bm_gal = bmesh.new()
@@ -347,54 +414,55 @@ def build_interior() -> None:
         )
     finalize_bmesh_object(bm_gal, "Interior_Galleries", mats["sandstone_warm"], smooth=False, uv_scale=0.18)
 
-    # ── 5. Hyperboloid Ceiling Vaults (30m Aisles, 45m Central Nave, 60m Crossing, Apse) ──
+    bm_walls = bmesh.new()
+    bm_glass_east = bmesh.new()
+    bm_glass_west = bmesh.new()
+    bm_glass_apse = bmesh.new()
+
+    # ── 5. Hyperboloid vaults: one ruled hyperboloid per bay, collars = oculi with lamps ──
+    bm_vault_hyp = bmesh.new()
+    bm_collar = bmesh.new()  # green/gold trencadís bands at the collars
+    bm_gold_field = bmesh.new()  # golden mosaic field of the apse vault
+    for bay in vault.bays:
+        n_r = 48 if bay.tag in ("crossing", "apse") else (40 if bay.tag == "nave" else 32)
+        # the crossing collar stays OPEN: the glass elevator of the Jesus tower rises through it
+        build_hyperboloid_bay(bay, bm_vault_hyp, bm_collar, bm_gold, None if bay.tag == "crossing" else bm_lamps, n_rulings=n_r)
+        if bay.tag == "apse":
+            # Gold field = the upper zone of the same hyperboloid (r <= 7 m), offset 4 cm inward
+            gb = HyperboloidBay(bay.cx, bay.cy, [(bay.cx + 7.0 * math.cos(2 * math.pi * k / 24), bay.cy + 7.0 * math.sin(2 * math.pi * k / 24)) for k in range(24)], bay.z_top - 0.04, 1.0, bay.a)
+            gb.c = bay.c
+            build_hyperboloid_bay(gb, bm_gold_field, None, None, None, n_rulings=36, v_fracs=(0.0, 0.3, 0.65, 1.0))
+
+    # Box masonry (drums, clerestories, backing decks) goes to its own bmesh so its normals can be
+    # recalculated without flipping the down-facing hyperboloid shells; both are merged afterwards.
     bm_vault = bmesh.new()
 
-    # 5a. Side Aisles Vaults (Z = 31.2m) — X = ±11.25 and ±18.75, Y bays -11.25 .. -41.25
-    for bay_y in (-11.25, -18.75, -26.25, -33.75, -41.25):
-        for sx in (-1, 1):
-            create_hyperboloid_vault_bay(bm_vault, bm_gold, sx * 11.25, bay_y, Z_AISLE_VAULT, 7.5, 7.5, depth=2.6, oculus_r=0.95)
-            create_hyperboloid_vault_bay(bm_vault, bm_gold, sx * 18.75, bay_y, Z_AISLE_VAULT, 7.5, 7.5, depth=2.6, oculus_r=0.95)
-
-    # Transept Side Bays (Z = 31.2m)
+    # Apse clerestory drum on the ring of apse columns: from the ambulatory vault springing up to the
+    # edge of the great apse hyperboloid, one stained-glass window per chapel bay.
+    apse_bay = next(b for b in vault.bays if b.tag == "apse")
+    ring_pts = [(APSE_RING_R * math.cos(math.pi * (i + 0.5) / 8.0), APSE_RING_CY + APSE_RING_R * math.sin(math.pi * (i + 0.5) / 8.0)) for i in range(8)]
+    drum_segments = list(zip(ring_pts[:-1], ring_pts[1:]))
     for sx in (-1, 1):
-        for bx in (11.25, 18.75, 26.25):
-            for sy in (-1, 1):
-                create_hyperboloid_vault_bay(bm_vault, bm_gold, sx * bx, sy * 11.25, Z_AISLE_VAULT, 7.5, 7.5, depth=2.6, oculus_r=0.95)
-
-    # 5b. Central Nave Vaults (Z = 46.2m) — 15m wide x 7.5m bays + gilded Venetian starburst palm ribs around oculi!
-    for bay_y in (-11.25, -18.75, -26.25, -33.75, -41.25):
-        create_hyperboloid_vault_bay(bm_vault, bm_gold, 0.0, bay_y, Z_NAVE_VAULT, 15.0, 7.5, depth=3.8, oculus_r=1.65)
-        for rk in range(8):
-            ra = 2.0 * math.pi * rk / 8.0
-            add_cylinder(
-                bm_gold,
-                Vector((1.75 * math.cos(ra), bay_y + 1.75 * math.sin(ra), Z_NAVE_VAULT - 0.18)),
-                Vector((3.55 * math.cos(ra), bay_y + 2.95 * math.sin(ra), Z_NAVE_VAULT - 0.62)),
-                0.09,
-                0.04,
-                segments=5,
-                cap=False,
-            )
-
-    # Central Transept Vaults (Z = 46.2m)
-    for sx in (-1, 1):
-        for bx in (11.25, 18.75, 26.25):
-            create_hyperboloid_vault_bay(bm_vault, bm_gold, sx * bx, 0.0, Z_NAVE_VAULT, 7.5, 15.0, depth=3.8, oculus_r=1.55)
-
-    # 5c. Central Crossing Vault (Z = 61.2m under Tower of Jesus Christ) + 12 gilded palm starburst rays!
-    create_hyperboloid_vault_bay(bm_vault, bm_gold, 0.0, 0.0, Z_CROSSING_VAULT, 15.0, 15.0, depth=5.5, oculus_r=3.2, segs=24, rings=8)
-    for rk in range(12):
-        ra = 2.0 * math.pi * rk / 12.0
-        add_cylinder(
-            bm_gold,
-            Vector((3.35 * math.cos(ra), 3.35 * math.sin(ra), Z_CROSSING_VAULT - 0.25)),
-            Vector((6.40 * math.cos(ra), 6.40 * math.sin(ra), Z_CROSSING_VAULT - 1.35)),
-            0.14,
-            0.05,
-            segments=5,
-            cap=False,
-        )
+        drum_segments.append(((sx * GRID, 2 * GRID), ring_pts[0] if sx > 0 else ring_pts[-1]))
+        drum_segments.append(((sx * GRID, GRID), (sx * GRID, 2 * GRID)))
+    for si, ((x0, y0), (x1, y1)) in enumerate(drum_segments):
+        mx, my = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+        seg_len = math.hypot(x1 - x0, y1 - y0)
+        rot = math.atan2(y1 - y0, x1 - x0)
+        z_top = max(apse_bay.height(x0, y0), apse_bay.height(x1, y1)) + 0.8
+        is_window = si < 7
+        if not is_window:
+            add_box(bm_vault, (mx, my, 0.5 * (APSE_DRUM_Z0 + z_top)), (seg_len + 0.6, 0.8, z_top - APSE_DRUM_Z0), rot_euler=(0, 0, rot))
+            continue
+        w_z0, w_z1 = APSE_DRUM_Z0 + 3.2, APSE_DRUM_Z0 + 14.2
+        add_box(bm_vault, (mx, my, 0.5 * (APSE_DRUM_Z0 + w_z0)), (seg_len + 0.6, 0.8, w_z0 - APSE_DRUM_Z0), rot_euler=(0, 0, rot))
+        add_box(bm_vault, (mx, my, 0.5 * (w_z1 + z_top)), (seg_len + 0.6, 0.8, z_top - w_z1), rot_euler=(0, 0, rot))
+        for end in (0.0, 1.0):
+            px, py = x0 + (x1 - x0) * end, y0 + (y1 - y0) * end
+            add_box(bm_vault, (px, py, 0.5 * (w_z0 + w_z1)), (1.0, 0.9, w_z1 - w_z0), rot_euler=(0, 0, rot))
+        add_box(bm_glass_apse, (mx, my, 0.5 * (w_z0 + w_z1)), (seg_len - 0.9, 0.14, w_z1 - w_z0), rot_euler=(0, 0, rot))
+        nx, ny = -math.sin(rot), math.cos(rot)  # inward (left) normal of the CCW ring -> tracery on the inside
+        add_gaudi_window_tracery(bm_walls, (mx + nx * 0.2, my + ny * 0.2, 0.5 * (w_z0 + w_z1)), seg_len - 0.9, w_z1 - w_z0, rot_z=rot)
 
     # Upper crossing drum walls bridging from 45m vaults up to 60m crossing vault
     for sx in (-1, 1):
@@ -422,8 +490,6 @@ def build_interior() -> None:
     for sx in (-1, 1):
         add_box(bm_vault, (sx * 16.5, 15.2, 38.5), (17.5, 1.2, 16.5))
 
-    # 5d. Soaring Apse Vault Dome rising into Mary Tower base (Z = 56m -> 74.5m — matching real 75m Apse height!)
-    create_hyperboloid_vault_bay(bm_vault, bm_gold, 0.0, 18.5, Z_APSE_VAULT, 24.0, 22.0, depth=18.0, oculus_r=3.4, segs=24, rings=8)
 
     # Seal exterior ceiling backing decks right above side aisles, central nave, transepts & apse drum
     # so zero sky slits ever leak between vault rosettes!
@@ -437,14 +503,17 @@ def build_interior() -> None:
     add_box(bm_vault, (-19.05, 0.0, Z_NAVE_VAULT + 0.45), (22.9, 15.8, 0.65))
     # Apse upper tapering dome-skirt is built in warm Catalan sandstone inside Section 6 (bm_walls) right below!
 
-    finalize_bmesh_object(bm_vault, "Interior_HyperboloidVaults", mats["vault_stone"], smooth=True, uv_scale=0.14)
+    # Merge: box masonry (normals recalculated) + hyperboloid shells (authored down-facing normals)
+    bmesh.ops.recalc_face_normals(bm_vault, faces=bm_vault.faces)
+    merge_bmesh_into(bm_vault_hyp, bm_vault)
+    finalize_oriented(bm_vault_hyp, "Interior_HyperboloidVaults", mats["vault_stone"], smooth=True, uv_scale=0.14, ao_dist=4.0)
+    finalize_oriented(bm_collar, "Interior_GoldAccents_VaultTrencadis", mats["trencadis"], smooth=True, uv_scale=0.6, ao=False)
+    finalize_oriented(bm_gold_field, "Interior_GoldAccents_ApseMosaic", mats["gold_accent"], smooth=True, uv_scale=0.4, ao=False)
     finalize_bmesh_object(bm_gold, "Interior_GoldAccents", mats["gold_accent"], smooth=True, uv_scale=0.35)
+    # 'LanternAndCandleGlow' keeps the lamps out of the collision BVH; 'CandleGlow' material = runtime lamp group
+    finalize_bmesh_object(bm_lamps, "Interior_KnotLamps_LanternAndCandleGlow", mats["candle_glow"], smooth=True, uv_scale=0.5, bake_ao=False)
 
     # ── 6. Exterior Nave & Apse Enclosure Walls + Stained Glass Windows ──
-    bm_walls = bmesh.new()
-    bm_glass_east = bmesh.new()
-    bm_glass_west = bmesh.new()
-    bm_glass_apse = bmesh.new()
 
     # East (+22.5, Cool Blue/Green Morning) & West (-22.5, Warm Red/Orange Evening) Nave Walls
     for sx, bm_glass in ((1, bm_glass_east), (-1, bm_glass_west)):
@@ -478,6 +547,9 @@ def build_interior() -> None:
 
             # Clerestory stained glass at X = ±7.6 (Z = 33..42.2)
             add_box(bm_glass, (sx * 7.6, y_center, 37.6), (0.14, 5.1, 9.2))
+            # clerestory tracery (lancets, elliptical rose, circular oculi) on the nave side
+            if CLERESTORY_TRACERY:
+                add_gaudi_window_tracery(bm_walls, (sx * 7.6 - sx * 0.2, y_center, 37.6), 5.1, 9.2, facing="X")
 
     # Transept Clerestory stained glass panes (X = ±11.25..±26.25, Y = ±7.6, Z = 33..42.2)
     for sx, bm_glass in ((1, bm_glass_east), (-1, bm_glass_west)):

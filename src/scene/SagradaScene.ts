@@ -27,11 +27,11 @@ interface ModelSpec {
 }
 
 const MODEL_SPECS: ModelSpec[] = [
-  { id: 'facades', labelKey: 'module.facades', url: './models/facades.glb', weightKB: 1046 },
-  { id: 'towers', labelKey: 'module.towers', url: './models/towers.glb', weightKB: 1483 },
-  { id: 'interior', labelKey: 'module.interior', url: './models/interior.glb', weightKB: 1845 },
+  { id: 'facades', labelKey: 'module.facades', url: './models/facades.glb', weightKB: 1122 },
+  { id: 'towers', labelKey: 'module.towers', url: './models/towers.glb', weightKB: 1916 },
+  { id: 'interior', labelKey: 'module.interior', url: './models/interior.glb', weightKB: 1732 },
   { id: 'furnishings', labelKey: 'module.furnishings', url: './models/furnishings.glb', weightKB: 298 },
-  { id: 'cloister_crypt', labelKey: 'module.cloister_crypt', url: './models/cloister_crypt.glb', weightKB: 129 },
+  { id: 'cloister_crypt', labelKey: 'module.cloister_crypt', url: './models/cloister_crypt.glb', weightKB: 358 },
   { id: 'eixample', labelKey: 'module.eixample', url: './models/eixample.glb', weightKB: 154 },
   { id: 'plaza_life', labelKey: 'module.plaza_life', url: './models/plaza_life.glb', weightKB: 67 },
 ];

@@ -28,6 +28,27 @@ from common import (
     get_materials,
     reset_scene,
 )
+from facades_lib import (
+    GLYPH_H,
+    GLYPH_J,
+    GLYPH_S,
+    add_arch_tube,
+    add_bone_column_v2,
+    add_cloud_mass,
+    add_double_twist_shaft,
+    add_fruit_basket,
+    add_hyperboloid_lantern,
+    add_letter_strokes,
+    add_palm_capital,
+    add_palm_trunk,
+    add_pelican,
+    add_rock_peak,
+    add_root_flare,
+    add_ruled_loft,
+    parabolic_arch_points,
+    add_triangular_lantern,
+    add_trumpet_angel,
+)
 
 
 def add_pointed_gable(
@@ -127,7 +148,7 @@ def add_turtle_column_base(
     cy: float,
     z_floor: float,
     is_sea_turtle: bool,
-) -> None:
+) -> float:
     """Sculpt Gaudí's iconic Nativity Facade Turtle (East/Sea) & Tortoise (West/Mountain) column pedestals!"""
     # Low carved plinth cushion
     add_cylinder(bm_stone, Vector((cx, cy, z_floor)), Vector((cx, cy, z_floor + 0.32)), 1.05, 0.96, segments=10)
@@ -146,9 +167,8 @@ def add_turtle_column_base(
             p0 = Vector((cx + sx * 0.52, cy + sy * 0.48, shell_z - 0.12))
             p1 = Vector((cx + sx * (0.95 if is_sea_turtle else 0.72), cy + sy * (0.92 if is_sea_turtle else 0.68), z_floor + 0.24))
             add_cylinder(bm_stone, p0, p1, 0.22, 0.14 if is_sea_turtle else 0.20, segments=6)
-    # Tall palm-frond column rising directly out of the turtle's carapace up into the portal arch!
-    add_cylinder(bm_stone, Vector((cx, cy, shell_z + 0.35)), Vector((cx, cy, z_floor + 9.2)), 0.42, 0.34, segments=10)
-    add_cylinder(bm_stone, Vector((cx, cy, z_floor + 9.0)), Vector((cx, cy, z_floor + 10.1)), 0.44, 0.72, segments=10)
+    # The palm trunk (built by the caller) rises out of the carapace
+    return shell_z + 0.3
 
 
 def add_robed_figure(bm: bmesh.types.BMesh, base: Vector, height: float, face: float, wings: bool = False, arm_up: float = 0.0) -> None:
@@ -191,20 +211,46 @@ def add_icicle_fringe(bm: bmesh.types.BMesh, x: float, y0: float, y1: float, z: 
         add_cylinder(bm, Vector((x, y, z + 0.05)), Vector((x + 0.06, y, z - length)), r, 0.015, segments=5, cap=False)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# NATIVITY FAÇADE (east, Blender +X; runtime +X). Target values (architecture pass):
+#   * 3 portals between 4 bell towers: Hope (left as seen from Plaça de Gaudí = south, -Y), Charity
+#     (centre, largest and highest, crowned by the cypress Tree of Life), Faith (right = north, +Y).
+#     [Sagrada Família booklets / Wikipedia — high confidence]
+#   * 2 columns separate the 3 porticoes; at the foot of each a turtle (sea side, south) or a tortoise
+#     (mountain side, north); palm-leaf capitals; trumpeting angels above. [Wikipedia — high]
+#   * Charity portal: trumeau column with the genealogy of Jesus and the serpent, Nativity group above
+#     the doors, Star of Bethlehem, Coronation of Mary higher up, pelican + JHS anagram under the
+#     cypress, red tau cross + dove at its top. [booklets / guides — high for presence, positions medium]
+#   * Hope gable crowned by the rock needles of Montserrat; Faith gable by a lantern (Trinity).
+#     [guides — medium]
+#   * Heights: towers 98.4 m (outer) / 107 m (inner) [official — high]. Cypress tip ~50-55 m and side
+#     gable tips ~35 m are photo-proportion estimates (no published figure found) — LOW confidence.
+#   * Walkable openings (runtime contract, unchanged): centre |y| < 2.8, sides 6.4 < |y| < 12.4,
+#     doors at x = 30.9, entrance ramp x 32.5..36.7 (CollisionSystem analytic floor).
+# Portal table: (name, centre y, door half-width hw0, archivolt rise, gable base z, gable height, gable width)
+NATIVITY_PORTALS = (
+    ("Hope", -9.4, 3.25, 9.8, 11.2, 24.0, 8.4),
+    ("Charity", 0.0, 3.1, 11.8, 13.0, 30.0, 9.6),
+    ("Faith", 9.4, 3.25, 9.8, 11.2, 24.0, 8.4),
+)
+NATIVITY_FX = 31.5
+NATIVITY_COLUMN_Y = 4.55     # the two turtle/tortoise palm columns between the portals
+NATIVITY_COLUMN_X = 34.6
+NATIVITY_COLUMN_TOP = 13.6   # palm capital springing (estimate: level of the side-portal archivolt crowns)
+
+
 def add_nativity_encrustation(bm: bmesh.types.BMesh, fx: float) -> None:
     """Dense sculptural layer of the Nativity facade (decorative, non-collidable):
-    figure groups on the three portal gables, trumpeting angels, foliage fringes along the gable
-    slopes and hanging icicle curtains under the gables and archivolts."""
-    portals = ((-9.2, 5.2, 8.6, 24.0, 1.25), (0.0, 6.2, 10.4, 30.0, 1.65), (9.2, 5.2, 8.6, 24.0, 1.25))
-    for pi_, (py, p_w, p_h, g_h, rr) in enumerate(portals):
-        gz = p_h + 2.6
-        gw = p_w + 3.0
+    figure groups on the three portal gables, foliage fringes along the gable slopes, hanging icicle
+    curtains, the tympanum groups, the palm capitals with their trumpeting angels, the Coronation of
+    Mary, the pelican and the JHS anagram under the cypress, and the crowns of Hope and Faith."""
+    for pi_, (name, py, hw0, rise, gz, g_h, gw) in enumerate(NATIVITY_PORTALS):
         front = fx + 3.25 + 0.9
-        # Icicle curtains under the gable base and under the outermost archivolt crown
-        add_icicle_fringe(bm, front - 0.15, py - gw * 0.48, py + gw * 0.48, gz, 18 if py == 0.0 else 14, 1.7, seed=pi_)
-        add_icicle_fringe(bm, fx + 3.6, py - p_w * 0.45, py + p_w * 0.45, p_h + 2.1, 10, 1.2, seed=pi_ + 7)
-        # Two tiers of sculpted figure groups on the gable face (skipping the rosette medallion)
-        rz = p_h + 5.6
+        central = name == "Charity"
+        # Icicle curtains under the gable base (the 'snow' of the Nativity winter) and in the porch mouth
+        add_icicle_fringe(bm, front - 0.15, py - gw * 0.48, py + gw * 0.48, gz, 18 if central else 14, 1.7, seed=pi_)
+        add_icicle_fringe(bm, fx + 3.6, py - hw0 * 0.8, py + hw0 * 0.8, Z_NAVE + rise - 0.6, 10, 1.3, seed=pi_ + 7)
+        # Three tiers of sculpted figure groups on the gable face
         for tier, (dz, fh) in enumerate(((0.45, 1.9), (2.75, 1.7), (5.2, 1.5))):
             z_row = gz + dz
             t = (z_row - gz) / g_h
@@ -212,35 +258,58 @@ def add_nativity_encrustation(bm: bmesh.types.BMesh, fx: float) -> None:
             n = max(2, int(2 * hw / 0.95))
             for i in range(n):
                 y = py - hw + (2 * hw) * (i + 0.5) / n
-                if abs(y - py) < rr + 0.55 and abs(z_row + fh * 0.5 - rz) < rr + 0.9:
-                    continue
+                if central and tier == 0 and abs(y - py) < 1.6:
+                    continue  # the Nativity group stands here (below)
                 add_robed_figure(bm, Vector((front + 0.28, y, z_row)), fh * (0.9 + 0.1 * math.sin(i * 2.3 + tier)), 0.0, wings=(tier == 2), arm_up=(0.8 if (i + tier) % 3 == 0 else 0.0))
-        # Trumpeting angels flanking the upper gable
+        # Angel musicians flanking the upper gable
         for side in (-1, 1):
-            z_a = gz + g_h * 0.42
             t = 0.42
+            z_a = gz + g_h * t
             y = py + side * (gw * 0.5 * ((1.0 - t) ** 1.08) - 0.2)
-            add_robed_figure(bm, Vector((front + 0.2, y, z_a)), 2.6 if py == 0.0 else 2.1, 0.0, wings=True, arm_up=1.0)
-            add_cylinder(bm, Vector((front + 0.5, y, z_a + 2.0)), Vector((front + 1.6, y - side * 0.3, z_a + 2.9)), 0.05, 0.16, segments=6)
+            add_robed_figure(bm, Vector((front + 0.2, y, z_a)), 2.6 if central else 2.1, 0.0, wings=True, arm_up=1.0)
         # Foliage fringe climbing both gable slopes up to the apex
         for side in (-1, 1):
             steps = int(g_h / 1.15)
             for k in range(steps):
                 t = (k + 0.5) / steps
                 y = py + side * (gw * 0.5 * ((1.0 - t) ** 1.08) + 0.15)
-                z = gz + t * g_h
-                add_leaf_cluster(bm, Vector((front - 0.2, y, z)), 0.85 - 0.45 * t, 0.0, count=4, seed=k + pi_ * 13)
-        # Star-burst of foliage around the rosette medallion
-        for k in range(10):
-            a = 2.0 * math.pi * k / 10
-            add_leaf_cluster(bm, Vector((front + 0.1, py + (rr + 0.45) * math.cos(a), rz + (rr + 0.45) * math.sin(a))), 0.55, 0.0, count=3, seed=k + 5)
-    # Jamb statuary on corbels beside each portal (replaces the old white candle-like stand-ins)
-    for py, p_w in ((-9.2, 5.2), (0.0, 6.2), (9.2, 5.2)):
-        for sy in (-1, 1):
-            y = py + sy * (p_w * 0.52)
-            add_box(bm, (fx + 3.7, y, Z_NAVE + 2.35), (0.7, 0.75, 0.25))
-            add_robed_figure(bm, Vector((fx + 3.75, y, Z_NAVE + 2.45)), 2.15, 0.0, arm_up=0.6 if sy > 0 else 0.0)
-            add_icicle_fringe(bm, fx + 3.95, y - 0.35, y + 0.35, Z_NAVE + 2.25, 3, 0.45, seed=int(py) + sy)
+                add_leaf_cluster(bm, Vector((front - 0.2, y, gz + t * g_h)), 0.85 - 0.45 * t, 0.0, count=4, seed=k + pi_ * 13)
+        # Tympanum group on a corbel above the doors (Charity: Holy Family with ox and mule;
+        # Hope: flight into Egypt; Faith: Visitation) — generic robed figures at the right scale
+        zt = Z_NAVE + rise - 3.4
+        add_box(bm, (fx + 2.7, py, zt - 0.15), (0.8, hw0 * 0.95, 0.3))
+        for i, dy in enumerate((-0.9, 0.0, 0.9)):
+            add_robed_figure(bm, Vector((fx + 2.7, py + dy, zt)), 2.0 if i != 1 else 1.6, 0.0, arm_up=0.5 if i == 0 else 0.0)
+        if central:
+            for side in (-1, 1):  # ox and mule beside the crib
+                add_ellipsoid(bm, Vector((fx + 2.5, py + side * 1.75, zt + 0.55)), (0.75, 0.35, 0.4), subdivisions=1)
+                add_ellipsoid(bm, Vector((fx + 3.05, py + side * 1.55, zt + 0.85)), (0.28, 0.2, 0.22), subdivisions=1)
+            # Trumeau: column of the genealogy of Jesus with the serpent coiled at its foot.
+            # Decorative (non-collidable) so the central walk-through stays clear.
+            add_lathe(bm, fx + 1.2, py, [(Z_NAVE, 0.42), (Z_NAVE + 0.5, 0.3), (Z_NAVE + 6.2, 0.26), (zt - 0.4, 0.34), (zt - 0.15, 0.55)], segments=8)
+            coil = [Vector((fx + 1.2 + 0.42 * math.cos(a * 0.6), py + 0.42 * math.sin(a * 0.6), Z_NAVE + 0.3 + a * 0.06)) for a in range(18)]
+            add_swept_tube(bm, coil, [0.09] * len(coil), segments=5)
+            # Coronation of Mary: Jesus crowning Mary with Joseph at their side (upper Charity gable)
+            zc = gz + 18.6
+            add_box(bm, (front + 0.1, py, zc - 0.2), (0.8, 3.6, 0.4))
+            add_robed_figure(bm, Vector((front + 0.35, py - 0.75, zc)), 2.3, 0.0)
+            add_robed_figure(bm, Vector((front + 0.35, py + 0.75, zc)), 2.5, 0.0, arm_up=1.0)
+            add_robed_figure(bm, Vector((front + 0.25, py + 1.85, zc)), 2.0, 0.0)
+            # Pelican on its nest and the JHS anagram at the foot of the cypress
+            add_pelican(bm, Vector((front - 0.2, py, gz + g_h - 6.2)), 2.2, 0.0)
+        elif py < 0:
+            # Hope: the needles of Montserrat crown the gable
+            add_rock_peak(bm, Vector((front - 0.9, py, gz + g_h - 1.4)), 4.2, 3.0, seed=2)
+        else:
+            # Faith: three-sided lantern of the Trinity crowns the gable
+            add_triangular_lantern(bm, Vector((front - 0.9, py, gz + g_h - 1.2)), 4.6, 1.7)
+
+    # The two palm columns: palm-frond capitals and trumpeting angels above them
+    for sy in (-1, 1):
+        top = Vector((NATIVITY_COLUMN_X, sy * NATIVITY_COLUMN_Y, NATIVITY_COLUMN_TOP))
+        add_lathe(bm, top.x, top.y, [(top.z - 0.3, 0.45), (top.z + 0.4, 0.8), (top.z + 0.7, 0.75)], segments=8, cap_top=True)
+        add_palm_capital(bm, top + Vector((0, 0, 0.6)), 2.1, fronds=9, seed=sy)
+        add_trumpet_angel(bm, top + Vector((0.1, 0, 0.75)), 2.9, 0.0)
 
 
 def build_nativity_facade(
@@ -251,122 +320,80 @@ def build_nativity_facade(
     bm_gold: bmesh.types.BMesh,
     bm_white: bmesh.types.BMesh,
 ) -> None:
-    """East Nativity Facade (X = +31.5): organic sandstone, 3 gabled portals, Cypress Tree of Life."""
-    fx = 31.5
+    """East Nativity Facade (X = +31.5): organic sandstone, 3 deep parabolic porches, Cypress Tree of Life."""
+    fx = NATIVITY_FX
 
-    # Entrance steps leading from Plaça de Gaudí (Z=0) cleanly up to Nave landing (Z=1.2) — dedicated stair mesh!
+    # Entrance steps leading from Plaça de Gaudí (Z=0) up to the Nave landing (Z=1.2) — dedicated stair mesh
     for step in range(6):
         sz = (step + 1) * (Z_NAVE / 6.0)
         add_box(bm_stairs_nat, (fx + 5.2 - step * 0.56, 0.0, sz * 0.5), (0.60, 28.0, sz))
     add_box(bm_stairs_nat, (fx + 0.9, 0.0, Z_NAVE * 0.5), (2.4, 28.0, Z_NAVE))
 
-    # Massive sculpted piers flanking the 3 portals (lower tier Z=0..14.4m; upper tier strictly BETWEEN the 4 tower shafts!)
+    # Wall piers between/beside the portals (Z=0..14.4) carrying the towers (which start at 18.6 m)
     pier_ys = (-14.2, -4.6, 4.6, 14.2)
     for py in pier_ys:
         add_box(bm_nat, (fx, py, 7.2), (4.2, 3.6, 14.4))
-        # Organic dripping stalactite-like buttress projections on exterior face (strictly outside tower shafts!)
-        for k in range(5):
-            zk = 5.0 + k * 4.5
-            r = 1.45 - k * 0.16
-            add_cylinder(bm_nat, Vector((fx + 3.0, py, zk)), Vector((fx + 2.6, py, zk + 4.8)), r, r * 0.68, segments=10)
+    # Outer edges: one continuous 'melting' buttress per side (was 5 stacked drums). Swept, tapering,
+    # with vertical runnels; the dripping relief pass turns it into Gaudí's eroded stone.
+    for sy in (-1, 1):
+        pts = [Vector((fx + 2.3 + 0.02 * k, sy * (14.2 + 0.03 * k), Z_NAVE + k * 2.6)) for k in range(13)]
+        radii = [1.75, 1.6, 1.52, 1.45, 1.42, 1.36, 1.25, 1.15, 1.02, 0.9, 0.76, 0.6, 0.35]
+        add_swept_tube(bm_nat, pts, radii, segments=12, cap=True, ridge=(7, 0.22))
 
-    # Upper facade wall split cleanly around Z = 14.5..18.5m AND strictly between the 4 tower spiral shafts (Y=±3.6, ±10.8)!
+    # Lintel band and the upper wall strictly between the 4 tower spiral shafts (Y=±3.6, ±10.8);
+    # the tower-base gallery band Z = 14.5..18.6 stays open.
     add_box(bm_nat, (fx, 0.0, 12.2), (3.4, 29.0, 3.6))
     for y_seg, span_y in ((-14.0, 2.0), (-7.2, 2.4), (0.0, 2.4), (7.2, 2.4), (14.0, 2.0)):
         add_box(bm_nat, (fx, y_seg, 24.4), (3.4, span_y, 11.4))
-    # Deep sculpted archivolts framing each portal
-    for py, p_w, p_h, g_h in ((-9.2, 5.2, 8.6, 24.0), (0.0, 6.2, 10.4, 30.0), (9.2, 5.2, 8.6, 24.0)):
-        # Stepped parabolic archivolt ribs projecting outward
-        for layer in range(4):
-            lx = fx + 1.8 + layer * 0.48
-            lw = p_w + layer * 0.65
-            lh = p_h + layer * 0.55
-            # Left & right jambs
-            for sy in (-1, 1):
-                add_cylinder(
-                    bm_nat,
-                    Vector((lx, py + sy * (lw * 0.5), Z_NAVE)),
-                    Vector((lx, py + sy * (lw * 0.35), lh)),
-                    0.48,
-                    0.40,
-                    segments=8,
-                )
-            # Pointed parabolic arch top
-            add_cylinder(bm_nat, Vector((lx, py - lw * 0.35, lh)), Vector((lx, py, lh + 3.2)), 0.42, 0.36, segments=8)
-            add_cylinder(bm_nat, Vector((lx, py + lw * 0.35, lh)), Vector((lx, py, lh + 3.2)), 0.42, 0.36, segments=8)
-        # Soaring organic triangular gable pinnacle above each portal (placed strictly outside tower spiral shafts!)
-        add_pointed_gable(bm_nat, (fx + 3.25, py), p_h + 2.6, p_w + 3.0, g_h, 1.8, facing="X+")
-        # Deep sculpted rosette wheel medallion recessed inside each Nativity gable!
-        rz = p_h + 5.6
-        rr = 1.65 if py == 0.0 else 1.25
-        for s in range(12):
-            a0 = 2.0 * math.pi * s / 12.0
-            a1 = 2.0 * math.pi * (s + 1) / 12.0
-            add_cylinder(
+
+    for name, py, hw0, rise, gz, g_h, gw in NATIVITY_PORTALS:
+        central = name == "Charity"
+        # Deep, cave-like porch: 4 concentric parabolic archivolts springing from the floor, each one
+        # wider, taller and further forward than the last (porch depth ~4.5 m from door to front).
+        layers = 4
+        step_w = 0.18 if central else 0.2
+        for k in range(layers):
+            lx = fx + 1.9 + k * 0.55
+            hw = hw0 + k * step_w
+            add_arch_tube(
                 bm_nat,
-                Vector((fx + 4.15, py + rr * math.cos(a0), rz + rr * math.sin(a0))),
-                Vector((fx + 4.15, py + rr * math.cos(a1), rz + rr * math.sin(a1))),
-                0.20,
-                0.20,
-                segments=6,
+                Vector((lx, py - hw, Z_NAVE)), Vector((lx, py + hw, Z_NAVE)),
+                rise + k * 0.5, 0.5, 0.4, n=14, segments=7, sharp=1.1,
             )
-            if s % 2 == 0:
-                add_cylinder(
-                    bm_gold,
-                    Vector((fx + 4.05, py, rz)),
-                    Vector((fx + 4.15, py + rr * math.cos(a0), rz + rr * math.sin(a0))),
-                    0.09,
-                    0.09,
-                    segments=6,
-                )
-        # Organic botanical pinnacles, Gothic crocket spires & sculpted tympanum figure reliefs flanking the gable!
+        # Splayed porch soffit: ruled surface joining the innermost and outermost archivolt (reads as
+        # one deep stone mouth instead of separate hoops)
+        k_out = layers - 1
+        inner = parabolic_arch_points(Vector((fx + 1.9, py - hw0, Z_NAVE)), Vector((fx + 1.9, py + hw0, Z_NAVE)), rise, 14, 1.1)
+        outer = parabolic_arch_points(Vector((fx + 1.9 + k_out * 0.55, py - hw0 - k_out * step_w, Z_NAVE)),
+                                      Vector((fx + 1.9 + k_out * 0.55, py + hw0 + k_out * step_w, Z_NAVE)), rise + k_out * 0.5, 14, 1.1)
+        add_ruled_loft(bm_nat, [p + Vector((0, 0, 0.35)) for p in inner], [p + Vector((0, 0, 0.35)) for p in outer])
+        # Soaring organic gable over each porch (between the towers)
+        add_pointed_gable(bm_nat, (fx + 3.25, py), gz, gw, g_h, 1.8, facing="X+")
+        # Botanical pinnacles flanking the gable
         for sy in (-1, 1):
-            add_cylinder(bm_nat, Vector((fx + 3.9, py + sy * (p_w * 0.55), p_h + 1.2)), Vector((fx + 3.8, py + sy * (p_w * 0.52), p_h + 10.5)), 0.58, 0.12, segments=8)
-            add_cylinder(bm_nat, Vector((fx + 4.1, py + sy * (p_w * 0.36), p_h + 4.0)), Vector((fx + 3.9, py + sy * (p_w * 0.32), p_h + 14.5)), 0.42, 0.09, segments=7)
-            # Carved sculptural niche canopy + figure silhouette beside each portal jamb
-            add_cylinder(bm_nat, Vector((fx + 3.25, py + sy * (p_w * 0.52), Z_NAVE + 2.2)), Vector((fx + 3.25, py + sy * (p_w * 0.52), Z_NAVE + 5.0)), 0.42, 0.28, segments=8)
-        # Sculpted tympanum narrative relief cluster over portal arch
-        for fi in (-1.2, -0.4, 0.4, 1.2):
-            add_cylinder(bm_nat, Vector((fx + 2.95, py + fi, p_h + 0.6)), Vector((fx + 2.95, py + fi, p_h + 2.6 - abs(fi) * 0.4)), 0.28, 0.18, segments=7)
-
-        # Sculpted bronze doors folded open against the portal jambs (so walkthrough is clear!)
+            add_cylinder(bm_nat, Vector((fx + 3.9, py + sy * (gw * 0.36), gz - 1.4)), Vector((fx + 3.8, py + sy * (gw * 0.33), gz + 7.9)), 0.58, 0.12, segments=8)
+        # Bronze doors folded open against the jambs (walk-through stays clear)
         for sy in (-1, 1):
-            add_box(bm_bronze, (fx - 0.6, py + sy * (p_w * 0.44), Z_NAVE + 3.0), (2.2, 0.25, 6.0))
+            add_box(bm_bronze, (fx - 0.6, py + sy * (2.68 if central else 2.85), Z_NAVE + 3.0), (2.2, 0.25, 6.0))
 
-    # ICONIC NATIVITY FACADE TURTLE (South/Sea) & TORTOISE (North/Mountain) COLUMN PEDESTALS!
-    # Positioned on the entrance landing flanking the central Charity Portal at Y = ±4.55!
-    add_turtle_column_base(bm_nat, fx + 2.65, -4.55, Z_NAVE, is_sea_turtle=True)
-    add_turtle_column_base(bm_nat, fx + 2.65, 4.55, Z_NAVE, is_sea_turtle=False)
+    # Turtle (south / sea side) and tortoise (north / mountain side) carrying the two palm columns
+    for sy in (-1, 1):
+        shell_top = add_turtle_column_base(bm_nat, NATIVITY_COLUMN_X, sy * NATIVITY_COLUMN_Y, Z_NAVE, is_sea_turtle=(sy < 0))
+        add_palm_trunk(bm_nat, NATIVITY_COLUMN_X, sy * NATIVITY_COLUMN_Y, shell_top, NATIVITY_COLUMN_TOP, 0.48, 0.4, segments=10)
 
-    # Luminous Golden Star of Bethlehem radiant medallion crowning the Charity Portal (Z = 29.8m)
+    # Star of Bethlehem over the Nativity group of the Charity portal (gilt comet star)
     star_x = fx + 4.30
-    star_z = 29.8
+    star_z = 21.8
     for k in range(8):
         ang = 2.0 * math.pi * k / 8.0
-        ray_len = 1.95 if k % 2 == 0 else 1.25
-        add_cylinder(
-            bm_gold,
-            Vector((star_x, 0.0, star_z)),
-            Vector((star_x + 0.12, ray_len * math.cos(ang), star_z + ray_len * math.sin(ang))),
-            0.22,
-            0.04,
-            segments=5,
-        )
-    # Central golden Nativity Bethlehem halo ring
-    for s in range(12):
-        a0 = 2.0 * math.pi * s / 12.0
-        a1 = 2.0 * math.pi * (s + 1) / 12.0
-        add_cylinder(
-            bm_gold,
-            Vector((star_x - 0.05, 1.35 * math.cos(a0), star_z + 1.35 * math.sin(a0))),
-            Vector((star_x - 0.05, 1.35 * math.cos(a1), star_z + 1.35 * math.sin(a1))),
-            0.12,
-            0.12,
-            segments=5,
-        )
+        ray_len = 1.6 if k % 2 == 0 else 1.0
+        add_cylinder(bm_gold, Vector((star_x, 0.0, star_z)), Vector((star_x + 0.12, ray_len * math.cos(ang), star_z + ray_len * math.sin(ang))), 0.2, 0.04, segments=5)
+    # Comet tail sweeping down toward the Holy Family
+    add_cylinder(bm_gold, Vector((star_x, 0.0, star_z)), Vector((star_x - 0.1, 0.9, star_z - 4.0)), 0.22, 0.03, segments=5)
+    # JHS anagram (gilt) just below the cypress, under the pelican
+    add_letter_strokes(bm_gold, Vector((fx + 4.3, -1.3, 34.9)), Vector((0, 1, 0)), [GLYPH_J, GLYPH_H, GLYPH_S], 0.7, 0.2, 0.08)
 
-    # Central Sculpted Cypress Tree of Life rising above Charity Gable (Z = 38 .. 49m)
-    # Multi-tiered organically sculpted Venetian-green mosaic cypress foliage (never a smooth plastic cone!)
+    # Cypress Tree of Life rising above the Charity gable (Z ≈ 38..49 m, tau cross to 51.4 m)
     tree_x = fx + 3.25
     for tier in range(8):
         t = tier / 7.0
@@ -382,7 +409,7 @@ def build_nativity_facade(
                 v.co.x = tree_x + r_off * math.cos(ang) + v.co.x * lobe_r * 0.85
                 v.co.y = r_off * math.sin(ang) + v.co.y * lobe_r * 0.85
                 v.co.z = zt + v.co.z * lobe_r * 1.35
-        # Sculpted white ceramic doves perched around the cypress crown
+        # White ceramic doves perched around the cypress crown
         if tier in (1, 3, 5):
             for k in range(3):
                 ang = 2.0 * math.pi * k / 3.0 + tier * 0.9
@@ -393,9 +420,14 @@ def build_nativity_facade(
                     v.co.x = px + v.co.x * 1.15
                     v.co.y = py + v.co.y * 0.85
                     v.co.z = zt + 0.1 + v.co.z * 0.72
-    # Red/Gold Tau Cross at the summit of the Cypress Tree
+    # Red/gold tau cross at the summit of the cypress, with the dove of the Holy Spirit above
     add_cylinder(bm_gold, Vector((tree_x, 0.0, 48.0)), Vector((tree_x, 0.0, 51.4)), 0.28, 0.24, segments=8)
     add_cylinder(bm_gold, Vector((tree_x, -1.45, 50.9)), Vector((tree_x, 1.45, 50.9)), 0.24, 0.24, segments=8)
+    ret_d = bmesh.ops.create_icosphere(bm_white, subdivisions=1, radius=0.4)
+    for v in ret_d["verts"]:
+        v.co.x = tree_x + v.co.x * 1.2
+        v.co.y = v.co.y * 0.8
+        v.co.z = 52.0 + v.co.z * 0.6
 
 
 def add_frustum(bm: bmesh.types.BMesh, base: Vector, w0: float, d0: float, w1: float, d1: float, height: float, face: float, lean: float = 0.0) -> None:
@@ -432,196 +464,238 @@ def add_subirachs_figure(bm: bmesh.types.BMesh, base: Vector, h: float, face: fl
         add_frustum(bm, head_c + Vector((0, 0, h * 0.08)), h * 0.17, h * 0.18, h * 0.06, h * 0.08, h * 0.17, face, 0.25)
 
 
-def add_bone_column(bm: bmesh.types.BMesh, p0: Vector, p_mid: Vector, p1: Vector, scale: float, segments: int = 14, ridges: int = 5) -> None:
-    """Inclined bone/tendon column: pinched shaft, swollen 'knee' joint, flared head, tendon ridges."""
-    n = 16
-    pts, radii = [], []
-    prof = ((0.0, 1.45), (0.12, 1.2), (0.28, 0.95), (0.45, 1.12), (0.52, 1.3), (0.6, 1.1), (0.76, 0.92), (0.9, 1.15), (1.0, 1.6))
-    for i in range(n + 1):
-        t = i / n
-        p = (1 - t) ** 2 * p0 + 2 * (1 - t) * t * p_mid + t * t * p1
-        for (ta, ra), (tb, rb) in zip(prof[:-1], prof[1:]):
-            if ta <= t <= tb:
-                u = (t - ta) / (tb - ta)
-                u = u * u * (3 - 2 * u)
-                r = ra + (rb - ra) * u
-                break
-        pts.append(p)
-        radii.append(r * scale)
-    add_swept_tube(bm, pts, radii, segments=segments, cap=True, ridge=(ridges, 0.14))
+# ─────────────────────────────────────────────────────────────────────────────
+# PASSION FAÇADE (west, Blender -X). Target values:
+#   * 6 large inclined columns shaped like bones / sequoia trunks carrying a deep porch roof
+#     [Wikipedia, official — high]; column height ~ porch roof underside ≈ 22-23 m (model estimate,
+#     no published figure found — LOW); lean ~8° toward the façade (model estimate — LOW).
+#   * Pyramidal pediment above the porch made of 18 bone-shaped columns [Wikipedia — high].
+#   * Subirachs' sculpture groups on 3 levels read along an S-shaped path, bottom-left -> top-right,
+#     Crucifixion at the top centre [official booklet — high for layout, medium for exact heights].
+#   * Bronze Gospel doors in the centre, magic square (sum 33) beside the Kiss of Judas [high].
+#   * Walkable openings (unchanged): centre |y| < 3.1, sides 7.3 < |y| < 12.1; ramp x -40.5..-31.8.
+PASSION_FX = -31.5
+PASSION_COLUMN_YS = (-13.5, -8.1, -2.7, 2.7, 8.1, 13.5)
+PASSION_ROOF_Z = (22.7, 26.3)   # porch roof slab underside / top
 
 
 def build_passion_facade(
     bm_pas: bmesh.types.BMesh,
+    bm_pcol: bmesh.types.BMesh,
+    bm_pbones: bmesh.types.BMesh,
+    bm_psculpt: bmesh.types.BMesh,
     bm_stairs_pas: bmesh.types.BMesh,
     bm_bronze: bmesh.types.BMesh,
     bm_gold: bmesh.types.BMesh,
 ) -> None:
-    """West Passion Facade (X = -31.5): 6 giant inclined bone columns, stark portico, Subirachs aesthetic."""
-    fx = -31.5
+    """West Passion Facade (X = -31.5): 6 inclined bone columns, deep porch, 18-bone pediment, Subirachs S-path."""
+    fx = PASSION_FX
+    z_roof0, z_roof1 = PASSION_ROOF_Z
 
-    # Entrance steps from Plaça de la Sagrada Família (Z=0) cleanly up to portico terrace (Z=1.2) — dedicated stair mesh!
+    # Entrance steps from Plaça de la Sagrada Família (Z=0) up to the portico terrace (Z=1.2)
     for step in range(6):
         sz = (step + 1) * (Z_NAVE / 6.0)
         add_box(bm_stairs_pas, (fx - 8.4 + step * 0.58, 0.0, sz * 0.5), (0.62, 30.0, sz))
     add_box(bm_stairs_pas, (fx - 2.6, 0.0, Z_NAVE * 0.5), (5.2, 30.0, Z_NAVE))
 
-    # Inner recessed Passion wall split around Z = 14.5..18.5m AND strictly between the 4 tower shafts (Y=±3.6, ±10.8)!
+    # Inner recessed wall split around the open tower-base gallery band (Z = 14.5..18.6 m)
     for py in (-14.2, -5.2, 5.2, 14.2):
         add_box(bm_pas, (fx, py, 7.2), (3.4, 4.2, 14.4))
     add_box(bm_pas, (fx, 0.0, 12.2), (3.2, 29.0, 3.6))
     for y_seg, span_y in ((-14.0, 2.0), (-7.2, 2.4), (0.0, 2.4), (7.2, 2.4), (14.0, 2.0)):
         add_box(bm_pas, (fx, y_seg, 24.4), (3.2, span_y, 11.4))
-    # Bronze Gospel doors folded open at entrance jambs
+    # Bronze Gospel doors folded open at the entrance jambs
     for sy in (-1, 1):
         add_box(bm_bronze, (fx + 0.5, sy * 2.8, Z_NAVE + 3.2), (2.4, 0.26, 6.4))
 
-    # THE 6 ICONIC GIANT INCLINED BONE-SHAPED PORTICO COLUMNS with double-ribbed tendon flutes!
-    col_ys = (-13.5, -8.1, -2.7, 2.7, 8.1, 13.5)
-    for cy in col_ys:
-        p0 = Vector((fx - 6.8, cy, Z_NAVE))
-        p_mid = Vector((fx - 5.2, cy * 0.96, 12.0))
-        p1 = Vector((fx - 3.6, cy * 0.92, 23.0))
-        # Swept bone column: pinched shaft, swollen knee joint at mid-height, flared head, tendon ridges
-        add_bone_column(bm_pas, p0, p_mid, p1, 0.98, segments=14, ridges=5)
-        # Sculpted angular bone-joint capital pad
-        add_box(bm_pas, (p1.x, p1.y, p1.z + 0.55), (2.8, 2.6, 1.1))
-        # Diagonal rear brace strut connecting column to inner wall
-        add_cylinder(bm_pas, p_mid, Vector((fx - 1.2, cy, 17.5)), 0.55, 0.45, segments=8)
+    # THE 6 INCLINED BONE / SEQUOIA COLUMNS: splayed swollen feet on the porch floor, long pinched
+    # shafts leaning back toward the façade, flared heads merging into the porch roof. Smooth-shaded
+    # mesh of their own (the old flat-shaded fluted tubes read as stacked drums).
+    for i, cy in enumerate(PASSION_COLUMN_YS):
+        p0 = Vector((fx - 7.6, cy, Z_NAVE))
+        p_mid = Vector((fx - 6.0, cy * 0.98, 12.0))
+        p1 = Vector((fx - 3.9, cy * 0.95, z_roof0 + 0.4))
+        add_bone_column_v2(bm_pcol, p0, p_mid, p1, 0.92, segments=14, n=20)
+        add_root_flare(bm_pbones, p0, 1.1, roots=6, seed=i)
 
-    # Massive overhanging triangular ribbed Passion cornice & angular Subirachs bone-truss pediment (Z = 22.5 .. 42m)
-    add_box(bm_pas, (fx - 3.8, 0.0, 24.5), (6.5, 31.5, 3.6))
-    # Angular stone pediment backing ridge + dramatic inclined Subirachs bridge gallery (Z = 26..33m)
-    add_pointed_gable(bm_pas, (fx - 2.6, 0.0), 26.2, 29.0, 14.5, 1.6, facing="X-", crockets=False)
-    # 18 Iconic stark diagonal bone-rib struts fanning outward across the Passion pediment!
+    # Deep porch roof slab with a bone-rib underside (one rib per column, running back to the wall)
+    add_box(bm_pas, (fx - 3.8, 0.0, (z_roof0 + z_roof1) * 0.5), (6.5, 31.5, z_roof1 - z_roof0))
+    for cy in PASSION_COLUMN_YS:
+        add_cylinder(bm_pas, Vector((fx - 7.0, cy * 0.95, z_roof0 + 0.1)), Vector((fx - 1.4, cy * 0.95, z_roof0 + 0.1)), 0.55, 0.45, segments=6)
+
+    # Pyramidal pediment: backing gable wall + 18 bone columns rising like organ pipes to the
+    # triangular cornice (count and arrangement per the built façade).
+    add_pointed_gable(bm_pas, (fx - 2.6, 0.0), z_roof1 - 0.1, 29.0, 14.5, 1.6, facing="X-", crockets=False)
     for k in range(18):
         py = -14.5 + k * (29.0 / 17.0)
-        h_tri = 14.4 * (1.0 - abs(py) / 16.0)
-        if h_tri > 1.2:
-            # Upper colonnade: 18 inclined bone struts with joints (same vocabulary as the portico columns)
-            q0 = Vector((fx - 5.5, py, 26.0))
-            q1 = Vector((fx - 3.2, py * 0.90, 26.2 + h_tri))
-            add_bone_column(bm_pas, q0, (q0 + q1) * 0.5 + Vector((-0.25, 0.0, 0.0)), q1, 0.3, segments=7, ridges=3)
-            # Crisp cross-brace bone tendons linking struts at mid-height
-            if k < 17 and k % 2 == 0:
-                py_next = -14.5 + (k + 1) * (29.0 / 17.0)
-                add_cylinder(
-                    bm_pas,
-                    Vector((fx - 4.7, py, 26.2 + h_tri * 0.42)),
-                    Vector((fx - 4.7, py_next, 26.2 + h_tri * 0.42)),
-                    0.22,
-                    0.22,
-                    segments=5,
-                )
-    # Stark razor-sharp triangular bone pediment frame + central Subirachs Ascension stone arch
-    add_cylinder(bm_pas, Vector((fx - 5.6, -15.6, 25.8)), Vector((fx - 3.4, 0.0, 41.8)), 0.92, 0.72, segments=6)
-    add_cylinder(bm_pas, Vector((fx - 5.6, 15.6, 25.8)), Vector((fx - 3.4, 0.0, 41.8)), 0.92, 0.72, segments=6)
-    # Diagonal angular buttress blades bracing the outer Passion bays
+        h_tri = 14.4 * (1.0 - abs(py) / 15.6) - 0.4
+        q0 = Vector((fx - 4.9, py, z_roof1))
+        q1 = Vector((fx - 4.3, py * 0.98, z_roof1 + max(1.0, h_tri)))
+        add_bone_column_v2(bm_pbones, q0, (q0 + q1) * 0.5 + Vector((-0.15, 0.0, 0.0)), q1, 0.27, segments=7, n=10)
+    # Razor-sharp triangular cornice beams + Ascension crowning element
+    add_cylinder(bm_pas, Vector((fx - 4.7, -15.6, z_roof1 - 0.3)), Vector((fx - 3.9, 0.0, 41.8)), 0.92, 0.72, segments=6)
+    add_cylinder(bm_pas, Vector((fx - 4.7, 15.6, z_roof1 - 0.3)), Vector((fx - 3.9, 0.0, 41.8)), 0.92, 0.72, segments=6)
+    # Angular buttress blades closing the outer porch bays
     for sy in (-1, 1):
-        add_cylinder(bm_pas, Vector((fx - 7.4, sy * 15.2, Z_NAVE)), Vector((fx - 4.6, sy * 15.2, 24.5)), 0.95, 0.65, segments=6)
-    # Golden Ascension cross / halo crowning the Passion pediment
-    add_cylinder(bm_gold, Vector((fx - 3.4, 0.0, 41.4)), Vector((fx - 3.4, 0.0, 46.2)), 0.26, 0.20, segments=8)
-    add_cylinder(bm_gold, Vector((fx - 3.4, -1.65, 44.5)), Vector((fx - 3.4, 1.65, 44.5)), 0.22, 0.22, segments=8)
+        add_cylinder(bm_pas, Vector((fx - 7.4, sy * 15.2, Z_NAVE)), Vector((fx - 4.6, sy * 15.2, z_roof0)), 0.95, 0.65, segments=6)
+    # Gilt cross crowning the pediment
+    add_cylinder(bm_gold, Vector((fx - 3.9, 0.0, 41.4)), Vector((fx - 3.9, 0.0, 46.2)), 0.26, 0.20, segments=8)
+    add_cylinder(bm_gold, Vector((fx - 3.9, -1.65, 44.5)), Vector((fx - 3.9, 1.65, 44.5)), 0.22, 0.22, segments=8)
 
-    # Angular faceted Subirachs-style sculptural groups along the Passion portico (Flagellation, Judas, Crucifixion)
-    face_w = math.pi  # figures face west, toward Plaça de la Sagrada Família
+    # ── Subirachs' groups along the S-shaped path (decorative, non-collidable mesh) ──
+    # Seen from the plaza (+Y is the viewer's LEFT): level 1 reads left -> right, level 2 right -> left,
+    # level 3 left -> right, ending top right with the burial.
+    face_w = math.pi
+    # Level 1 (ground): Last Supper (left), Kiss of Judas + magic square, Flagellation (centre),
+    # Peter's denial, Ecce Homo / Pilate (right)
     for sy in (-1, 1):
-        add_box(bm_pas, (fx - 3.2, sy * 6.8, Z_NAVE + 1.8), (1.8, 2.8, 3.6))
-        # Angular Subirachs groups atop the plinths (Flagellation / Judas' kiss)
+        add_box(bm_pas, (fx - 3.2, sy * 5.6, Z_NAVE + 1.0), (1.8, 2.6, 2.0))  # in front of the pier, off the walk line
         for i, fi in enumerate((-0.75, 0.0, 0.75)):
-            add_subirachs_figure(bm_pas, Vector((fx - 3.2, sy * 6.8 + fi, Z_NAVE + 3.6)), 2.3 - 0.15 * abs(fi), face_w + sy * 0.25 - fi * 0.3, kind=(1 if i == 0 else (2 if i == 2 else 0)))
-    # Second tier: Way of the Cross groups on a cantilevered ledge (soldiers, Veronica, the mourners)
-    add_box(bm_pas, (fx - 2.7, 0.0, 12.55), (2.2, 25.0, 0.5))
-    for k, y in enumerate((-11.0, -9.9, -8.7, -5.6, -4.6, 4.6, 5.7, 8.6, 9.8, 11.0)):
-        add_subirachs_figure(bm_pas, Vector((fx - 3.1, y, 12.8)), 2.1 + 0.15 * math.sin(k * 1.7), face_w + 0.2 * math.sin(k * 2.1), kind=k % 3)
-    # Crucified Christ on the bronze beam cross (centre, above the doors)
-    c = Vector((fx - 2.62, 0.0, 12.8))
-    add_frustum(bm_pas, c, 0.26, 0.2, 0.36, 0.24, 1.45, face_w)
-    for side in (-1, 1):
-        add_cylinder(bm_pas, c + Vector((0, side * 0.12, 1.35)), c + Vector((0, side * 1.25, 1.75)), 0.09, 0.07, segments=5)
-    add_frustum(bm_pas, c + Vector((0, 0, 1.45)), 0.22, 0.22, 0.2, 0.2, 0.3, face_w + 0.3, 0.3)
-    # Subirachs' iconic Flagellation column + Magic Square (33) plaque flanking the central door
+            add_subirachs_figure(bm_psculpt, Vector((fx - 3.2, sy * 5.6 + fi, Z_NAVE + 2.0)), 2.3 - 0.15 * abs(fi), face_w + sy * 0.25 - fi * 0.3, kind=(1 if i == 0 else (2 if i == 2 else 0)))
+    for k, y in enumerate((14.9, 13.8, 12.7)):  # Last Supper group on the far left (in front of the pier)
+        add_subirachs_figure(bm_psculpt, Vector((fx - 2.9, y, Z_NAVE)), 2.1, face_w - 0.3, kind=2 if k == 1 else 0)
+    # Flagellation column + Christ in the central doorway jamb
     add_cylinder(bm_pas, Vector((fx - 2.4, -4.2, Z_NAVE)), Vector((fx - 2.4, -4.2, Z_NAVE + 4.2)), 0.34, 0.30, segments=8)
+    add_subirachs_figure(bm_psculpt, Vector((fx - 2.95, -4.2, Z_NAVE)), 2.2, face_w)
+    # Magic square (4x4, constant 33) plaque beside the Kiss of Judas
     add_box(bm_gold, (fx - 1.72, 4.4, Z_NAVE + 3.2), (0.14, 1.25, 1.25))
-    # Horizontal iron/bronze beam of Subirachs' Crucifixion above the central portico
-    add_box(bm_bronze, (fx - 2.3, 0.0, 14.5), (0.45, 7.6, 0.45))
-    add_box(bm_bronze, (fx - 2.3, 0.0, 13.8), (0.45, 0.45, 4.2))
+
+    # Level 2 ledge (Z ≈ 10.6, above the doors): Way of the Cross, Veronica at the centre
+    add_box(bm_pas, (fx - 2.7, 0.0, 10.35), (2.2, 25.0, 0.5))
+    for k, y in enumerate((-11.0, -9.9, -8.7, -5.6, -4.6, -0.6, 0.6, 4.6, 5.7, 8.6, 9.8, 11.0)):
+        add_subirachs_figure(bm_psculpt, Vector((fx - 3.1, y, 10.6)), 2.1 + 0.15 * math.sin(k * 1.7), face_w + 0.2 * math.sin(k * 2.1), kind=k % 3)
+    # Veronica's veil: flat bronze-faced cloth with the face of Christ
+    add_box(bm_bronze, (fx - 3.65, 0.0, 12.9), (0.08, 1.2, 1.5))
+
+    # Level 3 ledge (Z ≈ 17.2, under the porch roof, in front of the open tower-gallery band):
+    # soldiers casting lots (left), the Crucifixion (centre), the Burial (right)
+    add_box(bm_pas, (fx - 3.0, 0.0, 16.95), (2.0, 25.0, 0.5))
+    for k, y in enumerate((10.8, 9.6, 8.3, 6.8)):
+        add_subirachs_figure(bm_psculpt, Vector((fx - 3.3, y, 17.2)), 2.1, face_w + 0.3 * math.sin(k), kind=1 if k % 2 == 0 else 0)
+    for k, y in enumerate((-6.6, -7.8, -9.0, -10.2)):
+        add_subirachs_figure(bm_psculpt, Vector((fx - 3.3, y, 17.2)), 2.0, face_w - 0.2, kind=2)
+    # Crucified Christ on the bronze beam cross (centre top)
+    add_box(bm_bronze, (fx - 3.4, 0.0, 19.6), (0.4, 0.4, 4.8))
+    add_box(bm_bronze, (fx - 3.4, 0.0, 21.0), (0.4, 4.6, 0.4))
+    c = Vector((fx - 3.75, 0.0, 18.4))
+    add_frustum(bm_psculpt, c, 0.26, 0.2, 0.36, 0.24, 1.45, face_w)
+    for side in (-1, 1):
+        add_cylinder(bm_psculpt, c + Vector((0, side * 0.12, 1.35)), c + Vector((0, side * 1.25, 1.75)), 0.09, 0.07, segments=5)
+    add_frustum(bm_psculpt, c + Vector((0, 0, 1.45)), 0.22, 0.22, 0.2, 0.2, 0.3, face_w + 0.3, 0.3)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GLORY FAÇADE (south, Blender -Y; main façade, under construction). Target values — this is the
+# PLANNED design; everything beyond the published elements below is conjecture and is kept simple:
+#   * Narthex with 7 doors (the 7 sacraments): one door per nave aisle (5) with the central one
+#     triple [Wikipedia — high for count, positions follow the 7.5 m module].
+#   * Portico of 7 large columns (gifts of the Holy Spirit; the deadly sins at their bases, the
+#     virtues on top) [Wikipedia / guides — high for count].
+#   * 16 hyperboloid lanterns rising in a crescendo over the portico [project descriptions — medium;
+#     their layout in two staggered rows of 8 and their heights are CONJECTURE].
+#   * Clouds bearing the text of the Creed above the portico [project descriptions — medium; the
+#     single gilt word CREDO stands in for the full text — CONJECTURE].
+#   * Entrance raised ~5 m above the street with a ~57 m stair bridging Carrer de Mallorca
+#     [Wikipedia — medium]. NOT modelled at that scale: the runtime floor of the terrace is 1.2 m and
+#     the stair ramp is y = -57.5..-71 (CollisionSystem), so the stair keeps its current footprint.
+#   * The 4 Glory towers stand on 8 columns (official site, 2025) — the towers are another module;
+#     here the wall piers under them stay where they were.
+GLORY_FY = -49.5
+GLORY_COLUMN_Y = GLORY_FY - 6.8      # portico column line
+GLORY_CANOPY_Z = (26.6, 29.4)        # portico roof underside / top
 
 
 def build_glory_facade(
     bm_warm: bmesh.types.BMesh,
+    bm_gdeco: bmesh.types.BMesh,
     bm_stairs_warm: bmesh.types.BMesh,
     bm_bronze: bmesh.types.BMesh,
     bm_gold: bmesh.types.BMesh,
 ) -> None:
-    """South Glory Facade (Y = -49.5, Completed Design): 7 tall columns, cloud portico, monumental bridge staircase."""
-    fy = -49.5
+    """South Glory Facade (Y = -49.5, planned design): narthex with 7 doors, portico of 7 columns,
+    16 hyperboloid lanterns, the Creed clouds and the grand staircase."""
+    fy = GLORY_FY
+    zc0, zc1 = GLORY_CANOPY_Z
 
-    # Main facade wall split cleanly around Z = 14.5..18.5m; upper wall placed strictly NORTH (fy+3.0 = -46.5, Y=-47.4..-45.6)
-    # so all 4 Glory Tower spiral staircases (at Y=-49.5, r<=1.9m -> -51.4..-47.6) stay 100% open & unobstructed!
+    # Narthex wall: piers between the 7 doors (walkable openings unchanged: |x| < 4.5, 7.9..11.5,
+    # 14.9..19.3); the upper wall stands north of the Glory tower spirals (Y = -47.4..-45.6).
     for px in (-21.0, -13.2, -6.2, 6.2, 13.2, 21.0):
         add_box(bm_warm, (px, fy + 2.4, 7.2), (3.4, 3.2, 14.4))
         add_box(bm_warm, (px, fy + 3.0, 25.4), (3.4, 1.8, 13.4))
     add_box(bm_warm, (0.0, fy + 2.4, 12.2), (45.0, 2.8, 3.6))
     add_box(bm_warm, (0.0, fy + 3.0, 26.8), (45.0, 1.8, 16.4))
 
-    # Monumental Bronze Lord's Prayer Doors folded open at the center
+    # Seven door frames (parabolic arches on the narthex wall face). The central triple door shares
+    # the 9 m opening: its two inner arches spring from corbels at Z = 4.2 m (head height stays clear).
+    yd = fy + 0.7
+    for xc, hw, z_spring, rise in ((-3.0, 1.45, 4.2, 5.4), (0.0, 1.45, 4.2, 5.8), (3.0, 1.45, 4.2, 5.4),
+                                   (-9.7, 1.75, Z_NAVE, 8.6), (9.7, 1.75, Z_NAVE, 8.6),
+                                   (-17.1, 2.15, Z_NAVE, 8.6), (17.1, 2.15, Z_NAVE, 8.6)):
+        add_arch_tube(bm_gdeco, Vector((xc - hw - 0.05, yd, z_spring)), Vector((xc + hw + 0.05, yd, z_spring)), rise, 0.26, 0.2, n=12, segments=6, sharp=1.2)
+    for xc in (-1.5, 1.5):  # corbels carrying the inner arches of the triple door
+        add_lathe(bm_gdeco, xc, yd, [(3.6, 0.05), (4.0, 0.3), (4.3, 0.34)], segments=6, cap_top=True)
+    # Bronze doors folded open (central 'Our Father' door and the side doors)
     for sx in (-1, 1):
         add_box(bm_bronze, (sx * 4.2, fy + 3.2, Z_NAVE + 4.0), (0.32, 3.2, 8.0))
         add_box(bm_bronze, (sx * 9.8, fy + 2.2, Z_NAVE + 3.2), (3.6, 0.32, 6.4))
 
-    # 7 Monumental Fluted Lantern Columns of the Glory Portico (spanning X = -18..+18 at Y = -56.3)
+    # PORTICO: 7 columns (gifts of the Holy Spirit) — Gaudí double-twist shafts on a 'sin' pedestal,
+    # with a 'virtue' capital knot, carrying the portico roof. Spacing 6 m (x = -18..18).
     for i in range(7):
         px = -18.0 + i * 6.0
-        h_col = 26.0 + (4.5 - abs(i - 3) * 1.2)
-        add_cylinder(bm_warm, Vector((px, fy - 6.8, Z_NAVE)), Vector((px, fy - 6.8, h_col)), 1.32, 0.92, segments=12)
-        # 4 sculpted vertical stone flutes wrapping each Glory column
-        for k in range(4):
-            a = k * math.pi * 0.5 + math.pi * 0.25
-            add_cylinder(
-                bm_warm,
-                Vector((px + 1.22 * math.cos(a), fy - 6.8 + 1.22 * math.sin(a), Z_NAVE)),
-                Vector((px + 0.88 * math.cos(a), fy - 6.8 + 0.88 * math.sin(a), h_col)),
-                0.24,
-                0.18,
-                segments=6,
-            )
-        # Hyperboloid stone lantern crowning each column (Gaudí's planned 'lantern' columns) + gilt finial
-        add_lathe(
-            bm_warm, px, fy - 6.8,
-            [(h_col - 0.3, 1.0), (h_col + 0.6, 0.82), (h_col + 1.6, 0.58), (h_col + 2.6, 0.82), (h_col + 3.5, 1.18), (h_col + 3.9, 1.0), (h_col + 4.5, 0.55)],
-            segments=12, cap_top=True,
-        )
-        for k in range(6):
-            a = 2.0 * math.pi * k / 6.0
-            # Twisted hyperboloid rulings (straight lines that generate the waist) — reads as lantern ribs
-            add_cylinder(
-                bm_warm,
-                Vector((px + 0.98 * math.cos(a), fy - 6.8 + 0.98 * math.sin(a), h_col - 0.2)),
-                Vector((px + 1.16 * math.cos(a + 1.3), fy - 6.8 + 1.16 * math.sin(a + 1.3), h_col + 3.5)),
-                0.09, 0.09, segments=4, cap=False,
-            )
-        add_cylinder(bm_gold, Vector((px, fy - 6.8, h_col + 4.4)), Vector((px, fy - 6.8, h_col + 6.6)), 0.42, 0.06, segments=8)
-        # Parabolic vault ribs tying portico columns cleanly into the portico canopy (strictly south of Glory spirals!)
-        add_cylinder(bm_warm, Vector((px, fy - 6.8, h_col - 2.0)), Vector((px, fy - 2.6, h_col + 1.8)), 0.72, 0.65, segments=8)
+        cy = GLORY_COLUMN_Y
+        # Pedestal: crouching, lumpy mass (the deadly sin trampled under the gift)
+        add_lathe(bm_warm, px, cy, [(Z_NAVE, 1.5), (Z_NAVE + 1.1, 1.45), (Z_NAVE + 2.2, 1.35), (Z_NAVE + 2.8, 1.22)], segments=10, cap_top=True, phase=0.3 * i)
+        add_double_twist_shaft(bm_warm, px, cy, Z_NAVE + 2.8, zc0 - 1.6, 1.2, 0.92, sides=8, rings=12, segs=24, flute=0.14)
+        # Virtue capital: ellipsoidal knot flaring into the roof
+        add_lathe(bm_warm, px, cy, [(zc0 - 1.7, 0.95), (zc0 - 1.0, 1.35), (zc0 - 0.3, 1.5), (zc0 + 0.05, 1.9)], segments=12, cap_top=True)
+        add_robed_figure(bm_gdeco, Vector((px, cy - 1.45, zc0 - 3.6)), 2.0, -math.pi * 0.5, wings=True)
+        # Sin creature crouched on the pedestal front (decorative)
+        add_ellipsoid(bm_gdeco, Vector((px, cy - 1.55, Z_NAVE + 1.0)), (0.9, 0.55, 0.7), subdivisions=1)
+        add_ellipsoid(bm_gdeco, Vector((px, cy - 2.05, Z_NAVE + 1.55)), (0.35, 0.3, 0.32), subdivisions=1)
 
-    # Sweeping sculptural "Cloud & Glory" vaulted portico roof canopy strictly SOUTH of Glory tower spirals (Y = -57.5..-51.9)
-    add_box(bm_warm, (0.0, fy - 5.2, 29.0), (42.0, 5.6, 4.2))
-    add_pointed_gable(bm_warm, (0.0, fy - 5.5), 30.5, 34.0, 18.0, 3.2, facing="Y-")
+    # Portico roof and its arcade: parabolic arches between the columns along the front edge
+    add_box(bm_warm, (0.0, fy - 5.6, (zc0 + zc1) * 0.5), (42.0, 5.8, zc1 - zc0))
+    # (springing inside the column shafts so the arcade reads continuous)
+    for i in range(6):
+        x0 = -18.0 + i * 6.0
+        add_arch_tube(bm_warm, Vector((x0, GLORY_COLUMN_Y - 0.3, zc0 - 8.6)), Vector((x0 + 6.0, GLORY_COLUMN_Y - 0.3, zc0 - 8.6)), 8.4, 0.6, 0.5, n=12, segments=7, sharp=1.0)
 
-    # Monumental Ceremonial Terrace & Grand Staircase descending south over Carrer de Mallorca!
-    # Wide flat podium terrace cleanly ending at Y = -58.0 (ZERO buried top steps!)
+    # 16 hyperboloid lanterns in a crescendo over the portico: two staggered rows of 8,
+    # lower in front, taller behind, rising toward the centre (layout/heights: conjecture).
+    def crescendo(x: float) -> float:
+        return max(0.0, 1.0 - abs(x) / 21.5) ** 1.2
+    for i in range(8):
+        x = -19.25 + 5.5 * i
+        add_hyperboloid_lantern(bm_warm, bm_gold, x, fy - 7.6, zc1, 6.0 + 9.0 * crescendo(x), 1.35, segments=12)
+    for i in range(8):
+        x = -16.5 + i * (33.0 / 7.0)
+        add_hyperboloid_lantern(bm_warm, bm_gold, x, fy - 5.3, zc1, 9.0 + 14.0 * crescendo(x), 1.55, segments=12)
+
+    # Clouds bearing the Creed above the portico, in front of the tower bases (decorative)
+    for row, (zc, w, depth) in enumerate(((zc1 + 3.0, 40.0, 2.6), (zc1 + 7.5, 32.0, 2.4), (zc1 + 11.5, 24.0, 2.2), (zc1 + 14.2, 16.0, 2.0))):
+        add_cloud_mass(bm_gdeco, Vector((0.0, fy - 5.0, zc)), w, 3.4, depth, lobes=int(w / 2.6), seed=row)
+    # Gilt lettering of the Creed (one word as a stand-in for the full text)
+    glyph_c = [(0.9, 0.9, 0.3, 1.0), (0.3, 1.0, 0.05, 0.5), (0.05, 0.5, 0.3, 0.0), (0.3, 0.0, 0.9, 0.1)]
+    glyph_r = [(0.1, 0.0, 0.1, 1.0), (0.1, 1.0, 0.75, 0.85), (0.75, 0.85, 0.75, 0.6), (0.75, 0.6, 0.1, 0.5), (0.35, 0.5, 0.85, 0.0)]
+    glyph_e = [(0.1, 0.0, 0.1, 1.0), (0.1, 1.0, 0.85, 1.0), (0.1, 0.5, 0.65, 0.5), (0.1, 0.0, 0.85, 0.0)]
+    glyph_d = [(0.1, 0.0, 0.1, 1.0), (0.1, 1.0, 0.6, 0.85), (0.6, 0.85, 0.85, 0.5), (0.85, 0.5, 0.6, 0.15), (0.6, 0.15, 0.1, 0.0)]
+    glyph_o = [(0.5, 1.0, 0.1, 0.5), (0.1, 0.5, 0.5, 0.0), (0.5, 0.0, 0.9, 0.5), (0.9, 0.5, 0.5, 1.0)]
+    add_letter_strokes(bm_gold, Vector((-6.3, fy - 6.5, zc1 + 14.6)), Vector((1, 0, 0)), [glyph_c, glyph_r, glyph_e, glyph_d, glyph_o], 2.1, 0.55, 0.14)
+
+    # Ceremonial terrace and grand staircase toward Carrer de Mallorca (footprint fixed by the runtime)
     add_box(bm_warm, (0.0, -52.5, Z_NAVE * 0.5), (44.0, 11.0, Z_NAVE))
-    # Grand terraced cascade stairs (Y = -58.6..-70.0, dedicated stair mesh so player climbs automatically!)
     for step in range(10):
         sz = (10 - step) * (Z_NAVE / 10.0) + 0.16
         sy = -58.65 - step * 1.18
         sw = 34.0 + step * 0.8
         add_box(bm_stairs_warm, (0.0, sy, sz * 0.5 - 0.16), (sw, 1.24, sz))
-    # Ornamental flanking parapet walls with gilded light obelisks along the grand staircase
+    # Flanking parapets with the two monuments at the foot of the stair (fire and water in Gaudí's
+    # scheme — represented as gilt flame finials on stone stems; form is conjecture)
     for sx in (-1, 1):
         add_box(bm_warm, (sx * 19.5, -64.0, 1.2), (1.4, 13.5, 2.4))
-        add_cylinder(bm_gold, Vector((sx * 19.5, -70.0, 2.4)), Vector((sx * 19.5, -70.0, 6.2)), 0.55, 0.14, segments=8)
+        add_lathe(bm_warm, sx * 19.5, -70.0, [(2.4, 0.9), (4.0, 0.6), (6.5, 0.5), (7.2, 0.85)], segments=8, cap_top=True)
+        add_cylinder(bm_gold, Vector((sx * 19.5, -70.0, 7.1)), Vector((sx * 19.5, -70.0, 9.6)), 0.6, 0.06, segments=8)
 
 
 def add_parabolic_roof_vault(
@@ -696,36 +770,24 @@ def build_roofs_and_pinnacles(
     for sx in (-1, 1):
         add_parabolic_roof_vault(bm_warm, bm_gold, (sx * 18.2, 0.0, Z_NAVE_VAULT + 0.2), 16.4, 21.2, 8.8, axis="X", ribs=3)
 
-    # 3. Side Aisles Exterior Sloped Roofs + True Pointed Gables + Detailed Fruit-Basket Pinnacles (Obstkörbe)!
+    # 3. Nave side elevation (owned walls/windows are in build_interior; this module adds the crowning):
+    #    Target: one gabled pediment per 7.5 m bay at BOTH levels — over the aisle windows (aisle roof,
+    #    ~30 m vault) and over the clerestory of the central nave (~45 m vault) — each crowned by a
+    #    trencadís fruit-basket pinnacle [photos / guides — medium confidence for which level carries
+    #    which finial]. Bay centres follow the interior's wall bays (y = -18.75 .. -48.75 aisle level;
+    #    clerestory only where the central nave roof is, y = -18.75 .. -41.25, clear of the Glory towers).
     for sx in (-1, 1):
         add_parabolic_roof_vault(bm_warm, bm_gold, (sx * 15.2, -26.8, Z_AISLE_VAULT + 0.2), 15.4, 38.6, 3.8, axis="Y", ribs=5)
-        # Decorative pointed gables + iconic Venetian Trencadís Fruit-Basket Pinnacles along nave roofline!
         for bay in range(5):
             py = -18.75 - bay * GRID
             px = sx * 22.8
             add_pointed_gable(bm_warm, (px, py), Z_AISLE_VAULT + 0.4, 6.4, 9.6, 1.5, facing="X+" if sx > 0 else "X-")
-            # Sculpted woven stone basket chalice (Z = 40.8..43.8m)
-            z_bask = Z_AISLE_VAULT + 9.6
-            add_cylinder(bm_warm, Vector((px, py, z_bask - 0.3)), Vector((px, py, z_bask + 1.4)), 0.72, 0.96, segments=10)
-            add_cylinder(bm_mosaic, Vector((px, py, z_bask + 1.2)), Vector((px, py, z_bask + 3.0)), 0.92, 1.22, segments=10)
-            # Clustered colorful Venetian ceramic fruit spheres (oranges, apples, grapes, figs) crowning the basket!
-            for fi in range(7):
-                fa = 2.0 * math.pi * fi / 7.0
-                r_f = 0.78 if fi % 2 == 0 else 0.56
-                z_f = z_bask + (3.25 if fi % 2 == 0 else 3.72)
-                ret = bmesh.ops.create_icosphere(bm_mosaic, subdivisions=1, radius=0.42)
-                for v in ret["verts"]:
-                    v.co.x += px + r_f * math.cos(fa)
-                    v.co.y += py + r_f * math.sin(fa)
-                    v.co.z += z_f
-            # Central top fruit globe + golden wheat-sheaf & cross pinnacle finial
-            ret_top = bmesh.ops.create_icosphere(bm_mosaic, subdivisions=1, radius=0.52)
-            for v in ret_top["verts"]:
-                v.co.x += px
-                v.co.y += py
-                v.co.z += z_bask + 4.15
-            add_cylinder(bm_gold, Vector((px, py, z_bask + 4.4)), Vector((px, py, z_bask + 6.4)), 0.32, 0.06, segments=8)
-            add_cylinder(bm_gold, Vector((px, py - 0.65, z_bask + 5.6)), Vector((px, py + 0.65, z_bask + 5.6)), 0.12, 0.12, segments=6)
+            add_fruit_basket(bm_warm, bm_mosaic, bm_gold, px, py, Z_AISLE_VAULT + 9.3, 0.95)
+            if bay < 4:
+                # Clerestory gable rising in front of the central-nave roof slope, with its fruit basket
+                pxc = sx * 8.6
+                add_pointed_gable(bm_warm, (pxc, py), Z_NAVE_VAULT - 4.6, 5.8, 10.0, 1.3, facing="X+" if sx > 0 else "X-")
+                add_fruit_basket(bm_warm, bm_mosaic, bm_gold, pxc, py, Z_NAVE_VAULT + 5.1, 1.0)
 
     # 4. ICONIC NEO-GOTHIC NORTH APSE EXTERIOR (Oldest 1891–1893 part of Sagrada Família!):
     #    8 Radial Buttresses + Flying Buttress Arches + 7 Steep Chapel Gables with Golden 'M' Monograms + 14 Catalan Gargoyles!
@@ -800,7 +862,11 @@ def build_facades() -> None:
 
     bm_nat = bmesh.new()
     bm_pas = bmesh.new()
+    bm_pcol = bmesh.new()
+    bm_pbones = bmesh.new()
+    bm_psculpt = bmesh.new()
     bm_warm = bmesh.new()
+    bm_gdeco = bmesh.new()
     bm_stairs_nat = bmesh.new()
     bm_stairs_pas = bmesh.new()
     bm_stairs_warm = bmesh.new()
@@ -812,9 +878,9 @@ def build_facades() -> None:
 
     bm_deco = bmesh.new()
     build_nativity_facade(bm_nat, bm_stairs_nat, bm_bronze, bm_cypress, bm_gold, bm_white)
-    add_nativity_encrustation(bm_deco, 31.5)
-    build_passion_facade(bm_pas, bm_stairs_pas, bm_bronze, bm_gold)
-    build_glory_facade(bm_warm, bm_stairs_warm, bm_bronze, bm_gold)
+    add_nativity_encrustation(bm_deco, NATIVITY_FX)
+    build_passion_facade(bm_pas, bm_pcol, bm_pbones, bm_psculpt, bm_stairs_pas, bm_bronze, bm_gold)
+    build_glory_facade(bm_warm, bm_gdeco, bm_stairs_warm, bm_bronze, bm_gold)
     build_roofs_and_pinnacles(bm_warm, bm_mosaic, bm_gold)
 
     # Gaudí's dripping, organically eroded Nativity relief + crisp stone edge bevels on Passion & Glory
@@ -824,11 +890,17 @@ def build_facades() -> None:
     bevel_sharp_edges(bm_warm, width=0.055, angle_deg=60.0)
 
     finalize_bmesh_object(bm_nat, "Facade_Nativity", mats["nativity_stone"], smooth=True, uv_scale=0.16, weathering=0.5, ao_vert_limit=150000)
-    # Decorative encrustation: '_Leaves' keeps it out of the collision BVH (CollisionSystem NON_COLLIDABLE_SUBSTRINGS)
-    # while 'Facade_Nativity' keeps it in the 1894-1928 construction-timeline phase and it still casts sun shadows.
+    # Decorative layers: '_Leaves' keeps them out of the collision BVH (CollisionSystem NON_COLLIDABLE_SUBSTRINGS)
+    # while the 'Facade_Nativity' / 'Facade_Passion' / 'Facade_GloryAndRoofs' prefixes keep them in the right
+    # construction-timeline phase; they still cast sun shadows.
     finalize_bmesh_object(bm_deco, "Facade_Nativity_Sculpture_Leaves", mats["nativity_stone"], smooth=True, uv_scale=0.3, weathering=0.5, ao_dist=2.5, ao_vert_limit=150000)
     finalize_bmesh_object(bm_pas, "Facade_Passion", mats["passion_stone"], smooth=False, uv_scale=0.15)
+    # Large uv scale: the shared ashlar texture's coursing would otherwise band the columns into "drums"
+    finalize_bmesh_object(bm_pcol, "Facade_Passion_Columns", mats["passion_stone"], smooth=True, uv_scale=0.05)
+    finalize_bmesh_object(bm_pbones, "Facade_Passion_BonesAndRoots_Leaves", mats["passion_stone"], smooth=True, uv_scale=0.2, ao_dist=2.5)
+    finalize_bmesh_object(bm_psculpt, "Facade_Passion_Sculpture_Leaves", mats["passion_stone"], smooth=False, uv_scale=0.3, ao_dist=2.0)
     finalize_bmesh_object(bm_warm, "Facade_GloryAndRoofs", mats["sandstone_warm"], smooth=False, uv_scale=0.14)
+    finalize_bmesh_object(bm_gdeco, "Facade_GloryAndRoofs_Sculpture_Leaves", mats["sandstone_warm"], smooth=True, uv_scale=0.25, ao_dist=2.5)
     finalize_bmesh_object(bm_stairs_nat, "Facade_EntranceStairs_Nativity", mats["nativity_stone"], smooth=False, uv_scale=0.16, bake_ao=False)
     finalize_bmesh_object(bm_stairs_pas, "Facade_EntranceStairs_Passion", mats["passion_stone"], smooth=False, uv_scale=0.15, bake_ao=False)
     finalize_bmesh_object(bm_stairs_warm, "Facade_EntranceStairs_Glory", mats["sandstone_warm"], smooth=False, uv_scale=0.14, bake_ao=False)
