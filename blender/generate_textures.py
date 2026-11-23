@@ -13,9 +13,26 @@ os.makedirs(TEX_DIR, exist_ok=True)
 os.makedirs(PUBLIC_TEX_DIR, exist_ok=True)
 
 
+def save_public_webp(png_name: str, size: int = 512, quality: int = 85) -> str:
+    """Write a compact WebP copy of a generated texture to public/textures/ (runtime projector textures)."""
+    src = os.path.join(TEX_DIR, png_name)
+    img = bpy.data.images.load(src)
+    img.scale(size, size)
+    out = os.path.join(PUBLIC_TEX_DIR, os.path.splitext(png_name)[0] + ".webp")
+    img.filepath_raw = out
+    img.file_format = "WEBP"
+    try:
+        img.save(filepath=out, quality=quality)
+    except TypeError:
+        img.save()
+    bpy.data.images.remove(img)
+    return out
+
+
 def save_rgba_png(name: str, rgba: np.ndarray, colorspace: str = "sRGB") -> str:
     h, w, _ = rgba.shape
-    target_dir = PUBLIC_TEX_DIR if name in ("stained_glass_east.png", "stained_glass_west.png") else TEX_DIR
+    # All source PNGs live in textures_src/ (the 1 MB stained-glass PNGs used to land in public/)
+    target_dir = TEX_DIR
     path = os.path.join(target_dir, name)
     img = bpy.data.images.new(name=name, width=w, height=h, alpha=True, float_buffer=False)
     img.colorspace_settings.name = colorspace
@@ -280,7 +297,10 @@ def generate_trencadis_mosaic(size: int = 1024) -> None:
     num_pts = 240
     px = rng.random(num_pts)
     py = rng.random(num_pts)
-    pcol = palette[rng.integers(0, len(palette), size=num_pts)]
+    # The apostle pinnacles read predominantly gold & vermilion with white accents (blue/green sparser);
+    # a uniform draw averaged out to a washed-out pastel pink at viewing distance.
+    weights = np.array([0.30, 0.06, 0.09, 0.31, 0.13, 0.11], dtype=np.float64)
+    pcol = palette[rng.choice(len(palette), size=num_pts, p=weights / weights.sum())]
 
     yy, xx = np.mgrid[0:size, 0:size] / float(size)
     d1 = np.full((size, size), 1e9, dtype=np.float32)
@@ -299,7 +319,7 @@ def generate_trencadis_mosaic(size: int = 1024) -> None:
         cid = np.where(better1, i, cid)
 
     edge = np.clip((d2 - d1) / 0.0075, 0.0, 1.0)
-    grout = np.array([0.85, 0.82, 0.75], dtype=np.float32)
+    grout = np.array([0.58, 0.55, 0.50], dtype=np.float32)
     albedo = pcol[cid] * edge[..., None] + grout[None, None, :] * (1.0 - edge[..., None])
     normal = height_to_normal(edge, strength=3.4)
     roughness = np.clip(0.12 * edge + 0.86 * (1.0 - edge), 0.08, 0.92)
@@ -760,6 +780,9 @@ def generate_all_textures() -> None:
         size=1024,
         seed=403,
     )
+    # 512px WebP copies used by the runtime SpotLight projectors & floor colour carpets
+    save_public_webp("stained_glass_east.png")
+    save_public_webp("stained_glass_west.png")
     print("[Textures] Done.")
 
 

@@ -25,7 +25,7 @@ from common import (
     Z_NAVE,
     Z_NAVE_VAULT,
     add_box,
-    add_branching_canopy,
+    add_tree_canopy,
     add_cylinder,
     add_gaudi_window_tracery,
     apply_box_uv,
@@ -176,6 +176,7 @@ def build_interior() -> None:
     mesh_sandstone = create_instanced_column_mesh("Mesh_Col_Sandstone", mats["sandstone_warm"], Z_NAVE, 16.5, 0.56, sides=6)
 
     bm_branches = bmesh.new()
+    bm_lamps = bmesh.new()  # small glowing lamps set into the secondary knots (as on the real columns)
 
     # 3a. 4 Massive Red Porphyry Crossing Columns at (±7.5, ±7.5)
     for sx in (-1, 1):
@@ -185,8 +186,8 @@ def build_interior() -> None:
             # Gilded tetramorph capital medallion ring
             add_cylinder(bm_gold, Vector((cx, cy, 19.8)), Vector((cx, cy, 21.4)), 1.48, 1.48, segments=16, cap=False)
             # Giant branching arms rising to the 60m crossing vault + 45m nave/transept vaults
-            add_branching_canopy(bm_branches, (cx, cy), 20.8, Z_CROSSING_VAULT - 2.0, 4.4, 4, 0.62, angle_offset=math.pi / 4.0)
-            add_branching_canopy(bm_branches, (cx, cy), 20.2, Z_NAVE_VAULT - 1.8, 5.2, 4, 0.48, angle_offset=0.0)
+            add_tree_canopy(bm_branches, (cx, cy), 20.8, Z_CROSSING_VAULT - 2.0, 4.4, 4, 0.62, angle_offset=math.pi / 4.0, bm_lamps=bm_lamps)
+            add_tree_canopy(bm_branches, (cx, cy), 20.2, Z_NAVE_VAULT - 1.8, 5.2, 4, 0.48, angle_offset=0.0)
 
     # 3b. Dark Basalt Columns (Central Nave rows X = ±7.5, Transept rows Y = ±7.5)
     basalt_positions = []
@@ -200,9 +201,9 @@ def build_interior() -> None:
     for idx, (cx, cy) in enumerate(basalt_positions):
         place_instance(f"Col_Basalt_{idx}", mesh_basalt, (cx, cy, 0.0))
         add_cylinder(bm_gold, Vector((cx, cy, 19.0)), Vector((cx, cy, 20.1)), 1.05, 1.05, segments=14, cap=False)
-        add_branching_canopy(bm_branches, (cx, cy), 19.8, Z_NAVE_VAULT - 2.0, 4.2, 4, 0.44, angle_offset=math.pi / 4.0)
+        add_tree_canopy(bm_branches, (cx, cy), 19.8, Z_NAVE_VAULT - 2.0, 4.2, 4, 0.44, angle_offset=math.pi / 4.0, bm_lamps=bm_lamps)
         # Side branches reaching toward the 30m side aisles
-        add_branching_canopy(bm_branches, (cx, cy), 18.8, Z_AISLE_VAULT - 1.5, 4.0, 2, 0.36, angle_offset=0.0 if abs(cx) < 10 else math.pi / 2.0)
+        add_tree_canopy(bm_branches, (cx, cy), 18.8, Z_AISLE_VAULT - 1.5, 4.0, 2, 0.36, angle_offset=0.0 if abs(cx) < 10 else math.pi / 2.0)
 
     # 3c. Grey Granite Columns (Inner side aisles X = ±15.0, Y = -15..-45 & Transept outer)
     granite_positions = []
@@ -215,7 +216,7 @@ def build_interior() -> None:
     for idx, (cx, cy) in enumerate(granite_positions):
         place_instance(f"Col_Granite_{idx}", mesh_granite, (cx, cy, 0.0))
         add_cylinder(bm_gold, Vector((cx, cy, 17.4)), Vector((cx, cy, 18.3)), 0.85, 0.85, segments=12, cap=False)
-        add_branching_canopy(bm_branches, (cx, cy), 18.1, Z_AISLE_VAULT - 1.6, 3.6, 4, 0.34, angle_offset=math.pi / 4.0)
+        add_tree_canopy(bm_branches, (cx, cy), 18.1, Z_AISLE_VAULT - 1.6, 3.6, 4, 0.34, angle_offset=math.pi / 4.0, bm_lamps=bm_lamps)
 
     # 3d. Apse Ambulatory Columns (7 radial granite/porphyry columns around the sanctuary)
     for i in range(8):
@@ -223,16 +224,18 @@ def build_interior() -> None:
         cx = 11.2 * math.cos(ang)
         cy = 16.5 + 11.2 * math.sin(ang)
         place_instance(f"Col_Apse_{i}", mesh_granite, (cx, cy, 0.0), rot_z=ang)
-        add_branching_canopy(bm_branches, (cx, cy), 18.2, Z_NAVE_VAULT - 2.5, 3.5, 4, 0.36, angle_offset=ang)
+        add_tree_canopy(bm_branches, (cx, cy), 18.2, Z_NAVE_VAULT - 2.5, 3.5, 4, 0.36, angle_offset=ang, bm_lamps=bm_lamps)
 
     # 3e. Outer Sandstone Gallery Columns along East & West Nave Walls
     for bay in range(2, 7):
         for sx in (-1, 1):
             cx, cy = sx * 21.8, -bay * GRID
             place_instance(f"Col_Wall_{sx}_{bay}", mesh_sandstone, (cx, cy, 0.0))
-            add_branching_canopy(bm_branches, (cx, cy), 16.8, Z_AISLE_VAULT - 1.6, 2.6, 3, 0.28, angle_offset=math.pi if sx > 0 else 0.0)
+            add_tree_canopy(bm_branches, (cx, cy), 16.8, Z_AISLE_VAULT - 1.6, 2.6, 3, 0.28, angle_offset=math.pi if sx > 0 else 0.0, bm_lamps=bm_lamps)
 
-    finalize_bmesh_object(bm_branches, "Interior_ColumnBranches", mats["sandstone_warm"], smooth=True, uv_scale=0.22)
+    finalize_bmesh_object(bm_branches, "Interior_ColumnBranches", mats["sandstone_warm"], smooth=True, uv_scale=0.22, ao_dist=1.8, ao_vert_limit=90000)
+    # 'LanternAndCandleGlow' keeps the knot lamps out of the collision BVH; 'CandleGlow' material = runtime lamp group
+    finalize_bmesh_object(bm_lamps, "Interior_KnotLamps_LanternAndCandleGlow", mats["candle_glow"], smooth=True, uv_scale=0.5, bake_ao=False)
 
     # ── 4. Walkable Organically Wavy Cantories (Emporen at Z = 14.5m) with OPEN Corner Stairwell Cutouts! ──
     bm_gal = bmesh.new()

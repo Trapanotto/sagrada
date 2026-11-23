@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -18,7 +19,6 @@ HEADERS = {"User-Agent": "SagradaFamilia3D/1.0"}
 TEXTURES = {
     "sandstone_warm": "large_sandstone_blocks",
     "nativity_stone": "old_sandstone_02",
-    "passion_stone": "stone_tiles_02",
     "crypt_stone": "old_stone_wall_02",
     "granite_grey": "granite_tile_02",
     "floor_marble": "marble_01",
@@ -99,10 +99,13 @@ def fetch_hdri(local_name: str, polyhaven_id: str, res: str = "2k") -> str:
 
 
 def main() -> None:
-    print("=== Downloading CC0 Poly Haven Photoscans & 2K PureSky HDRIs ===")
+    # The web app ships compact public/hdri/*_1k.hdr files; the 2K source HDRIs (~6 MB each) are only
+    # fetched on request (--hdri) so a plain asset refresh never drops unused multi-MB files into public/.
+    want_hdri = "--hdri" in sys.argv
+    print("=== Downloading CC0 Poly Haven Photoscans" + (" & 2K PureSky HDRIs" if want_hdri else "") + " ===")
     with ThreadPoolExecutor(max_workers=6) as ex:
         tex_futs = [ex.submit(fetch_texture_set, name, pid, "1k") for name, pid in TEXTURES.items()]
-        hdri_futs = [ex.submit(fetch_hdri, name, pid, "2k") for name, pid in HDRIS.items()]
+        hdri_futs = [ex.submit(fetch_hdri, name, pid, "2k") for name, pid in HDRIS.items()] if want_hdri else []
 
         for f in tex_futs:
             print(" ", ", ".join(f.result()))

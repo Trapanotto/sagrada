@@ -18,7 +18,10 @@ from common import (
     Z_NAVE_VAULT,
     add_box,
     add_cylinder,
-    apply_organic_stone_displacement,
+    add_ellipsoid,
+    add_lathe,
+    add_swept_tube,
+    apply_dripping_relief,
     bevel_sharp_edges,
     export_glb,
     finalize_bmesh_object,
@@ -148,6 +151,98 @@ def add_turtle_column_base(
     add_cylinder(bm_stone, Vector((cx, cy, z_floor + 9.0)), Vector((cx, cy, z_floor + 10.1)), 0.44, 0.72, segments=10)
 
 
+def add_robed_figure(bm: bmesh.types.BMesh, base: Vector, height: float, face: float, wings: bool = False, arm_up: float = 0.0) -> None:
+    """Compact sculpted robed figure (Nativity/Passion statuary): bell-shaped drapery, shoulders, head."""
+    h = height
+    add_lathe(
+        bm, base.x, base.y,
+        [(base.z, h * 0.17), (base.z + h * 0.35, h * 0.15), (base.z + h * 0.62, h * 0.13), (base.z + h * 0.78, h * 0.12), (base.z + h * 0.83, h * 0.06)],
+        segments=7, cap_bottom=False, cap_top=True, phase=face, squash=(0.75, 1.0),
+    )
+    add_ellipsoid(bm, base + Vector((0.0, 0.0, h * 0.9)), (h * 0.075, h * 0.07, h * 0.09), subdivisions=1)
+    f = Vector((math.cos(face), math.sin(face), 0.0))
+    s = Vector((-math.sin(face), math.cos(face), 0.0))
+    if arm_up:
+        add_cylinder(bm, base + Vector((0, 0, h * 0.74)) + s * h * 0.1, base + Vector((0, 0, h * (0.74 + 0.25 * arm_up))) + s * h * 0.22 + f * h * 0.18, h * 0.04, h * 0.03, segments=5)
+    if wings:
+        for side in (-1, 1):
+            add_ellipsoid(bm, base + Vector((0, 0, h * 0.72)) - f * h * 0.12 + s * side * h * 0.22, (h * 0.04, h * 0.16, h * 0.34), subdivisions=1, rot_z=face, roll=-side * 0.45)
+
+
+def add_leaf_cluster(bm: bmesh.types.BMesh, center: Vector, radius: float, face: float, count: int = 5, seed: int = 0) -> None:
+    """Carved foliage tuft: flattened, splayed leaf lobes (the facade's botanical encrustation)."""
+    for i in range(count):
+        a = 2.0 * math.pi * (i / count) + seed * 0.7
+        tilt = 0.5 + 0.35 * math.sin(seed * 1.7 + i)
+        p = center + Vector((math.cos(face) * radius * 0.3, math.sin(face) * radius * 0.3, 0.0)) \
+            + Vector((-math.sin(face) * math.cos(a) * radius * 0.55, math.cos(face) * math.cos(a) * radius * 0.55, math.sin(a) * radius * 0.55))
+        add_ellipsoid(bm, p, (radius * 0.18, radius * 0.55, radius * 0.28), subdivisions=1, rot_z=face + math.cos(a) * 0.6, roll=a + tilt)
+
+
+def add_icicle_fringe(bm: bmesh.types.BMesh, x: float, y0: float, y1: float, z: float, count: int, max_len: float, seed: int = 0) -> None:
+    """Row of hanging stone icicles / stalactites (the 'winter snow' fringe over the Nativity portals)."""
+    for i in range(count):
+        t = (i + 0.5) / count
+        y = y0 + (y1 - y0) * t
+        n = math.sin(i * 12.9898 + seed * 78.233) * 43758.5453
+        n = n - math.floor(n)
+        length = max_len * (0.35 + 0.65 * n) * (0.75 + 0.25 * math.sin(math.pi * t))
+        r = 0.10 + 0.12 * n
+        add_cylinder(bm, Vector((x, y, z + 0.05)), Vector((x + 0.06, y, z - length)), r, 0.015, segments=5, cap=False)
+
+
+def add_nativity_encrustation(bm: bmesh.types.BMesh, fx: float) -> None:
+    """Dense sculptural layer of the Nativity facade (decorative, non-collidable):
+    figure groups on the three portal gables, trumpeting angels, foliage fringes along the gable
+    slopes and hanging icicle curtains under the gables and archivolts."""
+    portals = ((-9.2, 5.2, 8.6, 24.0, 1.25), (0.0, 6.2, 10.4, 30.0, 1.65), (9.2, 5.2, 8.6, 24.0, 1.25))
+    for pi_, (py, p_w, p_h, g_h, rr) in enumerate(portals):
+        gz = p_h + 2.6
+        gw = p_w + 3.0
+        front = fx + 3.25 + 0.9
+        # Icicle curtains under the gable base and under the outermost archivolt crown
+        add_icicle_fringe(bm, front - 0.15, py - gw * 0.48, py + gw * 0.48, gz, 18 if py == 0.0 else 14, 1.7, seed=pi_)
+        add_icicle_fringe(bm, fx + 3.6, py - p_w * 0.45, py + p_w * 0.45, p_h + 2.1, 10, 1.2, seed=pi_ + 7)
+        # Two tiers of sculpted figure groups on the gable face (skipping the rosette medallion)
+        rz = p_h + 5.6
+        for tier, (dz, fh) in enumerate(((0.45, 1.9), (2.75, 1.7), (5.2, 1.5))):
+            z_row = gz + dz
+            t = (z_row - gz) / g_h
+            hw = gw * 0.5 * ((1.0 - t) ** 1.08) - 0.6
+            n = max(2, int(2 * hw / 0.95))
+            for i in range(n):
+                y = py - hw + (2 * hw) * (i + 0.5) / n
+                if abs(y - py) < rr + 0.55 and abs(z_row + fh * 0.5 - rz) < rr + 0.9:
+                    continue
+                add_robed_figure(bm, Vector((front + 0.28, y, z_row)), fh * (0.9 + 0.1 * math.sin(i * 2.3 + tier)), 0.0, wings=(tier == 2), arm_up=(0.8 if (i + tier) % 3 == 0 else 0.0))
+        # Trumpeting angels flanking the upper gable
+        for side in (-1, 1):
+            z_a = gz + g_h * 0.42
+            t = 0.42
+            y = py + side * (gw * 0.5 * ((1.0 - t) ** 1.08) - 0.2)
+            add_robed_figure(bm, Vector((front + 0.2, y, z_a)), 2.6 if py == 0.0 else 2.1, 0.0, wings=True, arm_up=1.0)
+            add_cylinder(bm, Vector((front + 0.5, y, z_a + 2.0)), Vector((front + 1.6, y - side * 0.3, z_a + 2.9)), 0.05, 0.16, segments=6)
+        # Foliage fringe climbing both gable slopes up to the apex
+        for side in (-1, 1):
+            steps = int(g_h / 1.15)
+            for k in range(steps):
+                t = (k + 0.5) / steps
+                y = py + side * (gw * 0.5 * ((1.0 - t) ** 1.08) + 0.15)
+                z = gz + t * g_h
+                add_leaf_cluster(bm, Vector((front - 0.2, y, z)), 0.85 - 0.45 * t, 0.0, count=4, seed=k + pi_ * 13)
+        # Star-burst of foliage around the rosette medallion
+        for k in range(10):
+            a = 2.0 * math.pi * k / 10
+            add_leaf_cluster(bm, Vector((front + 0.1, py + (rr + 0.45) * math.cos(a), rz + (rr + 0.45) * math.sin(a))), 0.55, 0.0, count=3, seed=k + 5)
+    # Jamb statuary on corbels beside each portal (replaces the old white candle-like stand-ins)
+    for py, p_w in ((-9.2, 5.2), (0.0, 6.2), (9.2, 5.2)):
+        for sy in (-1, 1):
+            y = py + sy * (p_w * 0.52)
+            add_box(bm, (fx + 3.7, y, Z_NAVE + 2.35), (0.7, 0.75, 0.25))
+            add_robed_figure(bm, Vector((fx + 3.75, y, Z_NAVE + 2.45)), 2.15, 0.0, arm_up=0.6 if sy > 0 else 0.0)
+            add_icicle_fringe(bm, fx + 3.95, y - 0.35, y + 0.35, Z_NAVE + 2.25, 3, 0.45, seed=int(py) + sy)
+
+
 def build_nativity_facade(
     bm_nat: bmesh.types.BMesh,
     bm_stairs_nat: bmesh.types.BMesh,
@@ -230,7 +325,6 @@ def build_nativity_facade(
             add_cylinder(bm_nat, Vector((fx + 4.1, py + sy * (p_w * 0.36), p_h + 4.0)), Vector((fx + 3.9, py + sy * (p_w * 0.32), p_h + 14.5)), 0.42, 0.09, segments=7)
             # Carved sculptural niche canopy + figure silhouette beside each portal jamb
             add_cylinder(bm_nat, Vector((fx + 3.25, py + sy * (p_w * 0.52), Z_NAVE + 2.2)), Vector((fx + 3.25, py + sy * (p_w * 0.52), Z_NAVE + 5.0)), 0.42, 0.28, segments=8)
-            add_cylinder(bm_white, Vector((fx + 3.45, py + sy * (p_w * 0.52), Z_NAVE + 2.4)), Vector((fx + 3.45, py + sy * (p_w * 0.52), Z_NAVE + 4.5)), 0.24, 0.16, segments=8)
         # Sculpted tympanum narrative relief cluster over portal arch
         for fi in (-1.2, -0.4, 0.4, 1.2):
             add_cylinder(bm_nat, Vector((fx + 2.95, py + fi, p_h + 0.6)), Vector((fx + 2.95, py + fi, p_h + 2.6 - abs(fi) * 0.4)), 0.28, 0.18, segments=7)
@@ -304,6 +398,59 @@ def build_nativity_facade(
     add_cylinder(bm_gold, Vector((tree_x, -1.45, 50.9)), Vector((tree_x, 1.45, 50.9)), 0.24, 0.24, segments=8)
 
 
+def add_frustum(bm: bmesh.types.BMesh, base: Vector, w0: float, d0: float, w1: float, d1: float, height: float, face: float, lean: float = 0.0) -> None:
+    """Faceted tapered block (Subirachs' angular planar sculpture vocabulary)."""
+    f = Vector((math.cos(face), math.sin(face), 0.0))
+    s = Vector((-math.sin(face), math.cos(face), 0.0))
+    top = base + Vector((0, 0, height)) + f * (lean * height)
+    vs = []
+    for c, w, d in ((base, w0, d0), (top, w1, d1)):
+        for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            vs.append(bm.verts.new(c + s * (sx * w * 0.5) + f * (sy * d * 0.5)))
+    b, t = vs[:4], vs[4:]
+    bm.faces.new(list(reversed(b)))
+    bm.faces.new(t)
+    for i in range(4):
+        j = (i + 1) % 4
+        bm.faces.new((b[i], b[j], t[j], t[i]))
+
+
+def add_subirachs_figure(bm: bmesh.types.BMesh, base: Vector, h: float, face: float, kind: int = 0) -> None:
+    """Angular Subirachs-style figure: planar robe, wedge torso, cubic head; kind 1 = helmeted soldier
+    (helmets after Gaudí's La Pedrera chimneys), kind 2 = hooded mourner bending forward."""
+    f = Vector((math.cos(face), math.sin(face), 0.0))
+    lean = 0.12 if kind == 2 else 0.0
+    add_frustum(bm, base, h * 0.32, h * 0.24, h * 0.24, h * 0.17, h * 0.55, face, lean * 0.5)
+    chest = base + Vector((0, 0, h * 0.55)) + f * (lean * 0.5 * h * 0.55)
+    add_frustum(bm, chest, h * 0.27, h * 0.17, h * 0.3, h * 0.15, h * 0.25, face + 0.08, lean)
+    head_c = chest + Vector((0, 0, h * 0.25)) + f * (lean * h * 0.3)
+    add_frustum(bm, head_c, h * 0.11, h * 0.12, h * 0.1, h * 0.11, h * 0.15, face - 0.12, lean)
+    if kind == 1:
+        add_frustum(bm, head_c + Vector((0, 0, h * 0.13)), h * 0.16, h * 0.16, h * 0.05, h * 0.05, h * 0.16, face, 0.0)
+        add_cylinder(bm, chest + f * h * 0.1 + Vector((0, 0, -h * 0.4)), chest + f * h * 0.12 + Vector((0, 0, h * 0.55)), h * 0.025, h * 0.02, segments=4)  # spear
+    elif kind == 2:
+        add_frustum(bm, head_c + Vector((0, 0, h * 0.08)), h * 0.17, h * 0.18, h * 0.06, h * 0.08, h * 0.17, face, 0.25)
+
+
+def add_bone_column(bm: bmesh.types.BMesh, p0: Vector, p_mid: Vector, p1: Vector, scale: float, segments: int = 14, ridges: int = 5) -> None:
+    """Inclined bone/tendon column: pinched shaft, swollen 'knee' joint, flared head, tendon ridges."""
+    n = 16
+    pts, radii = [], []
+    prof = ((0.0, 1.45), (0.12, 1.2), (0.28, 0.95), (0.45, 1.12), (0.52, 1.3), (0.6, 1.1), (0.76, 0.92), (0.9, 1.15), (1.0, 1.6))
+    for i in range(n + 1):
+        t = i / n
+        p = (1 - t) ** 2 * p0 + 2 * (1 - t) * t * p_mid + t * t * p1
+        for (ta, ra), (tb, rb) in zip(prof[:-1], prof[1:]):
+            if ta <= t <= tb:
+                u = (t - ta) / (tb - ta)
+                u = u * u * (3 - 2 * u)
+                r = ra + (rb - ra) * u
+                break
+        pts.append(p)
+        radii.append(r * scale)
+    add_swept_tube(bm, pts, radii, segments=segments, cap=True, ridge=(ridges, 0.14))
+
+
 def build_passion_facade(
     bm_pas: bmesh.types.BMesh,
     bm_stairs_pas: bmesh.types.BMesh,
@@ -335,12 +482,8 @@ def build_passion_facade(
         p0 = Vector((fx - 6.8, cy, Z_NAVE))
         p_mid = Vector((fx - 5.2, cy * 0.96, 12.0))
         p1 = Vector((fx - 3.6, cy * 0.92, 23.0))
-        # Tapered bone-like lower + upper shaft with organic pinched waist & carved stone tendon ribs
-        add_cylinder(bm_pas, p0, p_mid, 1.38, 0.98, segments=12)
-        add_cylinder(bm_pas, p_mid, p1, 0.98, 1.48, segments=12)
-        for dy_rib in (-0.85, 0.85):
-            add_cylinder(bm_pas, p0 + Vector((0, dy_rib, 0)), p_mid + Vector((0.1, dy_rib * 0.72, 0)), 0.34, 0.24, segments=6)
-            add_cylinder(bm_pas, p_mid + Vector((0.1, dy_rib * 0.72, 0)), p1 + Vector((0, dy_rib * 0.95, 0)), 0.24, 0.36, segments=6)
+        # Swept bone column: pinched shaft, swollen knee joint at mid-height, flared head, tendon ridges
+        add_bone_column(bm_pas, p0, p_mid, p1, 0.98, segments=14, ridges=5)
         # Sculpted angular bone-joint capital pad
         add_box(bm_pas, (p1.x, p1.y, p1.z + 0.55), (2.8, 2.6, 1.1))
         # Diagonal rear brace strut connecting column to inner wall
@@ -355,14 +498,10 @@ def build_passion_facade(
         py = -14.5 + k * (29.0 / 17.0)
         h_tri = 14.4 * (1.0 - abs(py) / 16.0)
         if h_tri > 1.2:
-            add_cylinder(
-                bm_pas,
-                Vector((fx - 5.5, py, 26.0)),
-                Vector((fx - 3.2, py * 0.90, 26.2 + h_tri)),
-                0.44,
-                0.28,
-                segments=6,
-            )
+            # Upper colonnade: 18 inclined bone struts with joints (same vocabulary as the portico columns)
+            q0 = Vector((fx - 5.5, py, 26.0))
+            q1 = Vector((fx - 3.2, py * 0.90, 26.2 + h_tri))
+            add_bone_column(bm_pas, q0, (q0 + q1) * 0.5 + Vector((-0.25, 0.0, 0.0)), q1, 0.3, segments=7, ridges=3)
             # Crisp cross-brace bone tendons linking struts at mid-height
             if k < 17 and k % 2 == 0:
                 py_next = -14.5 + (k + 1) * (29.0 / 17.0)
@@ -385,11 +524,22 @@ def build_passion_facade(
     add_cylinder(bm_gold, Vector((fx - 3.4, -1.65, 44.5)), Vector((fx - 3.4, 1.65, 44.5)), 0.22, 0.22, segments=8)
 
     # Angular faceted Subirachs-style sculptural groups along the Passion portico (Flagellation, Judas, Crucifixion)
+    face_w = math.pi  # figures face west, toward Plaça de la Sagrada Família
     for sy in (-1, 1):
         add_box(bm_pas, (fx - 3.2, sy * 6.8, Z_NAVE + 1.8), (1.8, 2.8, 3.6))
-        # Faceted dramatic sculptural figures atop plinth
-        for fi in (-0.65, 0.0, 0.65):
-            add_box(bm_pas, (fx - 3.2, sy * 6.8 + fi, Z_NAVE + 4.7), (0.55, 0.48, 2.2), rot_euler=(0.08 * fi, 0.12, sy * 0.25))
+        # Angular Subirachs groups atop the plinths (Flagellation / Judas' kiss)
+        for i, fi in enumerate((-0.75, 0.0, 0.75)):
+            add_subirachs_figure(bm_pas, Vector((fx - 3.2, sy * 6.8 + fi, Z_NAVE + 3.6)), 2.3 - 0.15 * abs(fi), face_w + sy * 0.25 - fi * 0.3, kind=(1 if i == 0 else (2 if i == 2 else 0)))
+    # Second tier: Way of the Cross groups on a cantilevered ledge (soldiers, Veronica, the mourners)
+    add_box(bm_pas, (fx - 2.7, 0.0, 12.55), (2.2, 25.0, 0.5))
+    for k, y in enumerate((-11.0, -9.9, -8.7, -5.6, -4.6, 4.6, 5.7, 8.6, 9.8, 11.0)):
+        add_subirachs_figure(bm_pas, Vector((fx - 3.1, y, 12.8)), 2.1 + 0.15 * math.sin(k * 1.7), face_w + 0.2 * math.sin(k * 2.1), kind=k % 3)
+    # Crucified Christ on the bronze beam cross (centre, above the doors)
+    c = Vector((fx - 2.62, 0.0, 12.8))
+    add_frustum(bm_pas, c, 0.26, 0.2, 0.36, 0.24, 1.45, face_w)
+    for side in (-1, 1):
+        add_cylinder(bm_pas, c + Vector((0, side * 0.12, 1.35)), c + Vector((0, side * 1.25, 1.75)), 0.09, 0.07, segments=5)
+    add_frustum(bm_pas, c + Vector((0, 0, 1.45)), 0.22, 0.22, 0.2, 0.2, 0.3, face_w + 0.3, 0.3)
     # Subirachs' iconic Flagellation column + Magic Square (33) plaque flanking the central door
     add_cylinder(bm_pas, Vector((fx - 2.4, -4.2, Z_NAVE)), Vector((fx - 2.4, -4.2, Z_NAVE + 4.2)), 0.34, 0.30, segments=8)
     add_box(bm_gold, (fx - 1.72, 4.4, Z_NAVE + 3.2), (0.14, 1.25, 1.25))
@@ -436,8 +586,22 @@ def build_glory_facade(
                 0.18,
                 segments=6,
             )
-        # Sculpted gilded lantern crown atop each of the 7 columns
-        add_cylinder(bm_gold, Vector((px, fy - 6.8, h_col)), Vector((px, fy - 6.8, h_col + 3.6)), 1.18, 0.35, segments=10)
+        # Hyperboloid stone lantern crowning each column (Gaudí's planned 'lantern' columns) + gilt finial
+        add_lathe(
+            bm_warm, px, fy - 6.8,
+            [(h_col - 0.3, 1.0), (h_col + 0.6, 0.82), (h_col + 1.6, 0.58), (h_col + 2.6, 0.82), (h_col + 3.5, 1.18), (h_col + 3.9, 1.0), (h_col + 4.5, 0.55)],
+            segments=12, cap_top=True,
+        )
+        for k in range(6):
+            a = 2.0 * math.pi * k / 6.0
+            # Twisted hyperboloid rulings (straight lines that generate the waist) — reads as lantern ribs
+            add_cylinder(
+                bm_warm,
+                Vector((px + 0.98 * math.cos(a), fy - 6.8 + 0.98 * math.sin(a), h_col - 0.2)),
+                Vector((px + 1.16 * math.cos(a + 1.3), fy - 6.8 + 1.16 * math.sin(a + 1.3), h_col + 3.5)),
+                0.09, 0.09, segments=4, cap=False,
+            )
+        add_cylinder(bm_gold, Vector((px, fy - 6.8, h_col + 4.4)), Vector((px, fy - 6.8, h_col + 6.6)), 0.42, 0.06, segments=8)
         # Parabolic vault ribs tying portico columns cleanly into the portico canopy (strictly south of Glory spirals!)
         add_cylinder(bm_warm, Vector((px, fy - 6.8, h_col - 2.0)), Vector((px, fy - 2.6, h_col + 1.8)), 0.72, 0.65, segments=8)
 
@@ -646,17 +810,23 @@ def build_facades() -> None:
     bm_gold = bmesh.new()
     bm_white = bmesh.new()
 
+    bm_deco = bmesh.new()
     build_nativity_facade(bm_nat, bm_stairs_nat, bm_bronze, bm_cypress, bm_gold, bm_white)
+    add_nativity_encrustation(bm_deco, 31.5)
     build_passion_facade(bm_pas, bm_stairs_pas, bm_bronze, bm_gold)
     build_glory_facade(bm_warm, bm_stairs_warm, bm_bronze, bm_gold)
     build_roofs_and_pinnacles(bm_warm, bm_mosaic, bm_gold)
 
-    # Organic 3D stalactite/botanical relief displacement on Nativity Facade + crisp stone edge bevels on Passion & Glory!
-    apply_organic_stone_displacement(bm_nat, amp=0.14, min_z=2.2)
+    # Gaudí's dripping, organically eroded Nativity relief + crisp stone edge bevels on Passion & Glory
+    apply_dripping_relief(bm_nat, amp=0.30, min_z=2.2, max_edge=1.15)
+    apply_dripping_relief(bm_deco, amp=0.05, min_z=0.0, max_edge=99.0, seed=57)
     bevel_sharp_edges(bm_pas, width=0.055, angle_deg=60.0)
     bevel_sharp_edges(bm_warm, width=0.055, angle_deg=60.0)
 
-    finalize_bmesh_object(bm_nat, "Facade_Nativity", mats["nativity_stone"], smooth=True, uv_scale=0.16)
+    finalize_bmesh_object(bm_nat, "Facade_Nativity", mats["nativity_stone"], smooth=True, uv_scale=0.16, weathering=0.5, ao_vert_limit=150000)
+    # Decorative encrustation: '_Leaves' keeps it out of the collision BVH (CollisionSystem NON_COLLIDABLE_SUBSTRINGS)
+    # while 'Facade_Nativity' keeps it in the 1894-1928 construction-timeline phase and it still casts sun shadows.
+    finalize_bmesh_object(bm_deco, "Facade_Nativity_Sculpture_Leaves", mats["nativity_stone"], smooth=True, uv_scale=0.3, weathering=0.5, ao_dist=2.5, ao_vert_limit=150000)
     finalize_bmesh_object(bm_pas, "Facade_Passion", mats["passion_stone"], smooth=False, uv_scale=0.15)
     finalize_bmesh_object(bm_warm, "Facade_GloryAndRoofs", mats["sandstone_warm"], smooth=False, uv_scale=0.14)
     finalize_bmesh_object(bm_stairs_nat, "Facade_EntranceStairs_Nativity", mats["nativity_stone"], smooth=False, uv_scale=0.16, bake_ao=False)

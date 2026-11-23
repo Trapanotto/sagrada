@@ -7,6 +7,7 @@ import math
 import os
 import re
 import struct
+import time
 import bpy
 import bmesh
 from mathutils import Matrix, Vector
@@ -58,6 +59,7 @@ def _load_image(
     colorspace: str = "sRGB",
     target_mean_rgb: tuple[float, float, float] | None = None,
     cache_tag: str = "",
+    max_size: int = 0,
 ) -> bpy.types.Image | None:
     """Load texture (preferring real CC0 photoscans) and optionally bake Catalan color calibration into pixels so glTF keeps it!"""
     stem = os.path.splitext(filename)[0]
@@ -79,11 +81,7 @@ def _load_image(
         existing = bpy.data.images.get(cal_name)
         if existing is not None:
             return existing
-        if os.path.exists(cal_path):
-            cal_img = bpy.data.images.load(cal_path, check_existing=True)
-            cal_img.name = cal_name
-            cal_img.colorspace_settings.name = "sRGB"
-            return cal_img
+        # Always recalibrate from the source scan (a cached PNG would silently ignore palette changes)
         # Bake authentic Catalan stone / foliage color calibration directly into pixel data
         # (fixes Blender glTF exporter dropping chained ShaderNodeMix tint nodes!)
         src_img = bpy.data.images.load(path, check_existing=True)
@@ -103,6 +101,7 @@ def _load_image(
         cal_img.filepath_raw = cal_path
         cal_img.file_format = "PNG"
         cal_img.save()
+        _cap_size(cal_img, max_size or 1024)
         return cal_img
 
     cache_key = os.path.basename(path)
@@ -112,7 +111,17 @@ def _load_image(
     img = bpy.data.images.load(path)
     img.name = cache_key
     img.colorspace_settings.name = colorspace
+    _cap_size(img, max_size if max_size else (512 if colorspace == "Non-Color" and "rough" in stem else 1024))
     return img
+
+
+def _cap_size(img: bpy.types.Image, max_size: int) -> None:
+    """Downscale textures that are larger than they need to be (phone budget): roughness maps and
+    ground/bark scans only ever read at low frequency, so 512px is visually identical."""
+    w, h = img.size[0], img.size[1]
+    if max(w, h) > max_size:
+        s = max_size / max(w, h)
+        img.scale(max(1, int(w * s)), max(1, int(h * s)))
 
 
 def make_pbr_material(
@@ -133,6 +142,7 @@ def make_pbr_material(
     target_mean_rgb: tuple[float, float, float] | None = None,
     uv_scale: float = 1.0,
     double_sided: bool = False,
+    tex_max: int = 0,
 ) -> bpy.types.Material:
     existing = bpy.data.materials.get(name)
     if existing is not None:
@@ -172,7 +182,7 @@ def make_pbr_material(
     links.new(tex_coord.outputs["UV"], mapping.inputs["Vector"])
 
     if albedo_tex:
-        img = _load_image(albedo_tex, "sRGB", target_mean_rgb=target_mean_rgb, cache_tag=name.lower())
+        img = _load_image(albedo_tex, "sRGB", target_mean_rgb=target_mean_rgb, cache_tag=name.lower(), max_size=tex_max)
         if img:
             tex = nodes.new("ShaderNodeTexImage")
             tex.image = img
@@ -202,7 +212,7 @@ def make_pbr_material(
                     bsdf.inputs["Emission Strength"].default_value = emission_strength
 
     if rough_tex:
-        img = _load_image(rough_tex, "Non-Color")
+        img = _load_image(rough_tex, "Non-Color", max_size=min(tex_max or 512, 512))
         if img:
             tex = nodes.new("ShaderNodeTexImage")
             tex.image = img
@@ -211,7 +221,7 @@ def make_pbr_material(
             links.new(tex.outputs["Color"], bsdf.inputs["Roughness"])
 
     if normal_tex:
-        img = _load_image(normal_tex, "Non-Color")
+        img = _load_image(normal_tex, "Non-Color", max_size=tex_max)
         if img:
             tex = nodes.new("ShaderNodeTexImage")
             tex.image = img
@@ -244,15 +254,19 @@ def get_materials() -> dict[str, bpy.types.Material]:
             normal_tex="nativity_stone_normal.png",
             rough_tex="nativity_stone_roughness.png",
             normal_strength=1.35,
-            target_mean_rgb=(0.59, 0.49, 0.37),
+            # Older 1894-1930 Nativity sandstone: browner & darker than the post-1950s stone
+            target_mean_rgb=(0.53, 0.44, 0.34),
         ),
+        # Passion (1954-76): pale, smooth cut ashlar. Re-uses the large-sandstone-blocks photoscan
+        # recalibrated to the cooler cream-grey of the newer stone (the old crazy-paving scan read
+        # as broken floor tiles on the bone columns).
         "passion_stone": make_pbr_material(
             "Mat_PassionStone",
-            albedo_tex="passion_stone_albedo.png",
-            normal_tex="passion_stone_normal.png",
-            rough_tex="passion_stone_roughness.png",
-            normal_strength=1.00,
-            target_mean_rgb=(0.73, 0.68, 0.60),
+            albedo_tex="sandstone_warm_albedo.png",
+            normal_tex="sandstone_warm_normal.png",
+            rough_tex="sandstone_warm_roughness.png",
+            normal_strength=0.85,
+            target_mean_rgb=(0.74, 0.70, 0.63),
         ),
         "vault_stone": make_pbr_material(
             "Mat_VaultStone",
@@ -449,6 +463,7 @@ def get_materials() -> dict[str, bpy.types.Material]:
             albedo_tex="bark_platanus_albedo.png",
             normal_tex="bark_platanus_normal.png",
             rough_tex="bark_platanus_roughness.png",
+            tex_max=512,
             normal_strength=1.15,
         ),
         "panot_paving": make_pbr_material(
@@ -463,6 +478,7 @@ def get_materials() -> dict[str, bpy.types.Material]:
             albedo_tex="asphalt_real_albedo.png",
             normal_tex="asphalt_real_normal.png",
             rough_tex="asphalt_real_roughness.png",
+            tex_max=512,
             normal_strength=0.9,
         ),
         "grass_park": make_pbr_material(
@@ -470,6 +486,7 @@ def get_materials() -> dict[str, bpy.types.Material]:
             albedo_tex="grass_real_albedo.png",
             normal_tex="grass_real_normal.png",
             rough_tex="grass_real_roughness.png",
+            tex_max=512,
             normal_strength=0.85,
         ),
         "eixample_facade": make_pbr_material(
@@ -594,6 +611,119 @@ def bake_bvh_vertex_ao(bm: bmesh.types.BMesh, max_dist: float = 5.5, min_ao: flo
             loop[color_layer] = (a, a * 0.985, a * 0.96, 1.0)
 
 
+def _hash3(ix: int, iy: int, iz: int, seed: int) -> float:
+    h = (ix * 374761393 + iy * 668265263 + iz * 2147483647 + seed * 144269504) & 0xFFFFFFFF
+    h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+    return ((h ^ (h >> 16)) & 0xFFFF) / 65535.0
+
+
+def value_noise3(x: float, y: float, z: float, seed: int = 0) -> float:
+    """Smooth deterministic 3D value noise in [0, 1] (pure Python, no numpy dependency)."""
+    ix, iy, iz = math.floor(x), math.floor(y), math.floor(z)
+    fx, fy, fz = x - ix, y - iy, z - iz
+    ux, uy, uz = fx * fx * (3 - 2 * fx), fy * fy * (3 - 2 * fy), fz * fz * (3 - 2 * fz)
+    acc = 0.0
+    for dz in (0, 1):
+        wz = uz if dz else 1.0 - uz
+        for dy in (0, 1):
+            wy = uy if dy else 1.0 - uy
+            for dx in (0, 1):
+                wx = ux if dx else 1.0 - ux
+                acc += wx * wy * wz * _hash3(ix + dx, iy + dy, iz + dz, seed)
+    return acc
+
+
+def fbm3(x: float, y: float, z: float, octaves: int = 3, seed: int = 0) -> float:
+    amp, tot, norm, f = 0.5, 0.0, 0.0, 1.0
+    for o in range(octaves):
+        tot += amp * value_noise3(x * f, y * f, z * f, seed + o * 17)
+        norm += amp
+        amp *= 0.5
+        f *= 2.03
+    return tot / norm
+
+
+def add_lathe(
+    bm: bmesh.types.BMesh,
+    cx: float,
+    cy: float,
+    profile: list[tuple[float, float]],
+    segments: int = 12,
+    cap_bottom: bool = False,
+    cap_top: bool = False,
+    phase: float = 0.0,
+    squash: tuple[float, float] = (1.0, 1.0),
+) -> list[list[bmesh.types.BMVert]]:
+    """Revolve a (z, r) profile around a vertical axis -> smooth turned/lathed solid (bulbs, lanterns, knots)."""
+    rings: list[list[bmesh.types.BMVert]] = []
+    for z, r in profile:
+        rings.append([
+            bm.verts.new((
+                cx + r * squash[0] * math.cos(phase + 2.0 * math.pi * k / segments),
+                cy + r * squash[1] * math.sin(phase + 2.0 * math.pi * k / segments),
+                z,
+            ))
+            for k in range(segments)
+        ])
+    for a, b in zip(rings[:-1], rings[1:]):
+        for k in range(segments):
+            nk = (k + 1) % segments
+            bm.faces.new((a[k], a[nk], b[nk], b[k]))
+    if cap_bottom and profile[0][1] > 1e-4:
+        bm.faces.new(list(reversed(rings[0])))
+    if cap_top and profile[-1][1] > 1e-4:
+        bm.faces.new(rings[-1])
+    return rings
+
+
+def add_ellipsoid(
+    bm: bmesh.types.BMesh,
+    center: tuple[float, float, float] | Vector,
+    radii: tuple[float, float, float],
+    subdivisions: int = 1,
+    rot_z: float = 0.0,
+    tilt: float = 0.0,
+    roll: float = 0.0,
+) -> list[bmesh.types.BMVert]:
+    """Icosphere-based ellipsoid (heads, buds, doves, knots) with optional yaw / pitch / roll."""
+    ret = bmesh.ops.create_icosphere(bm, subdivisions=subdivisions, radius=1.0)
+    rot = Matrix.Rotation(rot_z, 3, "Z") @ Matrix.Rotation(tilt, 3, "Y") @ Matrix.Rotation(roll, 3, "X")
+    c = Vector(center)
+    for v in ret["verts"]:
+        v.co = c + rot @ Vector((v.co.x * radii[0], v.co.y * radii[1], v.co.z * radii[2]))
+    return ret["verts"]
+
+
+def apply_soot_weathering(bm: bmesh.types.BMesh, strength: float = 0.5, seed: int = 7) -> None:
+    """Darken the baked AO colour layer with vertical rain/soot streaks, crevice grime and a dirty plinth zone.
+
+    Used for the 1894-1930 Nativity stone, which in reality is visibly darker and sootier than the
+    pale post-1950s stone. Works purely on COLOR_0 so it costs zero texture memory or shader ALU.
+    """
+    layer = bm.loops.layers.color.get("AO_Bake")
+    if layer is None:
+        return
+    vert_f: dict[int, float] = {}
+    bm.verts.ensure_lookup_table()
+    for v in bm.verts:
+        p = v.co
+        # Vertical streaks: stretched noise (tall in Z) breaks up into drip-like runs
+        streak = fbm3(p.x * 0.55 + p.y * 0.55, p.y * 0.35 - p.x * 0.35, p.z * 0.06, octaves=3, seed=seed)
+        streak = max(0.0, min(1.0, (streak - 0.38) * 2.4))
+        blotch = fbm3(p.x * 0.12, p.y * 0.12, p.z * 0.12, octaves=2, seed=seed + 5)
+        up = max(0.0, v.normal.z)  # ledges catch dust & soot
+        down = max(0.0, -v.normal.z)  # undersides stay sheltered & dark
+        plinth = max(0.0, 1.0 - p.z / 6.0)
+        dark = strength * (0.30 * streak + 0.22 * blotch + 0.16 * up + 0.12 * down + 0.10 * plinth)
+        vert_f[v.index] = max(0.35, 1.0 - dark)
+    for f in bm.faces:
+        for loop in f.loops:
+            k = vert_f[loop.vert.index]
+            r, g, b, a = loop[layer]
+            # Soot is slightly cool/grey compared with the warm sandstone underneath
+            loop[layer] = (r * k, g * (k * 0.99 + 0.01), b * (k * 0.97 + 0.03), a)
+
+
 def bevel_sharp_edges(bm: bmesh.types.BMesh, width: float = 0.05, angle_deg: float = 55.0) -> None:
     """Chamfer crisp 90-degree architectural stone edges so they catch realistic sunlight edge highlights!"""
     thresh = math.radians(angle_deg)
@@ -632,6 +762,40 @@ def apply_organic_stone_displacement(bm: bmesh.types.BMesh, amp: float = 0.16, m
         v.co += v.normal * disp
 
 
+def apply_dripping_relief(
+    bm: bmesh.types.BMesh,
+    amp: float = 0.28,
+    min_z: float = 2.2,
+    max_edge: float = 1.1,
+    max_passes: int = 4,
+    seed: int = 31,
+) -> None:
+    """Gaudí's 'melting' Nativity stone: refine long edges, then displace along the normal with
+    vertically stretched multi-octave noise so the surface reads as dripping, organically eroded relief.
+    Everything below min_z stays untouched so walkable thresholds & collision near the ground remain clean."""
+    for _ in range(max_passes):
+        long_edges = [e for e in bm.edges if e.calc_length() > max_edge and max(v.co.z for v in e.verts) > min_z]
+        if not long_edges:
+            break
+        bmesh.ops.subdivide_edges(bm, edges=long_edges, cuts=1, use_grid_fill=True)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.normal_update()
+    offsets = []
+    for v in bm.verts:
+        p = v.co
+        if p.z < min_z:
+            offsets.append(None)
+            continue
+        drip = fbm3(p.x * 0.45, p.y * 0.45, p.z * 0.11, octaves=3, seed=seed)  # tall vertical runs
+        knob = fbm3(p.x * 1.3, p.y * 1.3, p.z * 1.3, octaves=2, seed=seed + 9)  # pitted small-scale relief
+        mask = min(1.0, (p.z - min_z) / 2.5)
+        d = ((drip - 0.5) * 1.6 + (knob - 0.5) * 0.7) * amp * mask
+        offsets.append(v.normal * d)
+    for v, off in zip(bm.verts, offsets):
+        if off is not None:
+            v.co += off
+
+
 def finalize_bmesh_object(
     bm: bmesh.types.BMesh,
     name: str,
@@ -641,13 +805,17 @@ def finalize_bmesh_object(
     auto_uv: bool = True,
     bake_ao: bool = True,
     ao_dist: float = 5.5,
+    weathering: float = 0.0,
+    ao_vert_limit: int = 45000,
 ) -> bpy.types.Object:
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.normal_update()
     if auto_uv:
         apply_box_uv(bm, scale=uv_scale)
-    if bake_ao and len(bm.verts) <= 45000:
+    if bake_ao and len(bm.verts) <= ao_vert_limit:
         bake_bvh_vertex_ao(bm, max_dist=ao_dist)
+        if weathering > 0.0:
+            apply_soot_weathering(bm, strength=weathering)
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
     bm.free()
@@ -655,6 +823,46 @@ def finalize_bmesh_object(
         mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
     mesh.materials.append(mat)
     obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    return obj
+
+
+def make_shared_mesh(
+    bm: bmesh.types.BMesh,
+    name: str,
+    mat: bpy.types.Material,
+    smooth: bool = True,
+    uv_scale: float = 0.3,
+    bake_ao: bool = True,
+    ao_dist: float = 1.5,
+) -> bpy.types.Mesh:
+    """Finalize a bmesh into reusable mesh DATA (no object) so repeated ornaments share one glTF mesh
+    and are collapsed into a single InstancedMesh by the runtime AutoInstancer."""
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.normal_update()
+    apply_box_uv(bm, scale=uv_scale)
+    if bake_ao:
+        bake_bvh_vertex_ao(bm, max_dist=ao_dist, min_ao=0.6)
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    if smooth and len(mesh.polygons):
+        mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
+    mesh.materials.append(mat)
+    return mesh
+
+
+def place_mesh_instance(
+    name: str,
+    mesh: bpy.types.Mesh,
+    loc: tuple[float, float, float] | Vector,
+    rot_z: float = 0.0,
+    scale: float | tuple[float, float, float] = 1.0,
+) -> bpy.types.Object:
+    obj = bpy.data.objects.new(name, mesh)
+    obj.location = tuple(loc)
+    obj.rotation_euler = (0.0, 0.0, rot_z)
+    obj.scale = (scale, scale, scale) if isinstance(scale, (int, float)) else scale
     bpy.context.collection.objects.link(obj)
     return obj
 
@@ -802,6 +1010,50 @@ def add_cylinder(
         bm.faces.new(ring1)
 
 
+def add_swept_tube(
+    bm: bmesh.types.BMesh,
+    pts: list[Vector],
+    radii: list[float],
+    segments: int = 10,
+    cap: bool = True,
+    ridge: tuple[int, float] = (0, 0.0),
+) -> None:
+    """Smooth tube swept along a polyline with a per-point radius profile (bones, branches, tendons).
+    ridge=(n, depth) adds n longitudinal tendon ridges (Gaudí/Subirachs bone columns)."""
+    n_r, depth = ridge
+    rings = []
+    prev_x = None
+    for i, p in enumerate(pts):
+        if i == 0:
+            tan = (pts[1] - pts[0]).normalized()
+        elif i == len(pts) - 1:
+            tan = (pts[-1] - pts[-2]).normalized()
+        else:
+            tan = (pts[i + 1] - pts[i - 1]).normalized()
+        if prev_x is None:
+            up = Vector((0.0, 0.0, 1.0)) if abs(tan.z) < 0.95 else Vector((1.0, 0.0, 0.0))
+            x_axis = up.cross(tan).normalized()
+        else:
+            x_axis = (prev_x - tan * prev_x.dot(tan)).normalized()  # parallel transport (no twisting)
+        y_axis = tan.cross(x_axis).normalized()
+        prev_x = x_axis
+        ring = []
+        for k in range(segments):
+            a = 2.0 * math.pi * k / segments
+            r = radii[i]
+            if n_r:
+                r *= 1.0 + depth * max(0.0, math.cos(a * n_r)) ** 3
+            ring.append(bm.verts.new(p + (x_axis * math.cos(a) + y_axis * math.sin(a)) * r))
+        rings.append(ring)
+    for a_r, b_r in zip(rings[:-1], rings[1:]):
+        for k in range(segments):
+            nk = (k + 1) % segments
+            bm.faces.new((a_r[k], a_r[nk], b_r[nk], b_r[k]))
+    if cap:
+        bm.faces.new(list(reversed(rings[0])))
+        bm.faces.new(rings[-1])
+
+
 def _polygon_star_radius(theta: float, sides: int, flute_depth: float) -> float:
     """Radius of a fluted regular polygon at angle theta."""
     sector = 2.0 * math.pi / sides
@@ -901,6 +1153,55 @@ def add_branching_canopy(
             segments=12,
             cap=True,
         )
+
+
+def add_tree_canopy(
+    bm: bmesh.types.BMesh,
+    origin_xy: tuple[float, float],
+    knot_z: float,
+    vault_z: float,
+    spread_radius: float,
+    branch_count: int,
+    branch_r_base: float,
+    angle_offset: float = 0.0,
+    sub_branches: int = 3,
+    split_frac: float = 0.52,
+    bm_lamps: bmesh.types.BMesh | None = None,
+) -> None:
+    """Gaudí's tree column canopy: from the elliptical knot, a few thick inclined branches rise to
+    secondary knots and split again into thinner twigs carrying the vault (instead of a flat fan)."""
+    ox, oy = origin_xy
+    p0 = Vector((ox, oy, knot_z + 0.35))
+    rise = vault_z - 0.6 - p0.z
+    for i in range(branch_count):
+        ang = angle_offset + 2.0 * math.pi * i / branch_count
+        ca, sa = math.cos(ang), math.sin(ang)
+        pk = Vector((ox + spread_radius * 0.42 * ca, oy + spread_radius * 0.42 * sa, p0.z + rise * split_frac))
+        # Swept (multi-ring) tubes: mid-length rings get their own vertex AO instead of inheriting the
+        # fully occluded knot/vault ends (which turned whole branches black)
+        add_swept_tube(bm, [p0.lerp(pk, f) for f in (0.0, 0.5, 1.0)], [branch_r_base * (1.0 - 0.18 * f) for f in (0.0, 0.5, 1.0)], segments=7)
+        # Secondary knot (small elongated ellipsoid, as on the real columns)
+        kr = branch_r_base * 1.3
+        add_lathe(
+            bm, pk.x, pk.y,
+            [(pk.z - kr * 1.6, kr * 0.55), (pk.z - kr * 0.7, kr * 0.95), (pk.z + kr * 0.3, kr), (pk.z + kr * 1.2, kr * 0.7), (pk.z + kr * 1.7, kr * 0.4)],
+            segments=6, cap_bottom=True, cap_top=True,
+        )
+        if bm_lamps is not None:
+            add_lathe(bm_lamps, pk.x + ca * kr * 0.98, pk.y + sa * kr * 0.98,
+                      [(pk.z - 0.12, 0.05), (pk.z, 0.13), (pk.z + 0.12, 0.05)], segments=6, cap_bottom=True, cap_top=True)
+        for j in range(sub_branches):
+            if sub_branches == 1:
+                da = 0.0
+            else:
+                da = (j / (sub_branches - 1) - 0.5) * 1.15
+            a2 = ang + da
+            reach = spread_radius * (0.82 + 0.18 * (1.0 - abs(da)))
+            p1 = Vector((ox + reach * math.cos(a2), oy + reach * math.sin(a2), vault_z - 0.6))
+            q0 = pk + Vector((0, 0, kr * 1.2))
+            add_swept_tube(bm, [q0.lerp(p1, f) for f in (0.0, 0.5, 1.0)], [branch_r_base * (0.58 - 0.16 * f) for f in (0.0, 0.5, 1.0)], segments=5)
+            # Flared capital pad where the twig meets the vault
+            add_cylinder(bm, p1 - Vector((0.0, 0.0, 0.25)), p1 + Vector((0.0, 0.0, 0.5)), branch_r_base * 0.45, branch_r_base * 0.95, segments=6, cap=True)
 
 
 def create_hyperboloid_vault_bay(
@@ -1044,12 +1345,27 @@ def _externalize_glb_textures(filepath: str) -> None:
         out_name = clean_stem + ext
         out_path = os.path.join(PBR_TEX_DIR, out_name)
 
-        if not os.path.exists(out_path):
-            bv = buffer_views[bv_idx]
-            off = bv.get("byteOffset", 0)
-            blen = bv["byteLength"]
-            with open(out_path, "wb") as out_f:
-                out_f.write(bin_data[off : off + blen])
+        # Always (re)write so public/textures/pbr is the real output of the current sources
+        # (previously stale files were silently kept, making the pipeline non-reproducible).
+        bv = buffer_views[bv_idx]
+        off = bv.get("byteOffset", 0)
+        blen = bv["byteLength"]
+        blob = bin_data[off : off + blen]
+        same = False
+        if os.path.exists(out_path) and os.path.getsize(out_path) == len(blob):
+            with open(out_path, "rb") as in_f:
+                same = in_f.read() == blob
+        if not same:
+            # Retry: OneDrive / antivirus can briefly lock freshly written files (EINVAL / EACCES)
+            for attempt in range(8):
+                try:
+                    with open(out_path, "wb") as out_f:
+                        out_f.write(blob)
+                    break
+                except OSError:
+                    if attempt == 7:
+                        raise
+                    time.sleep(0.5 * (attempt + 1))
 
         removed_bvs.add(bv_idx)
         im.pop("bufferView", None)
@@ -1137,6 +1453,10 @@ def export_glb(filepath: str) -> None:
         export_normals=True,
         export_tangents=False,
         export_materials="EXPORT",
+        # Only the baked 'AO_Bake' attribute -> COLOR_0 (Blender 5.x defaults also emit a redundant COLOR_1 copy)
+        export_vertex_color="MATERIAL",
+        export_all_vertex_colors=False,
+        export_active_vertex_color_when_no_material=True,
         export_image_format="WEBP",
         export_image_quality=80,
         export_draco_mesh_compression_enable=True,
