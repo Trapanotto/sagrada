@@ -41,6 +41,16 @@ export class AmbienceAudio {
     return this.enabled;
   }
 
+  /** Pause the audio graph while the tab is hidden (keeps the user's on/off choice). */
+  public setPageHidden(hidden: boolean): void {
+    if (!this.ctx) return;
+    if (hidden && this.ctx.state === 'running') {
+      void this.ctx.suspend();
+    } else if (!hidden && this.enabled && this.ctx.state === 'suspended') {
+      void this.ctx.resume();
+    }
+  }
+
   public setVolume(v: number): void {
     this.volume = Math.max(0, Math.min(1, v));
     if (this.masterGain && this.ctx && this.enabled) {

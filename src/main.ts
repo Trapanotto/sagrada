@@ -1,18 +1,100 @@
 import './styles.css';
 import * as THREE from 'three';
-import { SagradaScene } from './scene/SagradaScene';
-import { WeatherMode } from './scene/WeatherSystem';
-import { PostProcessingPipeline } from './scene/PostProcessing';
+import { SagradaScene, AssetLoadError, getModuleLabel, type LoadStatus } from './scene/SagradaScene';
+import type { WeatherMode } from './scene/WeatherSystem';
+import { RenderPipeline } from './scene/RenderPipeline';
 import { CollisionSystem } from './scene/CollisionSystem';
 import { PlayerController } from './controls/PlayerController';
 import { TouchControls } from './controls/TouchControls';
-import { CinematicTour } from './controls/CinematicTour';
-import { AmbienceAudio } from './audio/AmbienceAudio';
+import type { CinematicTour } from './controls/CinematicTour';
+import type { AmbienceAudio } from './audio/AmbienceAudio';
 import { TELEPORT_PRESETS, FloorLevel } from './data/teleports';
 import { Minimap } from './ui/Minimap';
 import { HotspotPanel } from './ui/HotspotPanel';
 import { PerfMonitor } from './ui/PerfMonitor';
-import { isMobileDevice, isTouchDevice, triggerHaptic } from './utils/device';
+import { prefersTouchUI, triggerHaptic } from './utils/device';
+import {
+  t,
+  loc,
+  fmtNum,
+  onLangChange,
+  translateDom,
+  initLangSwitches,
+  type MessageKey,
+  type MessageParams,
+} from './i18n';
+import {
+  initQuality,
+  getDeviceSignals,
+  getQuality,
+  getQualityPreference,
+  getAutoTier,
+  setQualityPreference,
+  refreshQualityForDpr,
+  QUALITY_TEXT,
+  QUALITY_TIERS,
+  QualityPreference,
+  QualitySettings,
+} from './utils/quality';
+
+/** Last fatal error shown, kept as keys so it can be re-rendered after a language switch. */
+let fatalError: { title: MessageKey; body: MessageKey; params?: MessageParams } | null = null;
+
+/** Replaces the loading bar with a readable error message + reload button (never a stuck bar). */
+function showFatalError(title: MessageKey, body: MessageKey, params?: MessageParams): void {
+  fatalError = { title, body, params };
+  const screen = document.getElementById('loading-screen');
+  const box = screen?.querySelector('.loading-minimal');
+  if (!screen || !box) {
+    document.body.textContent = `${t(title)} — ${t(body, params)}`;
+    return;
+  }
+  screen.classList.remove('hidden', 'fade-out', 'loading-ready');
+  document.getElementById('loading-progress-wrap')?.classList.add('hidden');
+  document.getElementById('loading-enter-wrap')?.classList.add('hidden');
+  box.querySelector('.loading-error')?.remove();
+  const wrap = document.createElement('div');
+  wrap.className = 'loading-error';
+  wrap.setAttribute('role', 'alert');
+  const h = document.createElement('div');
+  h.className = 'loading-error-title';
+  h.textContent = t(title);
+  const p = document.createElement('p');
+  p.className = 'loading-error-body';
+  p.textContent = t(body, params);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'enter-btn';
+  btn.textContent = t('error.reload');
+  btn.addEventListener('click', () => window.location.reload());
+  wrap.append(h, p, btn);
+  box.appendChild(wrap);
+}
+
+let glStatusKey: MessageKey | null = null;
+function setGlStatus(key: MessageKey | null): void {
+  glStatusKey = key;
+  let el = document.getElementById('gl-status');
+  if (!key) {
+    el?.classList.add('hidden');
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'gl-status';
+    el.className = 'hud-panel';
+    el.setAttribute('role', 'status');
+    document.getElementById('app')?.appendChild(el);
+  }
+  el.textContent = t(key);
+  el.classList.remove('hidden');
+}
+
+// Error screens and the GL status overlay can appear before / without the 3D scene: keep them live too
+onLangChange(() => {
+  if (fatalError) showFatalError(fatalError.title, fatalError.body, fatalError.params);
+  if (glStatusKey) setGlStatus(glStatusKey);
+});
 
 function formatHours(h: number): string {
   const hh = Math.floor(h) % 24;
@@ -23,24 +105,47 @@ function formatHours(h: number): string {
 function yawToCompass(yaw: number): string {
   // Forward vector = (-sin(yaw), -cos(yaw)); North = -Z (yaw = 0), East = +X (yaw = -pi/2)
   const deg = (((-yaw * 180) / Math.PI) % 360 + 360) % 360;
-  const dirs = ['N', 'NO', 'O', 'SO', 'S', 'SW', 'W', 'NW'];
+  const dirs = t('hud.compass').split(',');
   return dirs[Math.round(deg / 45) % 8];
 }
 
 async function bootstrap(): Promise<void> {
   const canvas = document.getElementById('scene-canvas') as HTMLCanvasElement;
 
-  const mobile = isMobileDevice();
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: !mobile, // Desktop uses hardware MSAA; mobile skips expensive tile-resolve MSAA!
-    powerPreference: 'high-performance',
-  });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobile ? 1.0 : 1.05));
+  // Apply the active language to all static markup and wire the DE | EN switches first,
+  // so even the WebGL / asset error screens below appear in the right language.
+  translateDom();
+  initLangSwitches();
+
+  // Central quality tier (auto-detected or user override) drives every rendering-cost decision
+  const quality = initQuality();
+  const signals = getDeviceSignals();
+  if (!signals.webgl2) {
+    showFatalError('error.noWebgl2Title', 'error.noWebgl2Body');
+    return;
+  }
+  console.info(
+    `[Quality] tier=${quality.tier} (auto=${getAutoTier()}, pref=${getQualityPreference()}) gpu="${signals.gpu}" ` +
+      `mem=${signals.deviceMemory ?? '?'} cores=${signals.cores ?? '?'} dpr=${signals.dpr}`
+  );
+
+  let renderer: THREE.WebGLRenderer;
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: quality.antialias, // Hardware MSAA except on the low tier (tile-resolve cost on mobile GPUs)
+      powerPreference: 'high-performance',
+    });
+  } catch (err) {
+    console.error(err);
+    showFatalError('error.rendererFailTitle', 'error.rendererFailBody');
+    return;
+  }
+  renderer.setPixelRatio(quality.maxPixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.autoUpdate = false; // Cached sun shadows: only re-rendered when sun moves or scene loads!
-  renderer.shadowMap.type = mobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = quality.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   renderer.localClippingEnabled = false; // Enabled lazily ONLY when user inspects historical construction timelapse!
   // Blender 4/5 cinema standard: realistic physical exposure (0.74 outdoors -> auto-adapts gently indoors!)
   renderer.toneMapping = THREE.AgXToneMapping;
@@ -49,8 +154,22 @@ async function bootstrap(): Promise<void> {
 
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.25, 1100);
   const sagrada = new SagradaScene(renderer);
-  const post = new PostProcessingPipeline(renderer, sagrada.scene, camera);
+  const contextAA = Boolean(renderer.getContext().getContextAttributes()?.antialias);
+  const post = new RenderPipeline(renderer, sagrada.scene, camera, quality, contextAA);
   const collision = new CollisionSystem();
+  collision.preload(); // fetch three-mesh-bvh in parallel with the GLBs
+
+  // Code-split optional systems: fetched in parallel with the GLBs, never blocking the main chunk
+  let audio: AmbienceAudio | null = null;
+  const audioReady = import('./audio/AmbienceAudio')
+    .then(({ AmbienceAudio }) => {
+      audio = new AmbienceAudio();
+      return audio;
+    })
+    .catch((err) => {
+      console.warn('[Audio] module failed to load:', err);
+      return null;
+    });
   const player = new PlayerController(camera, canvas, collision);
   const touchControls = new TouchControls(canvas);
   touchControls.onLookDelta = (dx, dy) => player.applyLookDelta(dx, dy);
@@ -61,8 +180,10 @@ async function bootstrap(): Promise<void> {
     camera.fov = THREE.MathUtils.clamp(camera.fov + deltaFov, 40, 78);
     camera.updateProjectionMatrix();
   };
-  const tour = new CinematicTour(camera);
-  const audio = new AmbienceAudio();
+  // Cinematic tour is loaded on first use (button / [T]) or during idle time after entering
+  let tour: CinematicTour | null = null;
+  let tourPromise: Promise<CinematicTour> | null = null;
+  const tourActive = () => tour?.active ?? false;
 
   // Start at the iconic Plaça de Gaudí viewpoint across the reflective pond facing the Nativity Facade!
   player.teleportTo(TELEPORT_PRESETS[0], true);
@@ -75,6 +196,14 @@ async function bootstrap(): Promise<void> {
   const loadingProgressWrap = document.getElementById('loading-progress-wrap')!;
   const loadingEnterWrap = document.getElementById('loading-enter-wrap')!;
   const btnEnterBasilica = document.getElementById('btn-enter-basilica') as HTMLButtonElement;
+  // Loading progress is kept as data (percent + lazy status message) so a language switch can re-render it
+  let loadingPct = 0;
+  let loadingStatusMsg: LoadStatus = () => t('loading.init');
+  const renderLoadingText = () => {
+    loadingPercent.textContent = t('loading.percent', { pct: loadingPct });
+    loadingStatus.textContent = loadingStatusMsg();
+  };
+  renderLoadingText();
 
   const hudPanels = [
     document.getElementById('hud-top')!,
@@ -94,7 +223,7 @@ async function bootstrap(): Promise<void> {
   const btnGeometry = document.getElementById('btn-geometry') as HTMLButtonElement;
   const btnHotspots = document.getElementById('btn-hotspots') as HTMLButtonElement;
   const btnMinimap = document.getElementById('btn-minimap') as HTMLButtonElement;
-  const btnGraphics = document.getElementById('btn-graphics') as HTMLButtonElement;
+  const selQuality = document.getElementById('sel-quality') as HTMLSelectElement;
   const btnTour = document.getElementById('btn-tour') as HTMLButtonElement;
   const btnPhoto = document.getElementById('btn-photo') as HTMLButtonElement;
   const btnAudio = document.getElementById('btn-audio') as HTMLButtonElement;
@@ -183,8 +312,8 @@ async function bootstrap(): Promise<void> {
   for (const preset of TELEPORT_PRESETS) {
     const btn = document.createElement('button');
     btn.className = 'tp-btn';
-    btn.textContent = preset.shortLabel;
-    btn.title = preset.label;
+    btn.textContent = loc(preset.shortLabel);
+    btn.title = loc(preset.label);
     btn.addEventListener('click', () => {
       triggerHaptic(10);
       tpButtons.forEach((b) => b.classList.remove('active'));
@@ -248,12 +377,12 @@ async function bootstrap(): Promise<void> {
 
   // Wire HUD Buttons & Shortcuts
   const syncModeUI = (fly: boolean) => {
-    btnWalkMode.textContent = fly ? 'Flug [F]' : 'Gehen [F]';
-    modeBadge.textContent = fly ? 'Flugmodus' : 'Gehen';
+    btnWalkMode.textContent = t(fly ? 'btn.fly' : 'btn.walk');
+    modeBadge.textContent = t(fly ? 'hud.modeFly' : 'hud.modeWalk');
     touchControls.setFlyVisible(fly);
   };
   player.onModeChange = syncModeUI;
-  player.onStep = () => audio.playFootstep();
+  player.onStep = () => audio?.playFootstep();
 
   btnWalkMode.addEventListener('click', () => player.setFlyMode(!player.flyMode));
 
@@ -275,11 +404,45 @@ async function bootstrap(): Promise<void> {
   };
   btnMinimap.addEventListener('click', toggleMinimap);
 
-  const tierLabels = { aaa: 'AAA', ultra: 'Ultra (GTAO)', fast: 'Schnell' } as const;
-  btnGraphics.addEventListener('click', () => {
-    const next = post.cycleTier();
-    btnGraphics.textContent = tierLabels[next];
-    btnGraphics.classList.toggle('active', next !== 'fast');
+  // Graphics quality selector (Auto / Low / Medium / High / Ultra), persisted in localStorage
+  const fillQualitySelect = () => {
+    const autoLabel = QUALITY_TEXT.autoWith(QUALITY_TEXT.tier(getAutoTier()));
+    selQuality.textContent = '';
+    const opts: Array<[QualityPreference, string]> = [
+      ['auto', autoLabel],
+      ...QUALITY_TIERS.map((tier): [QualityPreference, string] => [tier, QUALITY_TEXT.tier(tier)]),
+    ];
+    for (const [value, label] of opts) {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      selQuality.appendChild(o);
+    }
+    selQuality.value = getQualityPreference();
+    selQuality.title = QUALITY_TEXT.selectTitle;
+    selQuality.setAttribute('aria-label', QUALITY_TEXT.selectAria);
+  };
+  fillQualitySelect();
+
+  let lastSoftShadows = quality.softShadows;
+  const applyQualityLive = (q: QualitySettings) => {
+    post.applyQuality(q);
+    sagrada.lighting.applyQuality(q);
+    sagrada.applyQuality(q);
+    if (q.softShadows !== lastSoftShadows) {
+      lastSoftShadows = q.softShadows;
+      renderer.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+      // Shadow filtering is baked into the shader programs -> force a program refresh
+      sagrada.scene.traverse((obj) => {
+        const m = (obj as THREE.Mesh).material;
+        if (!m) return;
+        for (const mat of Array.isArray(m) ? m : [m]) mat.needsUpdate = true;
+      });
+    }
+  };
+  selQuality.addEventListener('change', () => {
+    applyQualityLive(setQualityPreference(selQuality.value as QualityPreference));
+    selQuality.blur();
   });
 
   let photoMode = false;
@@ -302,22 +465,27 @@ async function bootstrap(): Promise<void> {
     hotspots.setVisible(hotspotsBeforeSpecial);
   };
 
+  /** Slider read-outs only (also re-run after a language switch: decimal separator, "Off"). */
+  const renderPhotoLabels = () => {
+    const fov = parseFloat(photoFov.value);
+    // Convert vertical FOV to equivalent 35mm full-frame focal length
+    const focalMm = Math.round(12 / Math.tan(THREE.MathUtils.degToRad(fov) * 0.5));
+    photoFocalVal.textContent = `${focalMm} mm`;
+    photoExpVal.textContent = fmtNum(parseFloat(photoExposure.value), 2);
+    const ap = parseFloat(photoAperture.value);
+    photoFocusVal.textContent = `${parseFloat(photoFocus.value)} m`;
+    photoApertureVal.textContent = ap <= 0.000005 ? t('photo.apertureOff') : `f/${fmtNum(2.8 / (ap / 0.00018), 1)}`;
+  };
+
   const updatePhotoCameraSettings = () => {
     const fov = parseFloat(photoFov.value);
     camera.fov = fov;
     camera.updateProjectionMatrix();
-    // Convert vertical FOV to equivalent 35mm full-frame focal length
-    const focalMm = Math.round(12 / Math.tan(THREE.MathUtils.degToRad(fov) * 0.5));
-    photoFocalVal.textContent = `${focalMm} mm`;
-
     const exp = parseFloat(photoExposure.value);
     renderer.toneMappingExposure = exp;
-    photoExpVal.textContent = exp.toFixed(2);
-
     const focus = parseFloat(photoFocus.value);
     const ap = parseFloat(photoAperture.value);
-    photoFocusVal.textContent = `${focus} m`;
-    photoApertureVal.textContent = ap <= 0.000005 ? 'Aus' : `f/${(2.8 / (ap / 0.00018)).toFixed(1)}`;
+    renderPhotoLabels();
     post.setDof(ap > 0.000005, focus, ap);
   };
 
@@ -353,8 +521,9 @@ async function bootstrap(): Promise<void> {
   };
 
   const setPhotoMode = (enabled: boolean) => {
-    if (enabled && tour.active) tour.stop();
+    if (enabled && tour?.active) tour.stop();
     photoMode = enabled;
+    post.drsEnabled = !enabled; // keep resolution stable while composing a shot
     photoCleanCanvas = false;
     btnPhoto.classList.toggle('active', enabled);
     if (enabled) {
@@ -377,43 +546,73 @@ async function bootstrap(): Promise<void> {
   photoCleanBtn.addEventListener('click', () => setPhotoClean(true));
   photoExitPill.addEventListener('click', () => setPhotoClean(false));
 
-  // Wire Cinematic Architectural Tour [T]
-  tour.onChapterChange = (ch) => {
-    tourTitle.textContent = ch.title;
-    tourSub.textContent = ch.subtitle;
-  };
-  tour.onProgress = (frac) => {
-    tourProgressFill.style.width = `${(frac * 100).toFixed(1)}%`;
-  };
-  tour.onStateChange = (active, paused) => {
-    btnTour.classList.toggle('active', active);
-    tourBar.classList.toggle('hidden', !active);
-    tourPauseBtn.textContent = paused ? 'Fortsetzen' : 'Pause';
-    if (active) {
-      if (photoMode) setPhotoMode(false);
-      hideNormalHud();
-      if (document.pointerLockElement) document.exitPointerLock();
-    } else {
-      player.syncFromCamera();
-      player.setFlyMode(camera.position.y > 4.0);
-      restoreNormalHud();
+  // Wire Cinematic Architectural Tour [T] (module loaded lazily on first use)
+  const loadTour = (): Promise<CinematicTour> => {
+    if (!tourPromise) {
+      tourPromise = import('./controls/CinematicTour').then(({ CinematicTour }) => {
+        const tourInst = new CinematicTour(camera);
+        tourInst.onChapterChange = (ch) => {
+          tourTitle.textContent = loc(ch.title);
+          tourSub.textContent = loc(ch.subtitle);
+        };
+        tourInst.onProgress = (frac) => {
+          tourProgressFill.style.width = `${(frac * 100).toFixed(1)}%`;
+        };
+        let wasActive = false;
+        tourInst.onStateChange = (active, paused) => {
+          btnTour.classList.toggle('active', active);
+          tourBar.classList.toggle('hidden', !active);
+          tourPauseBtn.textContent = t(paused ? 'tour.resume' : 'tour.pause');
+          // Pause/resume also reports active=true: only hide the HUD on the actual start, otherwise the
+          // second hideNormalHud() would record the already-hidden minimap/hotspots as "off" for good.
+          const started = active && !wasActive;
+          wasActive = active;
+          if (started) {
+            if (photoMode) setPhotoMode(false);
+            hideNormalHud();
+            if (document.pointerLockElement) document.exitPointerLock();
+          } else if (!active) {
+            player.syncFromCamera();
+            player.setFlyMode(camera.position.y > 4.0);
+            restoreNormalHud();
+          }
+        };
+        tourInst.onTimeUpdate = (hours) => applyTime(hours);
+        tour = tourInst;
+        return tourInst;
+      });
+      tourPromise.catch((err) => {
+        console.warn('[Tour] module failed to load:', err);
+        tourPromise = null;
+      });
     }
+    return tourPromise;
   };
-  btnTour.addEventListener('click', () => tour.toggle());
-  tourPauseBtn.addEventListener('click', () => tour.togglePause());
-  tourNextBtn.addEventListener('click', () => tour.nextChapter());
-  tourStopBtn.addEventListener('click', () => tour.stop());
+  const toggleTour = () => {
+    void loadTour().then((t) => t.toggle());
+  };
+  btnTour.addEventListener('click', toggleTour);
+  tourPauseBtn.addEventListener('click', () => tour?.togglePause());
+  tourNextBtn.addEventListener('click', () => tour?.nextChapter());
+  tourStopBtn.addEventListener('click', () => tour?.stop());
 
-  const toggleAudio = () => {
-    const on = audio.toggle();
-    btnAudio.textContent = on ? 'Audio ✓' : 'Audio';
+  const syncAudioButton = (on: boolean) => {
+    btnAudio.textContent = t(on ? 'btn.audioOn' : 'btn.audio');
     btnAudio.classList.toggle('active', on);
+  };
+  const toggleAudio = () => {
+    if (!audio) {
+      void audioReady.then((a) => a && syncAudioButton(a.toggle()));
+      return;
+    }
+    syncAudioButton(audio.toggle());
   };
   btnAudio.addEventListener('click', toggleAudio);
 
   audioVolume.addEventListener('input', () => {
-    audio.setVolume(parseFloat(audioVolume.value));
+    audio?.setVolume(parseFloat(audioVolume.value));
   });
+  void audioReady.then((a) => a?.setVolume(parseFloat(audioVolume.value)));
 
   // Time-of-day & Historical Construction Timelapse Tabs
   const tabSun = document.getElementById('tab-sun') as HTMLButtonElement;
@@ -438,7 +637,7 @@ async function bootstrap(): Promise<void> {
 
   sagrada.timeline.onYearChange = (year, caption) => {
     timelineSlider.value = String(year);
-    timelineYearDisplay.textContent = year >= 2033.8 ? 'Finaler Entwurf' : `Jahr ${Math.round(year)}`;
+    timelineYearDisplay.textContent = year >= 2033.8 ? t('timeline.final') : t('timeline.year', { year: Math.round(year) });
     timelineCaption.textContent = caption;
     timelineChipBtns.forEach((b) => {
       const target = parseFloat(b.dataset.year!);
@@ -447,7 +646,7 @@ async function bootstrap(): Promise<void> {
     sagrada.lighting.requestShadowUpdate(false);
   };
   sagrada.timeline.onPlayChange = (playing) => {
-    timelinePlayBtn.textContent = playing ? '⏸ Pause' : '▶ Zeitraffer';
+    timelinePlayBtn.textContent = t(playing ? 'timeline.pause' : 'timeline.play');
     timelinePlayBtn.classList.toggle('active', playing);
   };
 
@@ -482,7 +681,6 @@ async function bootstrap(): Promise<void> {
       b.classList.toggle('active', Math.abs(target - hours) < 0.15);
     });
   };
-  tour.onTimeUpdate = (hours) => applyTime(hours);
   timeSlider.addEventListener('input', () => applyTime(parseFloat(timeSlider.value)));
   timeChipBtns.forEach((btn) => {
     btn.addEventListener('click', () => applyTime(parseFloat(btn.dataset.time!)));
@@ -498,6 +696,38 @@ async function bootstrap(): Promise<void> {
   weatherBtns.forEach((btn) => {
     btn.addEventListener('click', () => applyWeather(btn.dataset.weather as WeatherMode));
   });
+
+  // ── Live language switch: re-render every JS-managed string without touching app state ──
+  // (static markup is handled by translateDom() inside setLang(); this covers dynamic text)
+  const renderLang = () => {
+    renderLoadingText();
+    // Seed the top-bar read-outs (the render loop keeps them current, but it is paused in hidden tabs)
+    zoneBadge.textContent = collision.detectZone(camera.position);
+    compassDir.textContent = yawToCompass(player.getYaw());
+    altitudeReadout.textContent = t('hud.altitude', { v: fmtNum(camera.position.y, 1) });
+    tpButtons.forEach((btn, i) => {
+      btn.textContent = loc(TELEPORT_PRESETS[i].shortLabel);
+      btn.title = loc(TELEPORT_PRESETS[i].label);
+    });
+    syncModeUI(player.flyMode);
+    syncAudioButton(audio?.enabled ?? false);
+    fillQualitySelect();
+    renderPhotoLabels();
+    if (tour) {
+      tourTitle.textContent = loc(tour.currentChapter.title);
+      tourSub.textContent = loc(tour.currentChapter.subtitle);
+    }
+    tourPauseBtn.textContent = t(tour?.paused ? 'tour.resume' : 'tour.pause');
+    const year = sagrada.timeline.currentYear;
+    timelineYearDisplay.textContent =
+      year >= 2033.8 ? t('timeline.final') : t('timeline.year', { year: Math.round(year) });
+    timelineCaption.textContent = sagrada.timeline.getCaptionForYear(year);
+    timelinePlayBtn.textContent = t(sagrada.timeline.playing ? 'timeline.pause' : 'timeline.play');
+    hotspots.refreshLanguage();
+    minimap.refreshLanguage();
+  };
+  renderLang();
+  onLangChange(renderLang);
 
   // Start immediately into live 3D view with ZERO confirmation modal!
   // Single click anywhere on the canvas locks mouse pointer into direct Ego-Shooter FPS control.
@@ -516,12 +746,12 @@ async function bootstrap(): Promise<void> {
     else if (e.code === 'KeyU') toggleAudio();
     else if (e.code === 'KeyO') perfMonitor.toggle();
     else if (e.code === 'KeyB') selectLeftTab(paneHistory.classList.contains('hidden') ? 'history' : 'sun');
-    else if (e.code === 'KeyT') tour.toggle();
+    else if (e.code === 'KeyT') toggleTour();
     else if (e.code === 'KeyP') setPhotoMode(!photoMode);
     else if (e.code === 'KeyL') sagrada.elevator.triggerAction(camera.position);
     else if (e.code === 'KeyV' && photoMode) setPhotoClean(!photoCleanCanvas);
     else if (
-      tour.active &&
+      tour?.active &&
       ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Escape'].includes(e.code)
     ) {
       tour.stop();
@@ -536,28 +766,118 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  // Honest complete load: all 7 compact GLBs + shared PBR WebP textures + 3D BVH + HDRIs + shader & GPU warm-up!
+  // ── Robust resize / orientation / DPR handling (coalesced to one update per frame) ──
+  let lastW = window.innerWidth;
+  let lastH = window.innerHeight;
+  let resizeQueued = false;
+  const applyResize = () => {
+    resizeQueued = false;
+    const w = Math.max(1, Math.round(window.visualViewport?.width ?? window.innerWidth));
+    const h = Math.max(1, Math.round(window.visualViewport?.height ?? window.innerHeight));
+    const cw = Math.max(1, window.innerWidth);
+    const ch = Math.max(1, window.innerHeight);
+    // The canvas is fixed to the layout viewport; visualViewport only decides whether something changed
+    if (cw === lastW && ch === lastH && w > 0 && h > 0) return;
+    lastW = cw;
+    lastH = ch;
+    camera.aspect = cw / ch;
+    camera.updateProjectionMatrix();
+    post.setSize(cw, ch);
+  };
+  const queueResize = () => {
+    if (resizeQueued) return;
+    resizeQueued = true;
+    requestAnimationFrame(applyResize);
+  };
+  window.addEventListener('resize', queueResize);
+  window.visualViewport?.addEventListener('resize', queueResize);
+  window.addEventListener('orientationchange', () => {
+    // iOS reports the old size during the event; re-check after the rotation settles
+    queueResize();
+    setTimeout(queueResize, 250);
+    setTimeout(queueResize, 700);
+  });
+  const watchDpr = () => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onChange = () => {
+      mq.removeEventListener('change', onChange);
+      post.applyQuality(refreshQualityForDpr());
+      watchDpr();
+    };
+    mq.addEventListener('change', onChange);
+  };
+  watchDpr();
+
+  // ── WebGL context loss / restore ──
+  let contextLost = false;
+  let loopStarted = false;
+  let rafId = 0;
+  let running = false;
+  canvas.addEventListener(
+    'webglcontextlost',
+    (e) => {
+      e.preventDefault(); // signals that we want the context back
+      contextLost = true;
+      stopLoop();
+      setGlStatus('gl.contextLost');
+    },
+    false
+  );
+  canvas.addEventListener(
+    'webglcontextrestored',
+    () => {
+      // three.js re-initialises its GL state in its own listener (registered first); we rebuild GPU-only data
+      void (async () => {
+        try {
+          await sagrada.lighting.handleContextRestored();
+          sagrada.handleContextRestored();
+          post.handleContextRestored();
+          contextLost = false;
+          setGlStatus(null);
+          if (loopStarted && !document.hidden) startLoop();
+        } catch (err) {
+          console.error('[GL] context restore failed:', err);
+          setGlStatus('gl.restoreFailed');
+        }
+      })();
+    },
+    false
+  );
+
+  // Honest complete load: all GLBs + shared PBR WebP textures + 3D BVH + HDRIs + shader & GPU warm-up!
   try {
-    await sagrada.loadAllModules(camera, collision, (fraction, statusText) => {
-      const pct = Math.min(100, Math.max(0, Math.round(fraction * 100)));
-      loadingFill.style.width = `${pct}%`;
-      loadingPercent.textContent = `${pct} %`;
-      loadingStatus.textContent = statusText;
-    });
+    await Promise.all([
+      sagrada.loadAllModules(camera, collision, (fraction, status) => {
+        const pct = Math.min(100, Math.max(0, Math.round(fraction * 100)));
+        loadingFill.style.width = `${pct}%`;
+        loadingPct = pct;
+        loadingStatusMsg = status;
+        renderLoadingText();
+      }),
+      post.prepare(),
+      audioReady,
+    ]);
+    // Warm the post stack (if this tier uses one) behind the loading screen: compiles its shaders now
+    post.render(0.016);
   } catch (err) {
-    loadingStatus.textContent = 'Fehler beim Laden der 3D-Szene';
-    loadingPercent.textContent = 'Fehler';
     console.error(err);
+    if (err instanceof AssetLoadError) {
+      showFatalError('error.assetFailTitle', 'error.assetFailBody', {
+        modules: err.moduleIds.map(getModuleLabel).join(', '),
+      });
+    } else {
+      showFatalError('error.genericFailTitle', 'error.genericFailBody');
+    }
     return;
   }
+  if (sagrada.failedModules.length > 0) {
+    console.warn(`[Load] continuing without optional modules: ${sagrada.failedModules.join(', ')}`);
+  }
 
-  // Handle Resize
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    post.setSize(window.innerWidth, window.innerHeight);
-  });
+  if (import.meta.env.DEV) {
+    (window as unknown as Record<string, unknown>).__sagrada = { renderer, camera, sagrada, player, post, collision, THREE };
+  }
 
   // Main Animation Loop (starts immediately behind frosted Enter screen so GPU is 100% hot & fluid!)
   let lastTime = performance.now();
@@ -569,10 +889,33 @@ async function bootstrap(): Promise<void> {
   let lastElevMsg: string | null = null;
   let lastElevShown = false;
   let lastCrosshairHidden = true;
+  // Force the dirty-checked HUD read-outs (zone, compass, altitude, elevator prompt) to re-render
+  onLangChange(() => {
+    lastZone = '';
+    lastCompass = '';
+    lastAlt = '';
+    lastElevMsg = null;
+  });
+
+  const perfExtra = {
+    activeLights: 0,
+    totalLights: 0,
+    reflectorActive: false,
+    reflectorRes: 0,
+    shadowMapSize: 0,
+    shadowCached: true,
+    instancedGroups: 0,
+    savedDrawCalls: 0,
+    tierLabel: '',
+    pixelRatio: 1,
+    postLabel: '',
+  };
 
   const animate = (now: number) => {
-    requestAnimationFrame(animate);
-    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    if (!running) return;
+    rafId = requestAnimationFrame(animate);
+    const rawDt = (now - lastTime) / 1000;
+    const dt = Math.min(rawDt, 0.1);
     lastTime = now;
 
     sagrada.timeline.update(dt);
@@ -592,7 +935,7 @@ async function bootstrap(): Promise<void> {
       touchControls.isSprinting
     );
 
-    if (tour.active) {
+    if (tour?.active) {
       tour.update(dt);
     } else {
       player.update(dt);
@@ -621,18 +964,23 @@ async function bootstrap(): Promise<void> {
     post.render(dt);
 
     const lightStats = sagrada.lighting.getPerfLightStats();
-    perfMonitor.sampleFrame(dt, renderer, {
-      activeLights: lightStats.activeLights,
-      totalLights: lightStats.totalLights,
-      reflectorActive: sagrada.reflectorActive,
-      reflectorRes: sagrada.reflectorRes,
-      shadowMapSize: sagrada.lighting.shadowMapSize,
-      shadowCached: lightStats.shadowCached,
-      instancedGroups: sagrada.instancedGroups,
-      savedDrawCalls: sagrada.savedDrawCalls,
-    });
+    perfExtra.activeLights = lightStats.activeLights;
+    perfExtra.totalLights = lightStats.totalLights;
+    perfExtra.reflectorActive = sagrada.reflectorActive;
+    perfExtra.reflectorRes = sagrada.reflectorRes;
+    perfExtra.shadowMapSize = sagrada.lighting.shadowMapSize;
+    perfExtra.shadowCached = lightStats.shadowCached;
+    perfExtra.instancedGroups = sagrada.instancedGroups;
+    perfExtra.savedDrawCalls = sagrada.savedDrawCalls;
+    perfExtra.tierLabel = QUALITY_TEXT.tier(getQuality().tier);
+    perfExtra.pixelRatio = post.currentPixelRatio;
+    perfExtra.postLabel = post.usingComposer ? (post.gtaoActive ? 'Composer + GTAO' : 'Composer') : t('perf.direct');
+    perfMonitor.sampleFrame(dt, renderer, perfExtra);
 
     if (!entered) return;
+
+    // Dynamic resolution scaling inside the tier's bounds (uses the raw frame time, 1 s windows)
+    post.sampleFrame(rawDt);
 
     // Update UI overlays smoothly (dirty-checked to avoid per-frame DOM thrash!)
     const crossHidden = !player.isPointerLocked;
@@ -655,16 +1003,16 @@ async function bootstrap(): Promise<void> {
         lastCompass = nextCompass;
         compassDir.textContent = nextCompass;
       }
-      const nextAlt = `H: ${camera.position.y.toFixed(1)} m`;
+      const nextAlt = t('hud.altitude', { v: fmtNum(camera.position.y, 1) });
       if (nextAlt !== lastAlt) {
         lastAlt = nextAlt;
         altitudeReadout.textContent = nextAlt;
       }
-      audio.updateSpatial(0.08, indoorFactor, camera.position, sagrada.weather.rainFactor);
+      audio?.updateSpatial(0.08, indoorFactor, camera.position, sagrada.weather.rainFactor);
 
       const elevMsg =
-        !tour.active && !photoMode
-          ? sagrada.elevator.getPromptText(camera.position, mobile || window.innerWidth <= 900)
+        !tourActive() && !photoMode
+          ? sagrada.elevator.getPromptText(camera.position, touchControls.isTouchActive)
           : null;
       touchControls.setElevatorAvailable(!!elevMsg);
       if (elevMsg) {
@@ -682,14 +1030,45 @@ async function bootstrap(): Promise<void> {
         elevatorPrompt.classList.add('hidden');
       }
 
-      post.updateDrs(0.08, perfMonitor.getFps());
-
       if (!minimapContainer.classList.contains('hidden')) {
         minimap.render(camera.position, player.getYaw());
       }
     }
   };
-  requestAnimationFrame(animate);
+
+  function startLoop(): void {
+    if (running || contextLost) return;
+    running = true;
+    loopStarted = true;
+    lastTime = performance.now();
+    post.resetDrs();
+    rafId = requestAnimationFrame(animate);
+  }
+  function stopLoop(): void {
+    running = false;
+    cancelAnimationFrame(rafId);
+  }
+
+  // Stop rendering (and pause audio) while the tab is hidden; resume without a dt spike
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopLoop();
+      audio?.setPageHidden(true);
+    } else {
+      audio?.setPageHidden(false);
+      queueResize();
+      startLoop();
+    }
+  });
+
+  if (!document.hidden) startLoop();
+  else loopStarted = true; // visibilitychange will start it
+
+  // Remaining time-of-day HDRIs only after the first frame (they are not needed to show the scene)
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
+    .requestIdleCallback;
+  if (idle) idle(() => sagrada.lighting.loadDeferredHdris(), { timeout: 3000 });
+  else setTimeout(() => sagrada.lighting.loadDeferredHdris(), 1000);
 
   // Scene is 100% loaded, BVH built, shaders compiled & live-rendering -> reveal "Basílica betreten" gate!
   loadingScreen.classList.add('loading-ready');
@@ -703,21 +1082,25 @@ async function bootstrap(): Promise<void> {
     player.enabled = true;
     btnEnterBasilica.blur();
 
-    // Unlock spatial Web Audio cleanly on the user gesture
-    if (!audio.enabled) {
-      const on = audio.toggle();
-      btnAudio.textContent = on ? 'Audio ✓' : 'Audio';
-      btnAudio.classList.toggle('active', on);
+    // Unlock spatial Web Audio cleanly on the user gesture (module was loaded with the scene)
+    if (audio && !audio.enabled) {
+      syncAudioButton(audio.toggle());
     }
 
-    // Lock FPS mouse look on desktop devices cleanly inside the user click gesture
-    if (!isTouchDevice()) {
+    // Lock FPS mouse look cleanly inside the user click gesture (not on touch-first devices)
+    if (!prefersTouchUI()) {
       player.requestPointerLock();
     }
 
     loadingScreen.classList.add('fade-out');
     setTimeout(() => loadingScreen.classList.add('hidden'), 340);
     hudPanels.forEach((p) => p.classList.remove('hidden'));
+
+    // Fetch the tour module once the visitor is in (idle time), so [T] responds instantly later
+    const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
+      .requestIdleCallback;
+    if (ric) ric(() => void loadTour(), { timeout: 4000 });
+    else setTimeout(() => void loadTour(), 2000);
   };
 
   btnEnterBasilica.addEventListener('click', enterBasilica);

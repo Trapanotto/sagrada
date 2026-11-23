@@ -1,5 +1,14 @@
 import * as THREE from 'three';
-import { MeshBVH } from 'three-mesh-bvh';
+import type { MeshBVH } from 'three-mesh-bvh';
+import { t, type MessageKey } from '../i18n';
+
+// three-mesh-bvh is only needed once the GLBs are in, so it is split out of the startup bundle and
+// fetched in parallel with the model downloads (see CollisionSystem.preload()).
+let bvhModulePromise: Promise<typeof import('three-mesh-bvh')> | null = null;
+function loadBvhModule(): Promise<typeof import('three-mesh-bvh')> {
+  if (!bvhModulePromise) bvhModulePromise = import('three-mesh-bvh');
+  return bvhModulePromise;
+}
 
 export interface WalkConstraints {
   groundY: number;
@@ -106,7 +115,8 @@ const WALK_BRIDGES: WalkBridge[] = [
 ];
 
 export interface TowerStairShaft {
-  name: string;
+  /** Tower name shown in the zone badge ('Spiral stair · <tower>'). */
+  towerKey: MessageKey;
   cx: number;
   cz: number;
   zStart: number;
@@ -118,24 +128,24 @@ export interface TowerStairShaft {
 }
 
 export const TOWER_STAIR_SHAFTS: TowerStairShaft[] = [
-  { name: 'Wendeltreppe · Turm Jesu Christi', cx: 0.0, cz: 0.0, zStart: 56.0, zEnd: 136.0, rInner: 2.35, rOuter: 4.15, turnsPer10m: 1.1, clockwise: true },
-  { name: 'Wendeltreppe · Marien-Turm', cx: 0.0, cz: -22.5, zStart: 76.0, zEnd: 118.0, rInner: 1.70, rOuter: 3.25, turnsPer10m: 1.25, clockwise: true },
-  { name: 'Wendeltreppe · Evangelist Markus', cx: -11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: true },
-  { name: 'Wendeltreppe · Evangelist Lukas', cx: -11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: false },
-  { name: 'Wendeltreppe · Evangelist Matthäus', cx: 11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: false },
-  { name: 'Wendeltreppe · Evangelist Johannes', cx: 11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: true },
-  { name: 'Wendeltreppe · Geburtsturm SO', cx: 31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Geburtsturm Mitte-Süd', cx: 31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Geburtsturm Mitte-Nord', cx: 31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Geburtsturm NO', cx: 31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Passionsturm SW', cx: -31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Passionsturm Mitte-Süd', cx: -31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Passionsturm Mitte-Nord', cx: -31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
-  { name: 'Wendeltreppe · Passionsturm NW', cx: -31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
-  { name: 'Wendeltreppe · Glorienturm West', cx: -11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: false },
-  { name: 'Wendeltreppe · Glorienturm Mitte-West', cx: -3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: true },
-  { name: 'Wendeltreppe · Glorienturm Mitte-Ost', cx: 3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: false },
-  { name: 'Wendeltreppe · Glorienturm Ost', cx: 11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: true },
+  { towerKey: 'tower.jesus', cx: 0.0, cz: 0.0, zStart: 56.0, zEnd: 136.0, rInner: 2.35, rOuter: 4.15, turnsPer10m: 1.1, clockwise: true },
+  { towerKey: 'tower.mary', cx: 0.0, cz: -22.5, zStart: 76.0, zEnd: 118.0, rInner: 1.70, rOuter: 3.25, turnsPer10m: 1.25, clockwise: true },
+  { towerKey: 'tower.mark', cx: -11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: true },
+  { towerKey: 'tower.luke', cx: -11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: false },
+  { towerKey: 'tower.matthew', cx: 11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: false },
+  { towerKey: 'tower.john', cx: 11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: true },
+  { towerKey: 'tower.nativitySE', cx: 31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
+  { towerKey: 'tower.nativityInnerS', cx: 31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
+  { towerKey: 'tower.nativityInnerN', cx: 31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
+  { towerKey: 'tower.nativityNE', cx: 31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
+  { towerKey: 'tower.passionSW', cx: -31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
+  { towerKey: 'tower.passionInnerS', cx: -31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
+  { towerKey: 'tower.passionInnerN', cx: -31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
+  { towerKey: 'tower.passionNW', cx: -31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
+  { towerKey: 'tower.gloryW', cx: -11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: false },
+  { towerKey: 'tower.gloryInnerW', cx: -3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: true },
+  { towerKey: 'tower.gloryInnerE', cx: 3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: false },
+  { towerKey: 'tower.gloryE', cx: 11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: true },
 ];
 
 // Non-collidable visual-only meshes (floors, stairs, distant horizon, canopies, glow accents)
@@ -191,16 +201,26 @@ function isCollidableMeshName(name: string): boolean {
   return true;
 }
 
+// Reused result object: distToSegment2D runs ~33x per collision query, several queries per frame
+const segResult = { dist: 0, t: 0 };
 function distToSegment2D(px: number, pz: number, x0: number, z0: number, x1: number, z1: number): { dist: number; t: number } {
   const dx = x1 - x0;
   const dz = z1 - z0;
   const lenSq = dx * dx + dz * dz;
-  if (lenSq < 1e-6) return { dist: Math.hypot(px - x0, pz - z0), t: 0 };
+  if (lenSq < 1e-6) {
+    segResult.dist = Math.hypot(px - x0, pz - z0);
+    segResult.t = 0;
+    return segResult;
+  }
   const t = THREE.MathUtils.clamp(((px - x0) * dx + (pz - z0) * dz) / lenSq, 0, 1);
   const cx = x0 + t * dx;
   const cz = z0 + t * dz;
-  return { dist: Math.hypot(px - cx, pz - cz), t };
+  segResult.dist = Math.hypot(px - cx, pz - cz);
+  segResult.t = t;
+  return segResult;
 }
+
+const SPIRAL_CANDIDATE_OFFSETS = [-1, 0, 1] as const;
 
 export class CollisionSystem {
   public readonly eyeHeight = EYE_HEIGHT;
@@ -237,7 +257,15 @@ export class CollisionSystem {
    * Builds a single unified static 3D MeshBVH from all registered meshes & InstancedMeshes.
    * Called once during the loading screen so runtime capsule collision runs in <0.15 ms/frame!
    */
-  public buildBVH(): { triangles: number; meshes: number; buildMs: number } {
+  /** Starts fetching the BVH library early (call at boot). */
+  public preload(): void {
+    void loadBvhModule().catch(() => {
+      bvhModulePromise = null;
+    });
+  }
+
+  public async buildBVH(): Promise<{ triangles: number; meshes: number; buildMs: number }> {
+    const { MeshBVH: MeshBVHImpl } = await loadBvhModule();
     const t0 = performance.now();
     const posChunks: Float32Array[] = [];
     let totalFloats = 0;
@@ -313,7 +341,7 @@ export class CollisionSystem {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(merged, 3));
     this.bvhGeo = geo;
-    this.bvh = new MeshBVH(geo, { maxLeafTris: 12 });
+    this.bvh = new MeshBVHImpl(geo, { targetLeafSize: 12 });
     this.bvhTriangles = totalFloats / 9;
     this.bvhReady = true;
 
@@ -325,74 +353,83 @@ export class CollisionSystem {
    * Resolves true 3D horizontal capsule collision against the static BVH (walls, columns,
    * High Altar, pews, statues, balustrades, crypt walls, cloister piers, facades, urban furniture).
    */
-  private resolveBVHCapsuleXZ(cx: number, feetY: number, cz: number): [number, number] {
-    if (!this.bvh) return [cx, cz];
+  // Capsule solver state shared with the pre-bound shapecast callbacks below (no per-query closures)
+  private _solveX = 0;
+  private _solveZ = 0;
+  private _solveMoved = false;
+  private readonly _shapecastCallbacks = {
+    intersectsBounds: (b: THREE.Box3) => b.intersectsBox(this._capBox),
+    intersectsTriangle: (tri: THREE.Triangle & { closestPointToSegment(seg: THREE.Line3, t: THREE.Vector3, s: THREE.Vector3): number }) => {
+      const r = CAPSULE_RADIUS;
+      const triNormal = this._triNormal;
+      const triPt = this._triPt;
+      const capPt = this._capPt;
+      const seg = this._capSeg;
+      const box = this._capBox;
+      tri.getNormal(triNormal);
+      // Skip walkable horizontal floors, stair treads & ceilings (handled by vertical resolver)
+      if (Math.abs(triNormal.y) > 0.68) return false;
 
-    let x = cx;
-    let z = cz;
+      const dist = tri.closestPointToSegment(seg, triPt, capPt);
+      if (dist < r) {
+        let dx = capPt.x - triPt.x;
+        let dz = capPt.z - triPt.z;
+        let hLen = Math.hypot(dx, dz);
+
+        if (hLen < 1e-5) {
+          // Degenerate center overlap: fall back to horizontal triangle normal
+          dx = triNormal.x;
+          dz = triNormal.z;
+          hLen = Math.hypot(dx, dz);
+          if (hLen < 1e-5) return false;
+        }
+
+        const push = (r - dist) + 0.002;
+        const inv = push / hLen;
+        const x = (this._solveX += dx * inv);
+        const z = (this._solveZ += dz * inv);
+        this._solveMoved = true;
+
+        // Keep segment & AABB fresh inside the same pass to prevent double-pushing
+        seg.start.x = x;
+        seg.start.z = z;
+        seg.end.x = x;
+        seg.end.z = z;
+        box.min.x = x - r;
+        box.max.x = x + r;
+        box.min.z = z - r;
+        box.max.z = z + r;
+      }
+      return false;
+    },
+  };
+
+  /** Result in this._solveX / this._solveZ. */
+  private resolveBVHCapsuleXZ(cx: number, feetY: number, cz: number): void {
+    this._solveX = cx;
+    this._solveZ = cz;
+    if (!this.bvh) return;
+
     const y0 = feetY + CAPSULE_KNEE_Y;
     const y1 = feetY + CAPSULE_HEAD_Y;
     const r = CAPSULE_RADIUS;
-
     const seg = this._capSeg;
     const box = this._capBox;
-    const triNormal = this._triNormal;
-    const triPt = this._triPt;
-    const capPt = this._capPt;
 
     // 3 solver passes guarantee smooth sliding along corners & acute masonry intersections
     for (let iter = 0; iter < 3; iter++) {
-      let moved = false;
+      this._solveMoved = false;
+      const x = this._solveX;
+      const z = this._solveZ;
       seg.start.set(x, y0, z);
       seg.end.set(x, y1, z);
       box.min.set(x - r, y0 - r, z - r);
       box.max.set(x + r, y1 + r, z + r);
 
-      this.bvh.shapecast({
-        intersectsBounds: (b) => b.intersectsBox(box),
-        intersectsTriangle: (tri) => {
-          tri.getNormal(triNormal);
-          // Skip walkable horizontal floors, stair treads & ceilings (handled by vertical resolver)
-          if (Math.abs(triNormal.y) > 0.68) return false;
+      this.bvh.shapecast(this._shapecastCallbacks as unknown as Parameters<MeshBVH['shapecast']>[0]);
 
-          const dist = tri.closestPointToSegment(seg, triPt, capPt);
-          if (dist < r) {
-            let dx = capPt.x - triPt.x;
-            let dz = capPt.z - triPt.z;
-            let hLen = Math.hypot(dx, dz);
-
-            if (hLen < 1e-5) {
-              // Degenerate center overlap: fall back to horizontal triangle normal
-              dx = triNormal.x;
-              dz = triNormal.z;
-              hLen = Math.hypot(dx, dz);
-              if (hLen < 1e-5) return false;
-            }
-
-            const push = (r - dist) + 0.002;
-            const inv = push / hLen;
-            x += dx * inv;
-            z += dz * inv;
-            moved = true;
-
-            // Keep segment & AABB fresh inside the same pass to prevent double-pushing
-            seg.start.x = x;
-            seg.start.z = z;
-            seg.end.x = x;
-            seg.end.z = z;
-            box.min.x = x - r;
-            box.max.x = x + r;
-            box.min.z = z - r;
-            box.max.z = z + r;
-          }
-          return false;
-        },
-      });
-
-      if (!moved) break;
+      if (!this._solveMoved) break;
     }
-
-    return [x, z];
   }
 
   /**
@@ -425,7 +462,9 @@ export class CollisionSystem {
     const maxStepY = feetY + STEP_UP_MAX;
 
     if (this.bvhReady) {
-      [cx, cz] = this.resolveBVHCapsuleXZ(cx, feetY, cz);
+      this.resolveBVHCapsuleXZ(cx, feetY, cz);
+      cx = this._solveX;
+      cz = this._solveZ;
     } else {
       // Pre-BVH analytical fallback
       const pushOutBox = (obs: BoxObstacle) => {
@@ -524,7 +563,7 @@ export class CollisionSystem {
         const estTurn = Math.round((feetY - shaft.zStart) / pitchPerTurn - fracTurn);
         let bestSpiralY: number | null = null;
         let bestDiff = Infinity;
-        for (const dt of [-1, 0, 1]) {
+        for (const dt of SPIRAL_CANDIDATE_OFFSETS) {
           const candY = shaft.zStart + (estTurn + dt + fracTurn) * pitchPerTurn;
           if (candY < shaft.zStart - 0.8 || candY > shaft.zEnd + 0.8) continue;
           const clampedY = THREE.MathUtils.clamp(candY, shaft.zStart, shaft.zEnd);
@@ -568,7 +607,7 @@ export class CollisionSystem {
         const estTurn = Math.round((feetY - 1.2) / pitch - baseFrac);
         let bestCornerY: number | null = null;
         let bestDiff = Infinity;
-        for (const dt of [-1, 0, 1]) {
+        for (const dt of SPIRAL_CANDIDATE_OFFSETS) {
           const candY = 1.2 + (estTurn + dt + baseFrac) * pitch;
           if (candY < 0.8 || candY > 14.9) continue;
           const clampedY = THREE.MathUtils.clamp(candY, 1.2, 14.5);
@@ -696,52 +735,53 @@ export class CollisionSystem {
     return 0.0;
   }
 
+  /** Localized name of the area around pos (current UI language). */
   public detectZone(pos: THREE.Vector3): string {
     const rCenter = Math.hypot(pos.x, pos.z);
     if (rCenter < 2.25 && pos.y >= 54.0 && pos.y < 138.0 && Math.abs(pos.y - 1.75 - this.elevatorFloorY) < 2.5) {
-      return `Panorama-Aufzug · Turm Jesu Christi (${pos.y.toFixed(0)} m)`;
+      return t('zone.elevator', { y: pos.y.toFixed(0) });
     }
-    if (pos.y > 132 && rCenter < 10) return 'Turm Jesu Christi · Aussicht 136 m';
-    if (pos.y > 115 && Math.hypot(pos.x, pos.z - -22.5) < 7) return 'Marien-Turm · Aussicht 118 m';
+    if (pos.y > 132 && rCenter < 10) return t('zone.jesusView');
+    if (pos.y > 115 && Math.hypot(pos.x, pos.z - -22.5) < 7) return t('zone.maryView');
     if (pos.y > 111 && Math.abs(Math.abs(pos.x) - 11.5) < 5 && Math.abs(Math.abs(pos.z) - 11.5) < 5) {
-      return 'Evangelisten-Turm · Aussicht 114 m';
+      return t('zone.evangelistView');
     }
-    if (pos.y >= 54 && pos.y <= 61 && rCenter < 8.5) return 'Vierungs-Gewölbegalerie · 56 m';
+    if (pos.y >= 54 && pos.y <= 61 && rCenter < 8.5) return t('zone.crossingGallery');
 
     for (const shaft of TOWER_STAIR_SHAFTS) {
       if (Math.hypot(pos.x - shaft.cx, pos.z - shaft.cz) < shaft.rOuter + 0.6 && pos.y >= shaft.zStart - 0.5 && pos.y < shaft.zEnd - 0.5) {
-        return `${shaft.name} (${pos.y.toFixed(0)} m)`;
+        return t('zone.stair', { tower: t(shaft.towerKey), y: pos.y.toFixed(0) });
       }
     }
 
     if (pos.y > 54 && pos.y < 76) {
-      if (Math.abs(pos.x - 31.5) < 5 && Math.abs(pos.z) < 13) return 'Turm-Brücke Ost · Geburtsfassade (65 m)';
-      if (Math.abs(pos.x - -31.5) < 5 && Math.abs(pos.z) < 13) return 'Turm-Brücke West · Passionsfassade (65 m)';
-      if (Math.abs(pos.z - 49.5) < 5 && Math.abs(pos.x) < 14) return 'Turm-Brücke Süd · Glorienfassade (72 m)';
-      if (Math.abs(pos.z) < 4 || Math.abs(pos.x) < 4) return `Dach-Treppenbrücke (${pos.y.toFixed(0)} m)`;
+      if (Math.abs(pos.x - 31.5) < 5 && Math.abs(pos.z) < 13) return t('zone.bridgeEast');
+      if (Math.abs(pos.x - -31.5) < 5 && Math.abs(pos.z) < 13) return t('zone.bridgeWest');
+      if (Math.abs(pos.z - 49.5) < 5 && Math.abs(pos.x) < 14) return t('zone.bridgeSouth');
+      if (Math.abs(pos.z) < 4 || Math.abs(pos.x) < 4) return t('zone.roofBridge', { y: pos.y.toFixed(0) });
     }
     if (pos.y >= 44 && pos.y <= 53 && Math.abs(pos.x) < 32 && pos.z > -26 && pos.z < 50) {
-      return 'Kathedral-Dachlandschaft (45 m)';
+      return t('zone.roofscape');
     }
-    if (pos.y > 55) return 'Luftraum · Über den 18 Türmen';
-    if (pos.y < -1.5) return 'Krypta · Grab von Antoni Gaudí (-5,5 m)';
+    if (pos.y > 55) return t('zone.airspace');
+    if (pos.y < -1.5) return t('zone.crypt');
     if (pos.y > 11 && pos.y < 24 && Math.abs(pos.x) < 34 && pos.z > -32 && pos.z < 52) {
-      return 'Empore & Turm-Galerie · 14,5 m Höhe';
+      return t('zone.galleries');
     }
-    if (Math.hypot(pos.x, pos.z - -17.5) < 12.5 && pos.y < 14) return 'Hochaltar & Apsis';
-    if (Math.abs(pos.x) < 11 && Math.abs(pos.z) < 11 && pos.y < 55) return 'Vierung · Unter dem Jesus-Turm';
-    if (Math.abs(pos.x) < 22.5 && pos.z >= 10 && pos.z < 46.5 && pos.y < 46) return 'Hauptschiff · Säulenwald';
-    if (Math.abs(pos.x) < 31 && Math.abs(pos.z) < 15 && pos.y < 46) return 'Querschiff';
-    if (Math.hypot(Math.abs(pos.x) - 27.5, pos.z - -32.5) < 9.5) return 'Sakristei-Kuppel';
-    if (Math.abs(pos.x) >= 22.8 && Math.abs(pos.x) <= 29.5 && pos.z > -30 && pos.z < 47) return 'Umlaufender Kreuzgang';
+    if (Math.hypot(pos.x, pos.z - -17.5) < 12.5 && pos.y < 14) return t('zone.altar');
+    if (Math.abs(pos.x) < 11 && Math.abs(pos.z) < 11 && pos.y < 55) return t('zone.crossing');
+    if (Math.abs(pos.x) < 22.5 && pos.z >= 10 && pos.z < 46.5 && pos.y < 46) return t('zone.nave');
+    if (Math.abs(pos.x) < 31 && Math.abs(pos.z) < 15 && pos.y < 46) return t('zone.transept');
+    if (Math.hypot(Math.abs(pos.x) - 27.5, pos.z - -32.5) < 9.5) return t('zone.sacristy');
+    if (Math.abs(pos.x) >= 22.8 && Math.abs(pos.x) <= 29.5 && pos.z > -30 && pos.z < 47) return t('zone.cloister');
     if (pos.x >= 68.4 && pos.x <= 96.6 && Math.abs(pos.z) <= 16.6 && pos.y < 2.2) {
-      return 'Plaça de Gaudí · Im Spiegelteich';
+      return t('zone.inPond');
     }
-    if (pos.x > 52 && Math.abs(pos.z) < 48) return 'Plaça de Gaudí · Spiegelteich (Ost)';
-    if (pos.x > 31 && Math.abs(pos.z) < 22) return 'Vorplatz Geburtsfassade (Ost)';
-    if (pos.x < -52 && Math.abs(pos.z) < 48) return 'Plaça de la Sagrada Família (West)';
-    if (pos.x < -31 && Math.abs(pos.z) < 22) return 'Vorplatz Passionsfassade (West)';
-    if (pos.z > 47) return 'Glorienfassade & Große Freitreppe (Süd)';
-    return 'Eixample · Umgebung Barcelona';
+    if (pos.x > 52 && Math.abs(pos.z) < 48) return t('zone.pondEast');
+    if (pos.x > 31 && Math.abs(pos.z) < 22) return t('zone.nativityForecourt');
+    if (pos.x < -52 && Math.abs(pos.z) < 48) return t('zone.placaWest');
+    if (pos.x < -31 && Math.abs(pos.z) < 22) return t('zone.passionForecourt');
+    if (pos.z > 47) return t('zone.glory');
+    return t('zone.eixample');
   }
 }

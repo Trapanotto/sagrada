@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { t, fmtNum } from '../i18n';
 
 export interface PerfSnapshot {
   fps: number;
@@ -15,6 +16,9 @@ export interface PerfSnapshot {
   shadowCached: boolean;
   instancedGroups: number;
   savedDrawCalls: number;
+  tierLabel?: string;
+  pixelRatio?: number;
+  postLabel?: string;
 }
 
 /**
@@ -71,18 +75,25 @@ export class PerfMonitor {
     if (!this.expanded) return;
 
     const info = renderer.info;
-    const trisK = (info.render.triangles / 1000).toFixed(1);
+    const trisK = fmtNum(info.render.triangles / 1000, 1);
     const reflRes = extra.reflectorRes ?? 256;
-    const shadowLabel = extra.shadowMapSize && extra.shadowMapSize <= 1024 ? '1K' : '2K';
+    const shadowLabel = `${Math.round((extra.shadowMapSize ?? 2048) / 1024)}K`;
+    const canvas = renderer.domElement;
+    const qualityRows =
+      extra.tierLabel !== undefined
+        ? `<div class="perf-row"><span>${t('perf.tier')}</span><strong>${extra.tierLabel} · ${extra.postLabel ?? ''}</strong></div>
+      <div class="perf-row"><span>${t('perf.resolution')}</span><strong>${canvas.width}×${canvas.height} (×${fmtNum(extra.pixelRatio ?? 1, 2)})</strong></div>`
+        : '';
     this.bodyEl.innerHTML = `
-      <div class="perf-row"><span>Frame-Zeit</span><strong>${this.frameMs.toFixed(1)} ms (${this.fps} FPS)</strong></div>
-      <div class="perf-row"><span>Draw Calls</span><strong>${info.render.calls}</strong></div>
-      <div class="perf-row"><span>Dreiecke</span><strong>${trisK}k</strong></div>
-      <div class="perf-row"><span>Aktive Lichter</span><strong>${extra.activeLights} / ${extra.totalLights}</strong></div>
-      <div class="perf-row"><span>Spiegelteich</span><strong>${extra.reflectorActive ? `Aktiv (${reflRes}px)` : 'Gecullt (0 ms)'}</strong></div>
-      <div class="perf-row"><span>${shadowLabel}-Sonnenschatten</span><strong>${extra.shadowCached ? 'Gecacht (0 ms)' : 'Neu berechnet'}</strong></div>
-      <div class="perf-row"><span>Auto-Instancing</span><strong>${extra.instancedGroups} Batches (-${extra.savedDrawCalls} Calls)</strong></div>
-      <div class="perf-row"><span>VRAM Ressourcen</span><strong>${info.memory.geometries} Geo · ${info.memory.textures} Tex</strong></div>
+      <div class="perf-row"><span>${t('perf.frameTime')}</span><strong>${fmtNum(this.frameMs, 1)} ms (${this.fps} FPS)</strong></div>
+      ${qualityRows}
+      <div class="perf-row"><span>${t('perf.drawCalls')}</span><strong>${info.render.calls}</strong></div>
+      <div class="perf-row"><span>${t('perf.triangles')}</span><strong>${trisK}k</strong></div>
+      <div class="perf-row"><span>${t('perf.lights')}</span><strong>${extra.activeLights} / ${extra.totalLights}</strong></div>
+      <div class="perf-row"><span>${t('perf.pond')}</span><strong>${extra.reflectorActive ? t('perf.pondActive', { res: reflRes }) : t('perf.pondCulled')}</strong></div>
+      <div class="perf-row"><span>${t('perf.shadows', { size: shadowLabel })}</span><strong>${extra.shadowCached ? t('perf.shadowsCached') : t('perf.shadowsFresh')}</strong></div>
+      <div class="perf-row"><span>${t('perf.instancing')}</span><strong>${t('perf.instancingValue', { groups: extra.instancedGroups, saved: extra.savedDrawCalls })}</strong></div>
+      <div class="perf-row"><span>${t('perf.vram')}</span><strong>${info.memory.geometries} Geo · ${info.memory.textures} Tex</strong></div>
     `;
   }
 }

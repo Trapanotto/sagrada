@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { AtmosphericParticles } from './AtmosphericParticles';
-import { isMobileDevice } from '../utils/device';
+import { getBootQuality, QualitySettings } from '../utils/quality';
 
 interface TrackedMaterials {
   east: THREE.MeshStandardMaterial[];
@@ -49,7 +49,7 @@ export class LightingSystem {
   // Consolidated high-efficiency lighting:
   // Desktop: 7 permanent lights (Sun + Hemi + 2 wide SpotLight.map + 2 interior fill + 1 dual-purpose Crypt/Night zone light)
   // Mobile: 5 permanent lights (0 expensive textured SpotLights!)
-  public readonly shadowMapSize: number;
+  public shadowMapSize: number;
   private eastProjector: THREE.SpotLight | null = null;
   private westProjector: THREE.SpotLight | null = null;
   private naveFillLight: THREE.PointLight;
@@ -57,8 +57,9 @@ export class LightingSystem {
   private zoneAccentLight: THREE.PointLight;
   private allLights: THREE.Light[] = [];
 
-  private eastBeams: THREE.Mesh[] = [];
-  private westBeams: THREE.Mesh[] = [];
+  private eastBeamMesh!: THREE.InstancedMesh;
+  private westBeamMesh!: THREE.InstancedMesh;
+  private lastBeamTilt = NaN;
   private starHaloSprite: THREE.Sprite;
   private crossHaloSprite: THREE.Sprite;
 
@@ -74,6 +75,8 @@ export class LightingSystem {
   private readonly cHemiSkyDay = new THREE.Color('#c8ddf5');
   private readonly cHemiGroundDay = new THREE.Color('#685543');
   private readonly cHemiGroundNight = new THREE.Color('#090d16');
+  private readonly cCryptAccent = new THREE.Color('#ff9d3b');
+  private readonly cNightFlood = new THREE.Color('#ffcb85');
   private readonly scratchTop = new THREE.Color();
   private readonly scratchHor = new THREE.Color();
   private readonly scratchSun = new THREE.Color();
@@ -90,6 +93,7 @@ export class LightingSystem {
 
   private clockSec = 0;
   private lastShadowUpdateMs = -1000;
+  private shadowIntervalMs = getBootQuality().shadowUpdateIntervalMs;
   private shadowUpdatedThisFrame = false;
 
   public onTimeBucketChanged?: () => void;
@@ -113,8 +117,8 @@ export class LightingSystem {
       uHdriNight: { value: null },
     };
 
-    const mobile = isMobileDevice();
-    const cloudOctaves = mobile ? 2 : 3;
+    const quality = getBootQuality();
+    const cloudOctaves = quality.cloudOctaves;
 
     const skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
@@ -228,7 +232,7 @@ export class LightingSystem {
 
     this.sunLight = new THREE.DirectionalLight('#fff6e3', 2.0);
     this.sunLight.castShadow = true;
-    this.shadowMapSize = mobile ? 1024 : 2048;
+    this.shadowMapSize = quality.shadowMapSize;
     this.sunLight.shadow.mapSize.set(this.shadowMapSize, this.shadowMapSize);
     this.sunLight.shadow.camera.near = 25;
     this.sunLight.shadow.camera.far = 420;
@@ -244,7 +248,7 @@ export class LightingSystem {
     this.scene.add(this.sunLight.target);
 
     // 3. Stained-Glass SpotLight.map Projectors (Desktop only: 2 wide projectors; Mobile uses GI + Floor Carpets!)
-    if (!mobile) {
+    if (quality.stainedGlassProjectors) {
       const texLoader = new THREE.TextureLoader();
       const texEast = texLoader.load('./textures/stained_glass_east.webp');
       texEast.colorSpace = THREE.SRGBColorSpace;
@@ -323,7 +327,7 @@ export class LightingSystem {
 
     // 8. Soft GLSL Fresnel Volumetric Stained-Glass Sunbeams + Drifting Dust Motes
     this.buildVolumetricBeams();
-    this.particles = new AtmosphericParticles(mobile ? 300 : 900);
+    this.particles = new AtmosphericParticles(quality.dustParticles);
     this.scene.add(this.particles.points);
 
     this.setTimeOfDay(this.timeHours, true);
@@ -333,36 +337,60 @@ export class LightingSystem {
    * Loads all 3 compact 256x128 PureSky IBL HDRIs (~267 KB total) in parallel and prefilters
    * their PMREM cubemaps during loading so runtime reflections have ZERO startup stutter.
    */
+  private hdriPromises: Partial<Record<'day' | 'sunset' | 'night', Promise<void>>> = {};
+
+  private desiredEnvKey(): 'day' | 'sunset' | 'night' {
+    const solarProgress = (this.timeHours - 6.5) / 13.0;
+    const elevation = Math.sin(solarProgress * Math.PI) * 1.12;
+    const dayFactor = THREE.MathUtils.smoothstep(elevation, -0.08, 0.28);
+    const goldenFactor = Math.exp(-Math.pow((elevation - 0.14) / 0.24, 2)) * dayFactor;
+    const nightFactor = 1.0 - THREE.MathUtils.smoothstep(elevation, -0.15, 0.12);
+    return nightFactor > 0.55 ? 'night' : goldenFactor > 0.42 ? 'sunset' : 'day';
+  }
+
+  private loadHdri(key: 'day' | 'sunset' | 'night'): Promise<void> {
+    const existing = this.hdriPromises[key];
+    if (existing) return existing;
+    const p = new RGBELoader()
+      .loadAsync(`./hdri/${key}_1k.hdr`)
+      .then((tex) => {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        const env = this.pmremGenerator.fromEquirectangular(tex).texture;
+        tex.dispose();
+        if (key === 'day') this.pmremDay = env;
+        else if (key === 'sunset') this.pmremSunset = env;
+        else this.pmremNight = env;
+        this.activeEnvKey = null;
+        this.setTimeOfDay(this.timeHours, false);
+      })
+      .catch((err) => {
+        console.warn(`[HDRI] ${key} load fallback:`, err);
+        delete this.hdriPromises[key];
+      });
+    this.hdriPromises[key] = p;
+    return p;
+  }
+
+  /**
+   * Loads the HDRI needed for the current time of day first (blocks the first frame), then the
+   * other two in the background (~180 KB less before the first frame). Until a bucket's HDRI has
+   * arrived the previous environment stays active.
+   */
   public async loadHdris(): Promise<void> {
     this.pmremGenerator.compileEquirectangularShader();
-    const rgbe = new RGBELoader();
-    const prep = (t: THREE.DataTexture) => {
-      t.mapping = THREE.EquirectangularReflectionMapping;
-      t.minFilter = THREE.LinearFilter;
-      t.magFilter = THREE.LinearFilter;
-      return t;
-    };
+    await this.loadHdri(this.desiredEnvKey());
+  }
 
-    try {
-      const [dayTex, sunsetTex, nightTex] = await Promise.all([
-        rgbe.loadAsync('./hdri/day_1k.hdr'),
-        rgbe.loadAsync('./hdri/sunset_1k.hdr'),
-        rgbe.loadAsync('./hdri/night_1k.hdr'),
-      ]);
-      prep(dayTex);
-      prep(sunsetTex);
-      prep(nightTex);
-      this.pmremDay = this.pmremGenerator.fromEquirectangular(dayTex).texture;
-      this.pmremSunset = this.pmremGenerator.fromEquirectangular(sunsetTex).texture;
-      this.pmremNight = this.pmremGenerator.fromEquirectangular(nightTex).texture;
-      dayTex.dispose();
-      sunsetTex.dispose();
-      nightTex.dispose();
-      this.activeEnvKey = null;
-      this.setTimeOfDay(this.timeHours, false);
-    } catch (err) {
-      console.warn('[HDRI] Load fallback:', err);
-    }
+  /** Fetch the remaining time-of-day HDRIs (call after the first frame is on screen). */
+  public loadDeferredHdris(): void {
+    for (const k of ['day', 'sunset', 'night'] as const) void this.loadHdri(k);
+  }
+
+  /** Ensures the environment for an arbitrary hour is (being) loaded. */
+  private ensureEnvForBucket(key: 'day' | 'sunset' | 'night'): void {
+    if (!this.hdriPromises[key]) void this.loadHdri(key);
   }
 
   public loadRealHdrisInBackground(): void {
@@ -384,63 +412,88 @@ export class LightingSystem {
     return new THREE.CanvasTexture(c);
   }
 
+  /**
+   * 4 east + 4 west stained-glass light shafts as two InstancedMeshes (per-instance colour):
+   * 2 draw calls instead of 8, identical shading.
+   */
   private buildVolumetricBeams(): void {
     const beamGeo = new THREE.CylinderGeometry(1.1, 4.5, 36, 18, 1, true);
-    const createBeamMat = (hex: string) =>
+    const createBeamMat = () =>
       new THREE.ShaderMaterial({
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
         uniforms: {
-          uColor: { value: new THREE.Color(hex) },
           uOpacity: { value: 0.08 },
         },
         vertexShader: /* glsl */ `
           varying vec2 vUv;
           varying vec3 vNormalV;
           varying vec3 vViewDir;
+          varying vec3 vBeamColor;
           void main() {
             vUv = uv;
-            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-            vNormalV = normalize(normalMatrix * normal);
+            vec4 mvPos = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+            vNormalV = normalize(normalMatrix * mat3(instanceMatrix) * normal);
             vViewDir = normalize(-mvPos.xyz);
+            vBeamColor = instanceColor;
             gl_Position = projectionMatrix * mvPos;
           }
         `,
         fragmentShader: /* glsl */ `
-          uniform vec3 uColor;
           uniform float uOpacity;
           varying vec2 vUv;
           varying vec3 vNormalV;
           varying vec3 vViewDir;
+          varying vec3 vBeamColor;
           void main() {
             // Ultra-soft feathered volumetric light shaft (zero hard geometric cylinder edges!)
             float vertFade = smoothstep(0.0, 0.40, vUv.y) * smoothstep(1.0, 0.56, vUv.y);
             float ndv = abs(dot(normalize(vNormalV), normalize(vViewDir)));
             float edgeFade = pow(smoothstep(0.18, 0.96, ndv), 2.8);
-            gl_FragColor = vec4(uColor, vertFade * edgeFade * uOpacity);
+            gl_FragColor = vec4(vBeamColor, vertFade * edgeFade * uOpacity);
           }
         `,
       });
 
     const eastColors = ['#29c5e0', '#2ee09b', '#3a86ff', '#26c9a8'];
     const westColors = ['#ff5b24', '#ff9d1c', '#f0293e', '#ffc229'];
-    const zPos = [15, 23, 31, 39];
 
-    for (let i = 0; i < zPos.length; i++) {
-      const eb = new THREE.Mesh(beamGeo, createBeamMat(eastColors[i]));
-      eb.position.set(11.5, 11.5, zPos[i]);
-      eb.rotation.z = 0.88;
-      this.scene.add(eb);
-      this.eastBeams.push(eb);
+    const build = (colors: string[]) => {
+      const inst = new THREE.InstancedMesh(beamGeo, createBeamMat(), colors.length);
+      const c = new THREE.Color();
+      for (let i = 0; i < colors.length; i++) {
+        // ShaderMaterial receives the raw (linear working-space) colour, same as the former uColor uniform
+        inst.setColorAt(i, c.set(colors[i]));
+      }
+      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+      inst.frustumCulled = false; // bounds change with the sun tilt; 1 cheap draw either way
+      this.scene.add(inst);
+      return inst;
+    };
+    this.eastBeamMesh = build(eastColors);
+    this.westBeamMesh = build(westColors);
+    this.layoutBeams(0.88);
+  }
 
-      const wb = new THREE.Mesh(beamGeo, createBeamMat(westColors[i]));
-      wb.position.set(-11.5, 11.5, zPos[i]);
-      wb.rotation.z = -0.88;
-      this.scene.add(wb);
-      this.westBeams.push(wb);
+  private readonly beamZ = [15, 23, 31, 39];
+  private readonly beamDummy = new THREE.Object3D();
+
+  private layoutBeams(beamTilt: number): void {
+    const d = this.beamDummy;
+    for (let i = 0; i < this.beamZ.length; i++) {
+      d.position.set(21.4 - Math.sin(beamTilt) * 11.5, 11.5, this.beamZ[i]);
+      d.rotation.set(0, 0, beamTilt);
+      d.updateMatrix();
+      this.eastBeamMesh.setMatrixAt(i, d.matrix);
+      d.position.set(-21.4 + Math.sin(beamTilt) * 11.5, 11.5, this.beamZ[i]);
+      d.rotation.set(0, 0, -beamTilt);
+      d.updateMatrix();
+      this.westBeamMesh.setMatrixAt(i, d.matrix);
     }
+    this.eastBeamMesh.instanceMatrix.needsUpdate = true;
+    this.westBeamMesh.instanceMatrix.needsUpdate = true;
   }
 
   public registerLoadedMaterials(root: THREE.Object3D): void {
@@ -513,6 +566,8 @@ export class LightingSystem {
         this.scene.environment = tex;
         this.activeEnvKey = desiredEnv;
         this.onTimeBucketChanged?.();
+      } else {
+        this.ensureEnvForBucket(desiredEnv);
       }
     }
 
@@ -520,8 +575,12 @@ export class LightingSystem {
     // Physically grounded solar intensity: strong crisp shadows without blowing out sandstone highlights!
     this.baseSunInt = dayFactor * THREE.MathUtils.lerp(2.05, 1.48, goldenFactor * 0.75);
     this.sunLight.intensity = this.baseSunInt;
-    this.sunLight.castShadow = dayFactor > 0.06;
-    this.requestShadowUpdate(forceShadow);
+    // castShadow stays permanently on: toggling it at dusk changed NUM_DIR_LIGHT_SHADOWS and forced every
+    // lit material to recompile (visible hitch on the time slider / during the tour). At night the sun's
+    // intensity is ~0, so its (cached) shadow contributes nothing; we simply skip re-rendering it.
+    if (dayFactor > 0.02 || forceShadow) {
+      this.requestShadowUpdate(forceShadow);
+    }
 
     // Avoid double-stacking HemisphereLight + HDRI PMREM IBL!
     // HDRI provides realistic sky ambient; HemiLight adds only subtle warm ground-bounce fill.
@@ -547,12 +606,11 @@ export class LightingSystem {
       this.eastProjector.target.position.set(21.4 - reach, targetClimbY, 26.0);
       this.eastProjector.target.updateMatrixWorld();
     }
-    for (let i = 0; i < this.eastBeams.length; i++) {
-      const eb = this.eastBeams[i];
-      eb.rotation.z = beamTilt;
-      eb.position.x = 21.4 - Math.sin(beamTilt) * 11.5;
-      (eb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.14;
+    if (beamTilt !== this.lastBeamTilt) {
+      this.lastBeamTilt = beamTilt;
+      this.layoutBeams(beamTilt);
     }
+    (this.eastBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.14;
 
     this.baseWestInt = 12 * dayFactor + westSunHit * 325;
     if (this.westProjector) {
@@ -560,12 +618,7 @@ export class LightingSystem {
       this.westProjector.target.position.set(-21.4 + reach, targetClimbY, 26.0);
       this.westProjector.target.updateMatrixWorld();
     }
-    for (let i = 0; i < this.westBeams.length; i++) {
-      const wb = this.westBeams[i];
-      wb.rotation.z = -beamTilt;
-      wb.position.x = -21.4 + Math.sin(beamTilt) * 11.5;
-      (wb.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.16;
-    }
+    (this.westBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.16;
 
     this.baseApseInt = 18 * dayFactor + 36;
     this.apseFillLight.intensity = this.baseApseInt;
@@ -591,9 +644,36 @@ export class LightingSystem {
     (this.crossHaloSprite.material as THREE.SpriteMaterial).opacity = 0.16 + nightFactor * 0.56;
   }
 
+  /** Live quality switch: sun shadow-map resolution. */
+  public applyQuality(q: QualitySettings): void {
+    this.shadowIntervalMs = q.shadowUpdateIntervalMs;
+    if (q.shadowMapSize !== this.shadowMapSize) {
+      this.shadowMapSize = q.shadowMapSize;
+      this.sunLight.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
+      if (this.sunLight.shadow.map) {
+        this.sunLight.shadow.map.dispose();
+        this.sunLight.shadow.map = null;
+      }
+    }
+    this.requestShadowUpdate(true);
+  }
+
+  /** After WebGL context restore: GPU-side PMREM maps are gone, rebuild them + the shadow map. */
+  public async handleContextRestored(): Promise<void> {
+    // Old GL handles died with the context: drop references instead of dispose() (which would try to
+    // delete foreign GL objects and spam INVALID_OPERATION warnings).
+    this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    this.pmremDay = this.pmremSunset = this.pmremNight = null;
+    this.activeEnvKey = null;
+    this.hdriPromises = {};
+    this.sunLight.shadow.map = null;
+    await this.loadHdris();
+    this.requestShadowUpdate(true);
+  }
+
   public requestShadowUpdate(immediate = false): void {
     const now = performance.now();
-    if (immediate || now - this.lastShadowUpdateMs >= 85) {
+    if (immediate || now - this.lastShadowUpdateMs >= this.shadowIntervalMs) {
       this.renderer.shadowMap.needsUpdate = true;
       this.lastShadowUpdateMs = now;
       this.shadowUpdatedThisFrame = true;
@@ -657,16 +737,16 @@ export class LightingSystem {
 
     const showEastBeams = nearInterior && this.eastSunHit > 0.03;
     const showWestBeams = nearInterior && this.westSunHit > 0.03;
-    for (let i = 0; i < this.eastBeams.length; i++) this.eastBeams[i].visible = showEastBeams;
-    for (let i = 0; i < this.westBeams.length; i++) this.westBeams[i].visible = showWestBeams;
+    this.eastBeamMesh.visible = showEastBeams;
+    this.westBeamMesh.visible = showWestBeams;
 
     if (inCryptRange) {
-      this.zoneAccentLight.color.set('#ff9d3b');
+      this.zoneAccentLight.color.copy(this.cCryptAccent);
       this.zoneAccentLight.position.set(-3.0, -2.2, -21.5);
       this.zoneAccentLight.distance = 34;
       this.zoneAccentLight.decay = 1.3;
     } else if (needNightFloods) {
-      this.zoneAccentLight.color.set('#ffcb85');
+      this.zoneAccentLight.color.copy(this.cNightFlood);
       this.zoneAccentLight.position.set(48, 28, 16);
       this.zoneAccentLight.distance = 165;
       this.zoneAccentLight.decay = 1.15;

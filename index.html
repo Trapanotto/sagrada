@@ -10,37 +10,106 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Basílica de la Sagrada Família — Begehbares 3D-Architekturmodell</title>
+    <meta
+      name="description"
+      content="Begehbares 3D-Modell der Sagrada Família im Browser: Fassaden, Säulenwald, Krypta und Türme in Echtzeit erkunden."
+    />
+    <!--
+      Language boot: runs before first paint so the loading card never flashes in the wrong language.
+      Mirrors detectLang() in src/i18n/index.ts (saved choice -> ?lang= override -> navigator.language).
+      The English strings below are a copy of src/i18n/en.ts (the dev build warns if they drift apart).
+    -->
+    <script>
+      (function () {
+        var lang = null;
+        try {
+          lang = localStorage.getItem('sagrada.lang');
+        } catch (e) {}
+        try {
+          var q = new URLSearchParams(location.search).get('lang');
+          if (q === 'de' || q === 'en') lang = q;
+        } catch (e) {}
+        if (lang !== 'de' && lang !== 'en') lang = /^de/i.test(navigator.language || '') ? 'de' : 'en';
+        document.documentElement.lang = lang;
+        var text = {
+          en: {
+            'meta.title': 'Basílica de la Sagrada Família — Walkable 3D Architectural Model',
+            'meta.description':
+              'A walkable 3D model of the Sagrada Família in your browser: explore the façades, the forest of columns, the crypt and the towers in real time.',
+            'loading.subtitle': 'Walkable 3D architectural model · Barcelona',
+            'loading.init': 'Initializing…',
+            'loading.enter': 'Enter the Basílica',
+            'loading.enterHint':
+              'Enables mouse look & spatial audio · WASD / arrow keys to walk · F to fly · ESC for the menu',
+          },
+        };
+        window.__sagradaBootText = text;
+        if (lang === 'en') {
+          document.title = text.en['meta.title'];
+          var meta = document.querySelector('meta[name="description"]');
+          if (meta) meta.setAttribute('content', text.en['meta.description']);
+        }
+      })();
+    </script>
     <!-- Start fetching Draco WASM, candle manifest & compact models at t=0ms in parallel with JS bundle -->
     <link rel="preload" href="./draco/draco_decoder.wasm" as="fetch" crossorigin />
+    <link rel="preload" href="./draco/draco_wasm_wrapper.js" as="fetch" crossorigin />
     <link rel="preload" href="./data/candles.json" as="fetch" crossorigin />
     <link rel="preload" href="./models/towers.glb" as="fetch" crossorigin />
     <link rel="preload" href="./models/interior.glb" as="fetch" crossorigin />
     <link rel="preload" href="./models/facades.glb" as="fetch" crossorigin />
   </head>
   <body>
+    <!--
+      i18n: every user-visible string carries a key from src/i18n/de.ts / en.ts.
+      data-i18n = textContent · data-i18n-html = innerHTML · data-i18n-title = title · data-i18n-aria = aria-label.
+      The German text in this file is only the no-JS fallback; src/i18n applies the active language.
+    -->
     <div id="app">
       <canvas id="scene-canvas"></canvas>
 
       <!-- Honest Multi-Phase Loading Screen -> Frosted "Basílica betreten" Gate (zero post-100% stutter!) -->
       <div id="loading-screen">
         <div class="loading-minimal">
+          <div class="lang-switch loading-lang" role="group" aria-label="Sprache" data-i18n-aria="lang.label">
+            <button type="button" data-lang="de" lang="de" title="Deutsch">DE</button>
+            <button type="button" data-lang="en" lang="en" title="English">EN</button>
+          </div>
           <div class="loading-title">BASÍLICA DE LA SAGRADA FAMÍLIA</div>
-          <div class="loading-subtitle">Begehbares 3D-Architekturmodell · Barcelona</div>
+          <div class="loading-subtitle" data-i18n="loading.subtitle">Begehbares 3D-Architekturmodell · Barcelona</div>
           <div id="loading-progress-wrap">
             <div class="loading-bar-track">
               <div id="loading-bar-fill"></div>
             </div>
             <div class="loading-meta">
-              <span id="loading-status">Initialisiere…</span>
+              <span id="loading-status" data-i18n="loading.init">Initialisiere…</span>
               <span id="loading-percent">0 %</span>
             </div>
           </div>
           <div id="loading-enter-wrap" class="hidden">
-            <button id="btn-enter-basilica" class="enter-btn" type="button">Basílica betreten</button>
-            <div class="enter-hint">Aktiviert Mausblick &amp; Raumakustik · WASD / Pfeiltasten Gehen · F Flug · ESC Menü</div>
+            <button id="btn-enter-basilica" class="enter-btn" type="button" data-i18n="loading.enter">
+              Basílica betreten
+            </button>
+            <div class="enter-hint" data-i18n="loading.enterHint">
+              Aktiviert Mausblick &amp; Raumakustik · WASD / Pfeiltasten Gehen · F Flug · ESC Menü
+            </div>
           </div>
         </div>
       </div>
+      <script>
+        // Apply the boot language to the loading card before first paint (see the <head> script)
+        (function () {
+          var lang = document.documentElement.lang;
+          var map = window.__sagradaBootText && window.__sagradaBootText[lang];
+          if (!map) return;
+          document.querySelectorAll('#loading-screen [data-i18n]').forEach(function (el) {
+            var s = map[el.getAttribute('data-i18n')];
+            if (s) el.textContent = s;
+          });
+          var pct = document.getElementById('loading-percent');
+          if (pct && lang === 'en') pct.textContent = '0%';
+        })();
+      </script>
 
       <!-- Pointer lock crosshair -->
       <div id="crosshair" class="hidden"></div>
@@ -52,55 +121,109 @@
       <header id="hud-top" class="hud-panel hidden">
         <div class="hud-brand">
           <span class="brand-title">SAGRADA FAMÍLIA</span>
-          <span id="zone-badge" class="zone-badge">Plaça de Gaudí · Ost</span>
+          <span id="zone-badge" class="zone-badge"></span>
         </div>
         <div class="hud-compass-wrap">
           <span id="compass-dir">N</span>
-          <span id="altitude-readout">H: 1.7 m</span>
+          <span id="altitude-readout"></span>
           <span id="mode-badge" class="mode-badge">Gehen</span>
-          <button id="perf-fps-pill" class="fps-pill" data-state="good" title="Performance-Diagnose ein-/ausblenden (O)">
+          <button
+            id="perf-fps-pill"
+            class="fps-pill"
+            data-state="good"
+            title="Performance-Diagnose ein-/ausblenden (O)"
+            data-i18n-title="hud.fpsTitle"
+          >
             60 FPS
           </button>
+          <div class="lang-switch" role="group" aria-label="Sprache" data-i18n-aria="lang.label">
+            <button type="button" data-lang="de" lang="de" title="Deutsch">DE</button>
+            <button type="button" data-lang="en" lang="en" title="English">EN</button>
+          </div>
         </div>
         <div class="mobile-top-toggles">
-          <button id="btn-mobile-sun" class="hud-btn mobile-only-btn" aria-label="Licht & Wetter">☀</button>
-          <button id="btn-mobile-menu" class="hud-btn mobile-only-btn" aria-label="Menü">☰</button>
+          <button id="btn-mobile-sun" class="hud-btn mobile-only-btn" aria-label="Licht & Wetter" data-i18n-aria="hud.sunAria">
+            ☀
+          </button>
+          <button id="btn-mobile-menu" class="hud-btn mobile-only-btn" aria-label="Menü" data-i18n-aria="hud.menuAria">
+            ☰
+          </button>
         </div>
         <div id="hud-actions-menu" class="hud-actions">
-          <button id="btn-walk-mode" class="hud-btn active" title="Gehen / Flugmodus (F)">Gehen [F]</button>
-          <button id="btn-geometry" class="hud-btn" title="Gaudí Geometrie-Overlay (G)">Geo [G]</button>
-          <button id="btn-hotspots" class="hud-btn active" title="Architektur-Hotspots (H)">Infos [H]</button>
-          <button id="btn-minimap" class="hud-btn active" title="Grundriss-Minimap (M)">Plan [M]</button>
-          <button id="btn-graphics" class="hud-btn active" title="Grafik-Stufe wechseln (AAA / Ultra / Schnell)">AAA</button>
-          <button id="btn-tour" class="hud-btn" title="Cinematic Kamerafahrt starten/stoppen (T)">Tour [T]</button>
-          <button id="btn-photo" class="hud-btn" title="Pro Foto-Modus: Brennweite, DoF & PNG-Export (P)">Foto [P]</button>
-          <button id="btn-audio" class="hud-btn" title="Raumakustik & Atmosphäre (U)">Audio</button>
+          <button id="btn-walk-mode" class="hud-btn active" title="Gehen / Flugmodus (F)" data-i18n-title="btn.walkTitle">
+            Gehen [F]
+          </button>
+          <button id="btn-geometry" class="hud-btn" title="Gaudí Geometrie-Overlay (G)" data-i18n="btn.geo" data-i18n-title="btn.geoTitle">
+            Geo [G]
+          </button>
+          <button
+            id="btn-hotspots"
+            class="hud-btn active"
+            title="Architektur-Hotspots (H)"
+            data-i18n="btn.info"
+            data-i18n-title="btn.infoTitle"
+          >
+            Infos [H]
+          </button>
+          <button
+            id="btn-minimap"
+            class="hud-btn active"
+            title="Grundriss-Minimap (M)"
+            data-i18n="btn.map"
+            data-i18n-title="btn.mapTitle"
+          >
+            Plan [M]
+          </button>
+          <!-- Quality tier selector: options, title & aria-label are filled from src/utils/quality.ts (QUALITY_TEXT) -->
+          <select id="sel-quality" class="hud-btn hud-select"></select>
+          <button
+            id="btn-tour"
+            class="hud-btn"
+            title="Cinematic Kamerafahrt starten/stoppen (T)"
+            data-i18n="btn.tour"
+            data-i18n-title="btn.tourTitle"
+          >
+            Tour [T]
+          </button>
+          <button
+            id="btn-photo"
+            class="hud-btn"
+            title="Pro Foto-Modus: Brennweite, DoF & PNG-Export (P)"
+            data-i18n="btn.photo"
+            data-i18n-title="btn.photoTitle"
+          >
+            Foto [P]
+          </button>
+          <!-- Text toggles between "Audio" / "Audio ✓" from main.ts -->
+          <button id="btn-audio" class="hud-btn" title="Raumakustik & Atmosphäre (U)" data-i18n-title="btn.audioTitle">
+            Audio
+          </button>
         </div>
       </header>
 
       <!-- Bottom-left: Tabbed Time-of-Day & Historical Construction Timelapse (1882 -> Final) -->
       <aside id="hud-time" class="hud-panel hidden">
         <div class="card-tabs">
-          <button id="tab-sun" class="card-tab active">Sonnenstand</button>
-          <button id="tab-history" class="card-tab">Bauzeit 1882–2034</button>
+          <button id="tab-sun" class="card-tab active" data-i18n="tab.sun">Sonnenstand</button>
+          <button id="tab-history" class="card-tab" data-i18n="tab.history">Bauzeit 1882–2034</button>
         </div>
 
         <div id="pane-sun" class="card-pane">
           <div class="panel-header">
-            <span>Barcelona 41,4° N</span>
+            <span data-i18n="sun.location">Barcelona 41,4° N</span>
             <span id="time-display" class="mono-val">17:33</span>
           </div>
           <input id="time-slider" type="range" min="0" max="24" step="0.05" value="17.55" />
           <div class="time-presets">
-            <button class="chip-btn" data-time="8.2">Morgenlicht</button>
-            <button class="chip-btn" data-time="12.5">Mittag</button>
-            <button class="chip-btn active" data-time="17.55">Golden Hour</button>
-            <button class="chip-btn" data-time="22.0">Nacht</button>
+            <button class="chip-btn" data-time="8.2" data-i18n="time.morning">Morgenlicht</button>
+            <button class="chip-btn" data-time="12.5" data-i18n="time.noon">Mittag</button>
+            <button class="chip-btn active" data-time="17.55" data-i18n="time.golden">Golden Hour</button>
+            <button class="chip-btn" data-time="22.0" data-i18n="time.night">Nacht</button>
           </div>
-          <div class="weather-presets" aria-label="Wetter-Atmosphäre">
-            <button class="chip-btn weather-btn active" data-weather="clear">☀ Klar</button>
-            <button class="chip-btn weather-btn" data-weather="mist">🌫 Nebel</button>
-            <button class="chip-btn weather-btn" data-weather="rain">🌧 Regen</button>
+          <div class="weather-presets" aria-label="Wetter-Atmosphäre" data-i18n-aria="weather.aria">
+            <button class="chip-btn weather-btn active" data-weather="clear" data-i18n="weather.clear">☀ Klar</button>
+            <button class="chip-btn weather-btn" data-weather="mist" data-i18n="weather.mist">🌫 Nebel</button>
+            <button class="chip-btn weather-btn" data-weather="rain" data-i18n="weather.rain">🌧 Regen</button>
           </div>
         </div>
 
@@ -116,41 +239,41 @@
             <button class="chip-btn" data-year="1976">1976</button>
             <button class="chip-btn" data-year="2010">2010</button>
             <button class="chip-btn" data-year="2026">2026</button>
-            <button class="chip-btn active" data-year="2034">Final</button>
+            <button class="chip-btn active" data-year="2034" data-i18n="timeline.finalChip">Final</button>
           </div>
           <div id="timeline-caption" class="timeline-caption">
-            Finaler Entwurf · Vollendete Glorienfassade, 4 Südtürme &amp; Große Freitreppe
+            Finaler Entwurf · Glorienfassade (Süd), 4 Südtürme &amp; Große Freitreppe
           </div>
         </div>
 
         <div class="audio-row">
-          <label for="audio-volume">Lautstärke</label>
+          <label for="audio-volume" data-i18n="audio.volume">Lautstärke</label>
           <input id="audio-volume" type="range" min="0" max="1" step="0.02" value="0.45" />
         </div>
       </aside>
 
-      <!-- Bottom-center: Teleport bar -->
-      <nav id="hud-teleports" class="hud-panel hidden" aria-label="Schnell-Teleports"></nav>
+      <!-- Bottom-center: Teleport bar (buttons are built from src/data/teleports.ts) -->
+      <nav id="hud-teleports" class="hud-panel hidden" aria-label="Schnell-Teleports" data-i18n-aria="teleports.aria"></nav>
 
       <!-- Bottom-right: Interactive Architectural Minimap -->
       <aside id="hud-minimap" class="hud-panel hidden">
         <div class="panel-header">
-          <span>Grundriss</span>
+          <span data-i18n="minimap.title">Grundriss</span>
           <div class="level-tabs" id="minimap-levels">
-            <button class="level-tab" data-level="crypt">Krypta</button>
-            <button class="level-tab active" data-level="ground">EG</button>
-            <button class="level-tab" data-level="gallery">Empore</button>
-            <button class="level-tab" data-level="towers">Türme</button>
+            <button class="level-tab" data-level="crypt" data-i18n="minimap.crypt">Krypta</button>
+            <button class="level-tab active" data-level="ground" data-i18n="minimap.ground">EG</button>
+            <button class="level-tab" data-level="gallery" data-i18n="minimap.gallery">Empore</button>
+            <button class="level-tab" data-level="towers" data-i18n="minimap.towers">Türme</button>
           </div>
         </div>
         <canvas id="minimap-canvas" width="230" height="230"></canvas>
-        <div class="minimap-hint">Klick auf den Plan zum Teleportieren</div>
+        <div class="minimap-hint" data-i18n="minimap.hint">Klick auf den Plan zum Teleportieren</div>
       </aside>
 
       <!-- Collapsible Performance Diagnostics Overlay ([O]) -->
       <aside id="perf-card" class="hud-panel hidden">
         <div class="panel-header">
-          <span>Performance-Diagnose [O]</span>
+          <span data-i18n="perf.title">Performance-Diagnose [O]</span>
           <span class="mono-val">AAA Engine</span>
         </div>
         <div id="perf-body" class="perf-body"></div>
@@ -159,37 +282,37 @@
       <!-- 3D projected hotspot markers layer -->
       <div id="hotspot-markers"></div>
 
-      <!-- Hotspot detail drawer -->
+      <!-- Hotspot detail drawer (content filled from src/data/hotspots.ts) -->
       <aside id="hotspot-drawer" class="hud-panel hidden">
-        <button id="hotspot-close" class="drawer-close" aria-label="Schließen">×</button>
-        <div id="hotspot-category" class="drawer-category">Architektur</div>
-        <h2 id="hotspot-title">Titel</h2>
+        <button id="hotspot-close" class="drawer-close" aria-label="Schließen" data-i18n-aria="hotspot.close">×</button>
+        <div id="hotspot-category" class="drawer-category"></div>
+        <h2 id="hotspot-title"></h2>
         <div id="hotspot-metrics" class="drawer-metrics"></div>
         <p id="hotspot-body"></p>
-        <button id="hotspot-flyto" class="hud-btn active">Dorthin bewegen</button>
+        <button id="hotspot-flyto" class="hud-btn active" data-i18n="hotspot.flyTo">Dorthin bewegen</button>
       </aside>
 
       <!-- Start / Pointer lock prompt -->
       <div id="controls-banner" class="hud-panel hidden">
-        <span
+        <span data-i18n-html="banner.controlsHtml"
           ><strong>Klick</strong> FPS-Mausblick (<strong>ESC</strong> Menü) · <strong>WASD / Pfeiltasten</strong> Bewegen ·
           <strong>F</strong> Flug · <strong>L</strong> Glas-Aufzug · <strong>T</strong> Tour · <strong>P</strong> Foto</span
         >
       </div>
 
-      <!-- Cinematic Tour Overlay Bar -->
+      <!-- Cinematic Tour Overlay Bar (chapter captions from src/controls/CinematicTour.ts) -->
       <div id="tour-bar" class="hud-panel hidden">
         <div class="tour-meta">
-          <div id="tour-chapter-title" class="tour-title">I · Geburtsfassade im Morgenlicht</div>
-          <div id="tour-chapter-sub" class="tour-sub">Plaça de Gaudí · Spiegelteich &amp; Lebensbaum-Zypresse</div>
+          <div id="tour-chapter-title" class="tour-title"></div>
+          <div id="tour-chapter-sub" class="tour-sub"></div>
         </div>
         <div class="tour-progress-track">
           <div id="tour-progress-fill"></div>
         </div>
         <div class="tour-controls">
           <button id="tour-pause-btn" class="hud-btn">Pause</button>
-          <button id="tour-next-btn" class="hud-btn">Weiter →</button>
-          <button id="tour-stop-btn" class="hud-btn active">Beenden [T]</button>
+          <button id="tour-next-btn" class="hud-btn" data-i18n="tour.next">Weiter →</button>
+          <button id="tour-stop-btn" class="hud-btn active" data-i18n="tour.stop">Beenden [T]</button>
         </div>
       </div>
 
@@ -197,55 +320,83 @@
       <div id="photo-studio" class="hud-panel hidden">
         <div class="photo-grid">
           <label class="photo-ctrl">
-            <span>Brennweite <strong id="photo-focal-val" class="mono-val">35 mm</strong></span>
+            <span><span data-i18n="photo.focal">Brennweite</span> <strong id="photo-focal-val" class="mono-val">35 mm</strong></span>
             <input id="photo-fov" type="range" min="24" max="86" step="1" value="62" />
           </label>
           <label class="photo-ctrl">
-            <span>Belichtung <strong id="photo-exp-val" class="mono-val">0.76</strong></span>
+            <span
+              ><span data-i18n="photo.exposure">Belichtung</span> <strong id="photo-exp-val" class="mono-val">0.76</strong></span
+            >
             <input id="photo-exposure" type="range" min="0.35" max="1.45" step="0.02" value="0.76" />
           </label>
           <label class="photo-ctrl">
-            <span>DoF Fokus <strong id="photo-focus-val" class="mono-val">26 m</strong></span>
+            <span><span data-i18n="photo.focus">DoF Fokus</span> <strong id="photo-focus-val" class="mono-val">26 m</strong></span>
             <input id="photo-focus" type="range" min="3" max="140" step="1" value="26" />
           </label>
           <label class="photo-ctrl">
-            <span>Blende (Bokeh) <strong id="photo-aperture-val" class="mono-val">Aus</strong></span>
+            <span
+              ><span data-i18n="photo.aperture">Blende (Bokeh)</span>
+              <strong id="photo-aperture-val" class="mono-val">Aus</strong></span
+            >
             <input id="photo-aperture" type="range" min="0" max="0.00055" step="0.00001" value="0" />
           </label>
         </div>
         <div class="photo-actions">
-          <button id="photo-capture-btn" class="hud-btn active">Screenshot speichern (PNG)</button>
-          <button id="photo-clean-btn" class="hud-btn">Nur Bild [V]</button>
-          <button id="photo-reset-btn" class="hud-btn">Reset</button>
-          <button id="photo-exit-btn" class="hud-btn">Schließen [P]</button>
+          <button id="photo-capture-btn" class="hud-btn active" data-i18n="photo.capture">Screenshot speichern (PNG)</button>
+          <button id="photo-clean-btn" class="hud-btn" data-i18n="photo.clean">Nur Bild [V]</button>
+          <button id="photo-reset-btn" class="hud-btn" data-i18n="photo.reset">Reset</button>
+          <button id="photo-exit-btn" class="hud-btn" data-i18n="photo.close">Schließen [P]</button>
         </div>
       </div>
 
       <!-- Mobile & Tablet AAA Multi-Touch Controls (Floating Thumbstick + Action Cluster) -->
       <div id="touch-controls" class="hidden">
-        <div id="touch-joy-zone" aria-label="Virtueller Joystick">
+        <div id="touch-joy-zone" aria-label="Virtueller Joystick" data-i18n-aria="touch.joystick">
           <div id="touch-joy-ring" class="touch-joy-ring">
-            <div id="touch-sprint-indicator">SPRINT</div>
+            <div id="touch-sprint-indicator" data-i18n="touch.sprint">SPRINT</div>
             <div id="touch-joy-knob"></div>
           </div>
         </div>
         <div id="touch-action-cluster">
-          <button id="touch-elevator-btn" class="touch-action-btn elevator hidden" aria-label="Glas-Aufzug fahren">
+          <button
+            id="touch-elevator-btn"
+            class="touch-action-btn elevator hidden"
+            aria-label="Glas-Aufzug fahren"
+            data-i18n="touch.elevator"
+            data-i18n-aria="touch.elevatorAria"
+          >
             🛗 Aufzug
           </button>
           <div id="touch-fly-btns" class="hidden">
-            <button id="touch-fly-up" class="touch-fly-btn" aria-label="Hochfliegen">▲</button>
-            <button id="touch-fly-down" class="touch-fly-btn" aria-label="Runterfliegen">▼</button>
+            <button id="touch-fly-up" class="touch-fly-btn" aria-label="Hochfliegen" data-i18n-aria="touch.flyUp">▲</button>
+            <button id="touch-fly-down" class="touch-fly-btn" aria-label="Runterfliegen" data-i18n-aria="touch.flyDown">
+              ▼
+            </button>
           </div>
           <div class="touch-bottom-actions">
-            <button id="touch-fly-toggle" class="touch-action-btn secondary" aria-label="Flugmodus umschalten">🕊</button>
-            <button id="touch-jump-btn" class="touch-action-btn primary" aria-label="Springen">⬆</button>
+            <button
+              id="touch-fly-toggle"
+              class="touch-action-btn secondary"
+              aria-label="Flugmodus umschalten"
+              data-i18n-aria="touch.flyToggle"
+            >
+              🕊
+            </button>
+            <button id="touch-jump-btn" class="touch-action-btn primary" aria-label="Springen" data-i18n-aria="touch.jump">
+              ⬆
+            </button>
           </div>
         </div>
       </div>
 
       <!-- Subtle clean-canvas restore pill when V hides the Photo Studio bar -->
-      <button id="photo-exit-pill" class="hud-panel hidden" title="Foto-Studio anzeigen (V) oder beenden (P)">
+      <button
+        id="photo-exit-pill"
+        class="hud-panel hidden"
+        title="Foto-Studio anzeigen (V) oder beenden (P)"
+        data-i18n="photo.pill"
+        data-i18n-title="photo.pillTitle"
+      >
         Reines Bild · [V] Studio · [P] Beenden
       </button>
     </div>

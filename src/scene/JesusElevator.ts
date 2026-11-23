@@ -1,14 +1,20 @@
 import * as THREE from 'three';
+import { t, type MessageKey } from '../i18n';
 
 export interface ElevatorFloor {
-  label: string;
+  labelKey: MessageKey;
   y: number;
 }
 
 export const ELEVATOR_FLOORS: ElevatorFloor[] = [
-  { label: 'Turmbasis · Gewölbe-Galerie (56 m)', y: 56.0 },
-  { label: 'Aussichtsplattform · Unter dem Kreuz (136 m)', y: 136.0 },
+  { labelKey: 'elevator.floorBase', y: 56.0 },
+  { labelKey: 'elevator.floorTop', y: 136.0 },
 ];
+
+/** Localized floor name (the prompt is re-rendered in the current language on every HUD tick). */
+function floorLabel(idx: number): string {
+  return t(ELEVATOR_FLOORS[idx].labelKey);
+}
 
 /**
  * Authentic Suspended Panoramic Glass & Brushed-Stainless-Steel Elevator inside the hollow stone core
@@ -148,7 +154,7 @@ export class JesusElevator {
     const feetY = playerPos.y - 1.75;
     if (this.isPlayerInside(playerPos)) {
       this.targetFloorIdx = (this.targetFloorIdx + 1) % ELEVATOR_FLOORS.length;
-      return `Panorama-Aufzug fährt zu: ${ELEVATOR_FLOORS[this.targetFloorIdx].label}`;
+      return t('elevator.goingTo', { floor: floorLabel(this.targetFloorIdx) });
     }
 
     // Player is on one of the boarding landings — summon the cabin to their floor!
@@ -157,10 +163,10 @@ export class JesusElevator {
       if (Math.abs(this.currentY - ELEVATOR_FLOORS[nearIdx].y) < 0.8) {
         // Cabin is already here — send it to the next floor
         this.targetFloorIdx = (nearIdx + 1) % ELEVATOR_FLOORS.length;
-        return `Panorama-Aufzug fährt zu: ${ELEVATOR_FLOORS[this.targetFloorIdx].label}`;
+        return t('elevator.goingTo', { floor: floorLabel(this.targetFloorIdx) });
       }
       this.targetFloorIdx = nearIdx;
-      return `Panorama-Aufzug wird gerufen: ${ELEVATOR_FLOORS[nearIdx].label}`;
+      return t('elevator.called', { floor: floorLabel(nearIdx) });
     }
     return null;
   }
@@ -171,25 +177,25 @@ export class JesusElevator {
     const feetY = playerPos.y - 1.75;
 
     if (this.isPlayerInside(playerPos)) {
-      const nextFloor = ELEVATOR_FLOORS[(this.targetFloorIdx + 1) % ELEVATOR_FLOORS.length];
+      const nextFloor = floorLabel((this.targetFloorIdx + 1) % ELEVATOR_FLOORS.length);
       if (this.isMoving) {
-        return `Panorama-Aufzug (${this.currentY.toFixed(0)} m) → ${ELEVATOR_FLOORS[this.targetFloorIdx].label}`;
+        return t('elevator.moving', { y: this.currentY.toFixed(0), floor: floorLabel(this.targetFloorIdx) });
       }
       return isMobile
-        ? `Aufzug · Tippen → ${nextFloor.label}`
-        : `Panorama-Aufzug · <strong>[L]</strong> Fahren zu ${nextFloor.label}`;
+        ? t('elevator.insideTouch', { floor: nextFloor })
+        : t('elevator.insideKeyHtml', { floor: nextFloor });
     }
 
     const nearIdx = this.getNearestFloorIndex(feetY);
     if (Math.abs(feetY - ELEVATOR_FLOORS[nearIdx].y) < 3.0) {
       if (Math.abs(this.currentY - ELEVATOR_FLOORS[nearIdx].y) < 0.8) {
         return isMobile
-          ? `Glas-Aufzug bereit · Einsteigen &amp; <strong>Aufzug</strong> tippen`
-          : `Glas-Aufzug Jesu Christi bereit · Einsteigen &amp; <strong>[L]</strong> drücken`;
+          ? t('elevator.readyTouchHtml')
+          : t('elevator.readyKeyHtml');
       }
       return isMobile
-        ? `Aufzug auf ${this.currentY.toFixed(0)} m · Tippen zum Rufen`
-        : `Glas-Aufzug auf ${this.currentY.toFixed(0)} m · <strong>[L]</strong> Aufzug rufen`;
+        ? t('elevator.awayTouch', { y: this.currentY.toFixed(0) })
+        : t('elevator.awayKeyHtml', { y: this.currentY.toFixed(0) });
     }
     return null;
   }

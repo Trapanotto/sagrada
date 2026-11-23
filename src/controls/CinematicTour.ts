@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import type { Localized } from '../i18n';
 
 export interface TourChapter {
-  title: string;
-  subtitle: string;
+  title: Localized;
+  subtitle: Localized;
   duration: number;
   startHour: number;
   endHour: number;
@@ -12,8 +13,11 @@ export interface TourChapter {
 
 const TOUR_CHAPTERS: TourChapter[] = [
   {
-    title: 'I · Geburtsfassade im Morgenlicht',
-    subtitle: 'Plaça de Gaudí · Spiegelteich & Lebensbaum-Zypresse',
+    title: { de: 'I · Geburtsfassade im Morgenlicht', en: 'I · The Nativity façade in morning light' },
+    subtitle: {
+      de: 'Plaça de Gaudí · Spiegelteich & Lebensbaum-Zypresse',
+      en: 'Plaça de Gaudí · reflecting pond & the cypress Tree of Life',
+    },
     duration: 13,
     startHour: 8.1,
     endHour: 9.2,
@@ -31,8 +35,11 @@ const TOUR_CHAPTERS: TourChapter[] = [
     ],
   },
   {
-    title: 'II · Der Säulenwald & das wandernde Licht',
-    subtitle: 'Zeitraffer 09:30 → 17:45 · Von kühlem Türkis zu glühendem Abendrot',
+    title: { de: 'II · Der Säulenwald & das wandernde Licht', en: 'II · The forest of columns & the wandering light' },
+    subtitle: {
+      de: 'Zeitraffer 09:30 → 17:45 · Von kühlem Türkis zu glühendem Abendrot',
+      en: 'Time-lapse 09:30 → 17:45 · from cool turquoise to a glowing sunset',
+    },
     duration: 16,
     startHour: 9.4,
     endHour: 17.7,
@@ -52,8 +59,11 @@ const TOUR_CHAPTERS: TourChapter[] = [
     ],
   },
   {
-    title: 'III · Passionsfassade & Glorienportal',
-    subtitle: 'Goldene Abendsonne auf den Knochensäulen & der großen Freitreppe',
+    title: { de: 'III · Passionsfassade & Glorienportal', en: 'III · The Passion façade & the Glory portal' },
+    subtitle: {
+      de: 'Goldene Abendsonne auf den Knochensäulen & der großen Freitreppe',
+      en: 'Golden evening sun on the bone-like columns & the grand staircase',
+    },
     duration: 13,
     startHour: 17.7,
     endHour: 18.6,
@@ -71,8 +81,8 @@ const TOUR_CHAPTERS: TourChapter[] = [
     ],
   },
   {
-    title: 'IV · Stille der Krypta',
-    subtitle: 'Neugotisches Gewölbe (-5,5 m) · Grab von Antoni Gaudí',
+    title: { de: 'IV · Stille der Krypta', en: 'IV · The stillness of the crypt' },
+    subtitle: { de: 'Neugotisches Gewölbe (-5,5 m) · Grab von Antoni Gaudí', en: 'Neo-Gothic vault (-5.5 m) · tomb of Antoni Gaudí' },
     duration: 9,
     startHour: 18.8,
     endHour: 19.2,
@@ -88,8 +98,11 @@ const TOUR_CHAPTERS: TourChapter[] = [
     ],
   },
   {
-    title: 'V · Die 18 Türme bei Nacht',
-    subtitle: 'Marienstern (138 m), Evangelisten (135 m) & Turm Jesu Christi (172,5 m)',
+    title: { de: 'V · Die 18 Türme bei Nacht', en: 'V · The 18 towers by night' },
+    subtitle: {
+      de: 'Marienstern (138 m), Evangelisten (135 m) & Turm Jesu Christi (172,5 m)',
+      en: 'Star of Mary (138 m), the Evangelists (135 m) & the Tower of Jesus Christ (172.5 m)',
+    },
     duration: 17,
     startHour: 19.6,
     endHour: 22.3,
@@ -112,6 +125,10 @@ const TOUR_CHAPTERS: TourChapter[] = [
 
 export class CinematicTour {
   public active = false;
+  /** Chapter currently shown (lets the UI re-render its caption after a language switch). */
+  public get currentChapter(): TourChapter {
+    return TOUR_CHAPTERS[this.chapterIdx];
+  }
   public paused = false;
 
   private chapterIdx = 0;

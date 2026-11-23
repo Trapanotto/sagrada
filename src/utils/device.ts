@@ -10,6 +10,20 @@ export function isTouchDevice(): boolean {
   );
 }
 
+/**
+ * True when the on-screen touch UI (thumbstick, action buttons) should be shown up front:
+ * the primary pointer is coarse, or the device has touch and no fine pointer at all.
+ * Narrow desktop windows with a mouse return false (window width is irrelevant here).
+ * Touch laptops with a mouse return false; their touch UI appears on the first real touch.
+ */
+export function prefersTouchUI(): boolean {
+  if (typeof window === 'undefined') return false;
+  const mm = (q: string) => (typeof window.matchMedia === 'function' ? window.matchMedia(q).matches : false);
+  if (mm('(pointer: coarse)')) return true;
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  return hasTouch && !mm('(any-pointer: fine)');
+}
+
 export function isMobileDevice(): boolean {
   if (typeof window === 'undefined') return false;
   const uaMobile = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent);

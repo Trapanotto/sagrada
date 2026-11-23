@@ -1,18 +1,61 @@
 import * as THREE from 'three';
+import { t, type Localized } from '../i18n';
 
 export interface TimelineMilestone {
   year: number;
-  label: string;
-  caption: string;
+  label: Localized;
+  caption: Localized;
 }
 
 export const TIMELINE_MILESTONES: TimelineMilestone[] = [
-  { year: 1889, label: '1889', caption: '1882–1889 · Grundsteinlegung & Vollendung der neugotischen Krypta' },
-  { year: 1926, label: '1926', caption: '1926 · Tod Antoni Gaudís — Geburtsfassade & erster Glockenturm (Barnabas)' },
-  { year: 1976, label: '1976', caption: '1954–1976 · Alle 4 Geburts- & 4 Passions-Türme mit Knochensäulen vollendet' },
-  { year: 2010, label: '2010', caption: '2010 · Kirchweihe durch Papst Benedikt XVI. — Säulenwald & Gewölbe fertig' },
-  { year: 2026, label: '2026', caption: '2021–2026 · Marienstern (138 m), 4 Evangelisten (135 m) & Jesus-Turm (172,5 m)' },
-  { year: 2034, label: 'Final', caption: 'Finaler Entwurf · Vollendete Glorienfassade, 4 Südtürme & Große Freitreppe' },
+  {
+    year: 1889,
+    label: { de: '1889', en: '1889' },
+    caption: {
+      de: '1882–1889 · Grundsteinlegung & Vollendung der neugotischen Krypta',
+      en: '1882–1889 · Foundation stone laid & neo-Gothic crypt completed',
+    },
+  },
+  {
+    year: 1926,
+    label: { de: '1926', en: '1926' },
+    caption: {
+      de: '1926 · Tod Antoni Gaudís — Geburtsfassade & erster Glockenturm (Barnabas)',
+      en: '1926 · Death of Antoni Gaudí — Nativity façade & first bell tower (St Barnabas)',
+    },
+  },
+  {
+    year: 1976,
+    label: { de: '1976', en: '1976' },
+    caption: {
+      de: '1954–1976 · Alle 4 Geburts- & 4 Passions-Türme mit Knochensäulen vollendet',
+      en: '1954–1976 · All 4 Nativity & 4 Passion towers completed, with the bone-like columns',
+    },
+  },
+  {
+    year: 2010,
+    label: { de: '2010', en: '2010' },
+    caption: {
+      de: '2010 · Kirchweihe durch Papst Benedikt XVI. — Säulenwald & Gewölbe fertig',
+      en: '2010 · Consecrated by Pope Benedict XVI — forest of columns & vaults complete',
+    },
+  },
+  {
+    year: 2026,
+    label: { de: '2026', en: '2026' },
+    caption: {
+      de: '2021–2026 · Marienstern (138 m), 4 Evangelisten (135 m) & Jesus-Turm (172,5 m)',
+      en: '2021–2026 · Star of Mary (138 m), 4 Evangelists (135 m) & Tower of Jesus (172.5 m)',
+    },
+  },
+  {
+    year: 2034,
+    label: { de: 'Final', en: 'Final' },
+    caption: {
+      de: 'Finaler Entwurf · Vollendete Glorienfassade, 4 Südtürme & Große Freitreppe',
+      en: 'Final design · Completed Glory façade, 4 south towers & grand staircase',
+    },
+  },
 ];
 
 interface PhaseEntry {
@@ -193,14 +236,16 @@ export class ConstructionTimeline {
     return e.clippedMaterials;
   }
 
+  /** Localized caption for a (possibly fractional) year — call again after a language switch. */
   public getCaptionForYear(year: number): string {
-    if (year <= 1892) return '1882–1889 · Grundsteinlegung & Bau der neugotischen Krypta';
-    if (year <= 1930) return `${Math.round(year)} · Ära Antoni Gaudí — Geburtsfassade & erste Glockentürme`;
-    if (year <= 1978) return `${Math.round(year)} · Passionsfassade mit Knochensäulen & 4 Westtürmen`;
-    if (year <= 2011) return `${Math.round(year)} · Vollendung des Säulenwalds, Gewölbe & Weihe (2010)`;
-    if (year <= 2023) return `${Math.round(year)} · Marien-Turm mit Morgenstern (138 m) & Evangelisten-Türme (135 m)`;
-    if (year <= 2026.5) return `${Math.round(year)} · 100. Todestag Gaudís — Turm Jesu Christi (172,5 m) & Kreuzgang`;
-    return 'Finaler Entwurf · Glorienfassade (Süd), 4 Südtürme & Große Freitreppe';
+    const y = Math.round(year);
+    if (year <= 1892) return t('timeline.eraCrypt');
+    if (year <= 1930) return t('timeline.eraGaudi', { year: y });
+    if (year <= 1978) return t('timeline.eraPassion', { year: y });
+    if (year <= 2011) return t('timeline.eraNave', { year: y });
+    if (year <= 2023) return t('timeline.eraMary', { year: y });
+    if (year <= 2026.5) return t('timeline.eraJesus', { year: y });
+    return t('timeline.eraFinal');
   }
 
   public applyYear(year: number): void {

@@ -13,24 +13,102 @@ import { StainedGlassCarpets } from './StainedGlassCarpets';
 import { WeatherSystem } from './WeatherSystem';
 import { JesusElevator } from './JesusElevator';
 import { CollisionSystem } from './CollisionSystem';
-import { isMobileDevice } from '../utils/device';
+import { getBootQuality, QualitySettings } from '../utils/quality';
+import { t, type MessageKey } from '../i18n';
+
+/** Loading-status message, resolved lazily so the UI can re-render it after a language switch. */
+export type LoadStatus = () => string;
 
 interface ModelSpec {
   id: string;
-  label: string;
+  labelKey: MessageKey;
   url: string;
   weightKB: number;
 }
 
 const MODEL_SPECS: ModelSpec[] = [
-  { id: 'facades', label: 'Geburts-, Passions- & Glorienfassade', url: './models/facades.glb', weightKB: 540 },
-  { id: 'towers', label: 'Alle 18 Türme & Wendeltreppen', url: './models/towers.glb', weightKB: 1351 },
-  { id: 'interior', label: 'Innenraum, Säulenwald & Gewölbe', url: './models/interior.glb', weightKB: 1208 },
-  { id: 'furnishings', label: 'Hochaltar, Kapellen & Ausstattung', url: './models/furnishings.glb', weightKB: 367 },
-  { id: 'cloister_crypt', label: 'Kreuzgang, Sakristeien & Krypta', url: './models/cloister_crypt.glb', weightKB: 125 },
-  { id: 'eixample', label: 'Eixample-Stadtblock & Spiegelteich', url: './models/eixample.glb', weightKB: 154 },
-  { id: 'plaza_life', label: 'Parkbänke, Kioske & Stadtmöbel', url: './models/plaza_life.glb', weightKB: 79 },
+  { id: 'facades', labelKey: 'module.facades', url: './models/facades.glb', weightKB: 1046 },
+  { id: 'towers', labelKey: 'module.towers', url: './models/towers.glb', weightKB: 1483 },
+  { id: 'interior', labelKey: 'module.interior', url: './models/interior.glb', weightKB: 1845 },
+  { id: 'furnishings', labelKey: 'module.furnishings', url: './models/furnishings.glb', weightKB: 298 },
+  { id: 'cloister_crypt', labelKey: 'module.cloister_crypt', url: './models/cloister_crypt.glb', weightKB: 129 },
+  { id: 'eixample', labelKey: 'module.eixample', url: './models/eixample.glb', weightKB: 154 },
+  { id: 'plaza_life', labelKey: 'module.plaza_life', url: './models/plaza_life.glb', weightKB: 67 },
 ];
+
+/** Without these the basilica itself is missing, so loading stops with an error screen. */
+const CORE_MODULE_IDS = new Set(['facades', 'towers', 'interior']);
+
+/** Localized, human-readable module name (falls back to the id). */
+export function getModuleLabel(id: string): string {
+  const spec = MODEL_SPECS.find((s) => s.id === id);
+  return spec ? t(spec.labelKey) : id;
+}
+
+export class AssetLoadError extends Error {
+  constructor(public readonly moduleIds: string[]) {
+    super(`Core 3D modules failed to load: ${moduleIds.join(', ')}`);
+    this.name = 'AssetLoadError';
+  }
+}
+
+/**
+ * Downscales oversized textures in place (low tier: 1024² -> 512² cuts their VRAM by 75 %).
+ * Runs before the first GPU upload, so nothing is uploaded twice.
+ */
+function downscaleTextures(root: THREE.Object3D, maxSize: number): number {
+  const seen = new Set<THREE.Texture>();
+  // Several Texture objects may share one decoded image (GLTFLoader clones per sampler) -> share the result
+  const scaledByImage = new Map<unknown, HTMLCanvasElement>();
+  let count = 0;
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const m of mats) {
+      const std = m as THREE.MeshStandardMaterial;
+      // 2D canvas is premultiplied: keep the colour map of alpha-blended / alpha-tested materials untouched
+      // (its alpha channel matters); normal / roughness / emissive maps never use alpha.
+      const alphaSensitive = std.transparent || std.alphaTest > 0;
+      for (const tex of [
+        alphaSensitive ? null : std.map,
+        std.normalMap,
+        std.roughnessMap,
+        std.metalnessMap,
+        std.emissiveMap,
+        std.aoMap,
+      ]) {
+        if (!tex || seen.has(tex)) continue;
+        seen.add(tex);
+        const img = tex.image as (ImageBitmap | HTMLImageElement | HTMLCanvasElement) | undefined;
+        if (!img) continue;
+        const cached = scaledByImage.get(img);
+        if (cached) {
+          tex.image = cached;
+          tex.needsUpdate = true;
+          continue;
+        }
+        if (!('width' in img) || !img.width || !img.height) continue;
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        if (scale >= 1) continue;
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img as CanvasImageSource, 0, 0, w, h);
+        scaledByImage.set(img, canvas);
+        tex.image = canvas;
+        tex.needsUpdate = true;
+        count++;
+      }
+    }
+  });
+  return count;
+}
 
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -54,10 +132,12 @@ export class SagradaScene {
   public readonly weather: WeatherSystem;
   public readonly elevator: JesusElevator;
 
+  /** Optional modules that failed to load (the visit continues without them). */
+  public readonly failedModules: string[] = [];
   public instancedGroups = 0;
   public savedDrawCalls = 0;
   public reflectorActive = true;
-  public readonly reflectorRes: number;
+  public reflectorRes: number;
 
   private pondReflector!: Reflector;
   private pondBox = new THREE.Box3(new THREE.Vector3(67.5, -1.0, -17.5), new THREE.Vector3(97.5, 1.5, 17.5));
@@ -108,10 +188,14 @@ export class SagradaScene {
   private lastReflTimeHours = -1;
   private reflFrameCounter = 0;
   private reflDirty = true;
+  private reflStationaryPeriod = 8;
+  private reflHalfRate = false;
 
   constructor(private renderer: THREE.WebGLRenderer) {
-    const mobile = isMobileDevice();
-    this.reflectorRes = mobile ? 160 : 256;
+    const quality = getBootQuality();
+    this.reflectorRes = quality.reflectorRes;
+    this.reflStationaryPeriod = quality.reflectorStationaryPeriod;
+    this.reflHalfRate = quality.reflectorHalfRate;
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2('#c8dff5', 0.0012);
@@ -131,10 +215,10 @@ export class SagradaScene {
     };
     this.scene.add(this.geometryOverlay.group);
 
-    this.birds = new FlockingBirds(mobile ? 8 : 16);
+    this.birds = new FlockingBirds(quality.birdCount);
     this.scene.add(this.birds.group);
 
-    this.fountain = new FountainParticles(mobile ? 200 : 420);
+    this.fountain = new FountainParticles(quality.fountainParticles);
     this.scene.add(this.fountain.points);
 
     this.candles = new CandleFlames();
@@ -160,8 +244,8 @@ export class SagradaScene {
       this.lighting.particles.points
     );
 
-    // Prepare cached interior reflection probe (128px on mobile for lower VRAM, 256px on desktop)
-    const probeRes = mobile ? 128 : 256;
+    // Prepare cached interior reflection probe (face size per quality tier)
+    const probeRes = quality.probeRes;
     this.interiorProbeRT = new THREE.WebGLCubeRenderTarget(probeRes, {
       generateMipmaps: true,
       minFilter: THREE.LinearMipmapLinearFilter,
@@ -180,7 +264,7 @@ export class SagradaScene {
       }
     };
 
-    this.buildReflectivePond(mobile);
+    this.buildReflectivePond(quality.reflectorMultisample);
   }
 
   /**
@@ -233,6 +317,27 @@ export class SagradaScene {
     this.geometryOverlay.group.visible = prevGeo;
   }
 
+  /** Live quality switch: pond reflection resolution & update throttling. */
+  public applyQuality(q: QualitySettings): void {
+    this.reflStationaryPeriod = q.reflectorStationaryPeriod;
+    this.reflHalfRate = q.reflectorHalfRate;
+    if (q.reflectorRes !== this.reflectorRes) {
+      this.reflectorRes = q.reflectorRes;
+      this.pondReflector.getRenderTarget().setSize(q.reflectorRes, q.reflectorRes);
+    }
+    this.reflDirty = true;
+  }
+
+  /** After WebGL context restore: render-target contents (probe, reflector) must be re-rendered. */
+  public handleContextRestored(): void {
+    // Old GL handles died with the context: drop references (dispose() would touch foreign GL objects)
+    this.interiorPmrem = new THREE.PMREMGenerator(this.renderer);
+    this.interiorPmremReady = false;
+    this.currentInteriorEnvRT = null; // old GPU handle is gone with the context
+    this.reflDirty = true;
+    this.captureInteriorReflectionProbe();
+  }
+
   private createEixampleNightWindowTexture(): THREE.CanvasTexture {
     const size = 512;
     const c = document.createElement('canvas');
@@ -275,14 +380,14 @@ export class SagradaScene {
     return tex;
   }
 
-  private buildReflectivePond(mobile: boolean): void {
+  private buildReflectivePond(multisample: number): void {
     const pondGeo = new THREE.PlaneGeometry(29.0, 34.0);
     const reflector = new Reflector(pondGeo, {
       clipBias: 0.003,
       textureWidth: this.reflectorRes,
       textureHeight: this.reflectorRes,
       color: 0x6f90a1,
-      multisample: mobile ? 0 : 2,
+      multisample,
     });
     const origBeforeRender = reflector.onBeforeRender.bind(reflector);
     reflector.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
@@ -294,12 +399,12 @@ export class SagradaScene {
       const qDot = Math.abs(this.lastReflCamQuat.dot(camera.quaternion));
       const camMoved = distSq > 0.0004 || 1.0 - qDot > 0.000015;
       const timeChanged = Math.abs(this.lighting.timeHours - this.lastReflTimeHours) > 0.002;
-      const stationaryPeriod = mobile ? 12 : 8;
+      const stationaryPeriod = this.reflStationaryPeriod;
       const shouldRender =
         this.reflDirty ||
         timeChanged ||
         this.timeline.isHistorical ||
-        (camMoved ? (!mobile || (this.reflFrameCounter & 1) === 0) : this.reflFrameCounter % stationaryPeriod === 0);
+        (camMoved ? (!this.reflHalfRate || (this.reflFrameCounter & 1) === 0) : this.reflFrameCounter % stationaryPeriod === 0);
 
       if (!shouldRender) return;
 
@@ -433,10 +538,10 @@ export class SagradaScene {
    * Multi-Scale Macro Anti-Tiling Weathering + Atmospheric Height Haze (Cathedral volumetric depth!).
    * Uses a lean 1-octave variant on mobile GPUs to cut stone fragment shader ALU cost.
    */
-  private injectStoneAntiTilingAndHeightFog(mat: THREE.MeshStandardMaterial, mobile: boolean): void {
+  private injectStoneAntiTilingAndHeightFog(mat: THREE.MeshStandardMaterial, lean: boolean): void {
     const hazeU = this.hazeUniforms;
     mat.customProgramCacheKey = () =>
-      mobile ? 'sagrada-stone-antitiling-mobile-v1' : 'sagrada-stone-antitiling-v1';
+      lean ? 'sagrada-stone-antitiling-mobile-v1' : 'sagrada-stone-antitiling-v1';
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uHazeColor = hazeU.uHazeColor;
       shader.uniforms.uHazeStrength = hazeU.uHazeStrength;
@@ -452,7 +557,7 @@ export class SagradaScene {
         '#include <common>',
         `#include <common>\nuniform vec3 uHazeColor;\nuniform float uHazeStrength;\nvarying vec3 vWorldPosAAA;`
       );
-      if (mobile) {
+      if (lean) {
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <map_fragment>',
           `#include <map_fragment>
@@ -508,7 +613,7 @@ export class SagradaScene {
   public async loadAllModules(
     camera: THREE.PerspectiveCamera,
     collision: CollisionSystem,
-    onProgress: (fraction: number, statusText: string) => void
+    onProgress: (fraction: number, status: LoadStatus) => void
   ): Promise<void> {
     THREE.Cache.enabled = true;
 
@@ -516,10 +621,11 @@ export class SagradaScene {
     let managerTotal = 1;
     let glbDlFrac = 0;
     let lastEmitted = 0;
-    let lastStatus = 'Architektur & Texturen werden geladen…';
+    const assetsStatus: LoadStatus = () => t('load.assets');
+    let lastStatus: LoadStatus = assetsStatus;
 
-    const report = (frac: number, statusText?: string) => {
-      if (statusText) lastStatus = statusText;
+    const report = (frac: number, status?: LoadStatus) => {
+      if (status) lastStatus = status;
       const clamped = Math.min(1.0, Math.max(lastEmitted, frac));
       lastEmitted = clamped;
       onProgress(clamped, lastStatus);
@@ -531,7 +637,7 @@ export class SagradaScene {
       managerTotal = Math.max(1, total);
       const texFrac = managerLoaded / managerTotal;
       // Blend GLB byte progress + shared PBR WebP texture completion into 0..0.64
-      report((glbDlFrac * 0.55 + texFrac * 0.45) * 0.64, 'Architektur & Texturen werden geladen…');
+      report((glbDlFrac * 0.55 + texFrac * 0.45) * 0.64, assetsStatus);
     };
 
     const dracoLoader = new DRACOLoader(loadingManager);
@@ -543,8 +649,8 @@ export class SagradaScene {
     const texLoader = new THREE.TextureLoader(loadingManager);
 
     const eixampleNightTex = this.createEixampleNightWindowTexture();
-    const mobile = isMobileDevice();
-    const maxAniso = Math.min(mobile ? 2 : 4, this.renderer.capabilities.getMaxAnisotropy());
+    const quality = getBootQuality();
+    const maxAniso = Math.min(quality.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
     const lightmapCache = new Map<string, THREE.Texture>();
     // Share identical MeshStandardMaterials across all 7 GLBs (dramatically cuts GPU textures & shader compiles!)
     const sharedMaterials = new Map<string, THREE.MeshStandardMaterial>();
@@ -571,7 +677,7 @@ export class SagradaScene {
           matName.includes('VaultStone') ||
           matName.includes('CryptStone')
         ) {
-          this.injectStoneAntiTilingAndHeightFog(mat, mobile);
+          this.injectStoneAntiTilingAndHeightFog(mat, quality.leanStoneShader);
         }
         if (
           obj.name === 'Interior_MarbleFloor' ||
@@ -613,7 +719,7 @@ export class SagradaScene {
     const maybeDowngradeClearcoat = (mat: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial => {
       if (mat instanceof THREE.MeshPhysicalMaterial) {
         const keepClearcoat =
-          !mobile && (mat.name.includes('FloorMarble') || mat.name.includes('PorphyryRed'));
+          quality.keepClearcoat && (mat.name.includes('FloorMarble') || mat.name.includes('PorphyryRed'));
         if (!keepClearcoat) {
           return this.downgradePhysicalToStandard(mat);
         }
@@ -749,7 +855,8 @@ export class SagradaScene {
           if (isTree || isDetail) {
             this.eixampleDetailMeshes.push(child);
           }
-          if (isDetail) {
+          // Low tier: trees also stay out of the (160 px) pond reflection — ~38k fewer reflected triangles
+          if (isDetail || (isTree && quality.reflectorLite)) {
             this.reflectorHiddenObjs.push(child);
           }
         }
@@ -768,7 +875,7 @@ export class SagradaScene {
     };
 
     // ── STAGE 1 (0% -> 64%): Download all 7 compact GLBs + shared WebP PBR textures + lightmaps + candles + compact HDRIs ──
-    report(0.02, 'Architektur & Texturen werden geladen…');
+    report(0.02, assetsStatus);
     const totalWeight = MODEL_SPECS.reduce((sum, s) => sum + s.weightKB, 0);
     const fileProgress = new Map<string, number>();
 
@@ -779,7 +886,7 @@ export class SagradaScene {
       }
       glbDlFrac = Math.min(1, weighted / totalWeight);
       const texFrac = managerLoaded / managerTotal;
-      report((glbDlFrac * 0.55 + texFrac * 0.45) * 0.64, 'Architektur & Texturen werden geladen…');
+      report((glbDlFrac * 0.55 + texFrac * 0.45) * 0.64, assetsStatus);
     };
 
     const lightmapsPromise = Promise.all(
@@ -805,44 +912,71 @@ export class SagradaScene {
 
     const hdriPromise = this.lighting.loadHdris();
 
-    const loadedGltfs = await Promise.all(
+    const settled = await Promise.allSettled(
       MODEL_SPECS.map(async (spec) => {
-        const gltf = await loader.loadAsync(spec.url, (ev) => {
-          const expectedBytes = ev.lengthComputable && ev.total > 0 ? ev.total : spec.weightKB * 1024;
-          const frac = Math.min(1, ev.loaded / expectedBytes);
-          fileProgress.set(spec.id, Math.max(fileProgress.get(spec.id) ?? 0, frac));
+        try {
+          const gltf = await loader.loadAsync(spec.url, (ev) => {
+            const expectedBytes = ev.lengthComputable && ev.total > 0 ? ev.total : spec.weightKB * 1024;
+            const frac = Math.min(1, ev.loaded / expectedBytes);
+            fileProgress.set(spec.id, Math.max(fileProgress.get(spec.id) ?? 0, frac));
+            updateDlProgress();
+          });
+          return { spec, gltf };
+        } finally {
+          fileProgress.set(spec.id, 1.0);
           updateDlProgress();
-        });
-        fileProgress.set(spec.id, 1.0);
-        updateDlProgress();
-        return { spec, gltf };
+        }
       })
     );
+
+    // Core architecture is mandatory; optional context modules may fail without blocking the visit.
+    const loadedGltfs: Array<{ spec: ModelSpec; gltf: { scene: THREE.Group } }> = [];
+    const failedCore: string[] = [];
+    settled.forEach((res, i) => {
+      const spec = MODEL_SPECS[i];
+      if (res.status === 'fulfilled') {
+        loadedGltfs.push(res.value);
+      } else {
+        console.error(`[Load] Module "${spec.id}" failed:`, res.reason);
+        this.failedModules.push(spec.id);
+        if (CORE_MODULE_IDS.has(spec.id)) failedCore.push(spec.id);
+      }
+    });
+    if (failedCore.length > 0) {
+      dracoLoader.dispose();
+      throw new AssetLoadError(failedCore);
+    }
 
     await Promise.all([lightmapsPromise, candlesPromise]);
     dracoLoader.dispose();
 
     // ── STAGE 2 (64% -> 76%): Attach modules, deduplicate materials & optimize GPU instancing ──
-    report(0.66, 'Szene & Materialien werden zusammengesetzt…');
+    report(0.66, () => t('load.assemble'));
     await nextFrame();
     for (let i = 0; i < loadedGltfs.length; i++) {
       const { spec, gltf } = loadedGltfs[i];
       processLoadedRoot(spec, gltf.scene);
-      report(0.66 + ((i + 1) / loadedGltfs.length) * 0.10, `Modul geladen: ${spec.label}`);
+      report(0.66 + ((i + 1) / loadedGltfs.length) * 0.10, () => t('load.module', { name: t(spec.labelKey) }));
       if (i % 2 === 1) await nextFrame();
     }
 
+    if (quality.maxTextureSize < 4096) {
+      let scaled = 0;
+      for (const { gltf } of loadedGltfs) scaled += downscaleTextures(gltf.scene, quality.maxTextureSize);
+      if (scaled > 0) console.info(`[Quality] ${scaled} textures downscaled to <= ${quality.maxTextureSize}px`);
+    }
+
     // ── STAGE 3 (76% -> 88%): Build 3D BVH collision index & finish HDRI PMREM IBL ──
-    report(0.78, '3D-Kollisionsgeometrie wird aufgebaut…');
+    report(0.78, () => t('load.collision'));
     await nextFrame();
-    const bvhStats = collision.buildBVH();
+    const bvhStats = await collision.buildBVH();
     console.info(`[Collision] 3D BVH ready: ${bvhStats.triangles.toLocaleString()} tris across ${bvhStats.meshes} meshes in ${bvhStats.buildMs} ms`);
-    report(0.84, 'Umgebungslicht & Reflexionen werden berechnet…');
+    report(0.84, () => t('load.environment'));
     await nextFrame();
     await hdriPromise;
 
     // ── STAGE 4 (88% -> 98%): Pre-compile ALL WebGL shaders, shadow map & interior reflection probe ──
-    report(0.88, 'Shader & Beleuchtung werden vorbereitet…');
+    report(0.88, () => t('load.shaders'));
     await nextFrame();
     const prewarmObjs: Array<[THREE.Object3D, boolean]> = [
       [this.candles.group, this.candles.group.visible],
@@ -854,20 +988,20 @@ export class SagradaScene {
     await this.renderer.compileAsync(this.scene, camera);
     for (const [obj, wasVis] of prewarmObjs) obj.visible = wasVis;
 
-    report(0.94, 'Schatten & Spiegelungen werden gerendert…');
+    report(0.94, () => t('load.shadows'));
     await nextFrame();
     this.lighting.requestShadowUpdate(true);
     this.captureInteriorReflectionProbe();
 
     // Warm up the live camera view (uploads all visible GPU textures & renders pond reflector + shadow map ONCE!)
-    report(0.97, 'Erster Frame wird vorbereitet…');
+    report(0.97, () => t('load.firstFrame'));
     await nextFrame();
     this.update(0.016, camera, collision.getIndoorFactor(camera.position));
     this.renderer.render(this.scene, camera);
     await nextFrame();
     this.renderer.render(this.scene, camera);
 
-    report(1.0, 'Bereit zum Betreten');
+    report(1.0, () => t('load.ready'));
   }
 
   public update(dt: number, camera: THREE.PerspectiveCamera, indoorFactor: number): void {

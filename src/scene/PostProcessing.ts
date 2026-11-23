@@ -6,9 +6,11 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { isMobileDevice } from '../utils/device';
 
-export type GraphicsTier = 'aaa' | 'ultra' | 'fast';
+/**
+ * Composer-based HDR post stack. This module is loaded on demand (dynamic import from
+ * RenderPipeline) so tiers that render directly never download / parse it.
+ */
 
 const CinematicGradeShader = {
   uniforms: {
@@ -59,58 +61,68 @@ const CinematicGradeShader = {
   `,
 };
 
-/**
- * High-FPS AAA HDR Post-Processing Pipeline:
- * - 'aaa' (Default, 60 FPS): Hardware WebGL2 4x MSAA + Baked BVH AO (0ms) + Selective HDR Bloom + AgX + Grade
- * - 'ultra': Adds half-res GTAOPass on top for high-end discrete GPUs
- * - 'fast': Direct single-pass WebGL2 render (zero composer overhead for laptops / iGPUs)
- */
-export class PostProcessingPipeline {
-  private composer: EffectComposer | null = null;
-  private gtaoPass: GTAOPass | null = null;
-  private bloomPass: UnrealBloomPass | null = null;
-  private bokehPass: BokehPass | null = null;
-  private gradePass: ShaderPass | null = null;
+export interface PostStackConfig {
+  bloom: boolean;
+  colorGrade: boolean;
+  gtao: boolean;
+  dof: boolean;
+}
 
-  public tier: GraphicsTier = 'aaa';
-  public dofEnabled = false;
-  private nightFactor = 0.0;
-  private dofFocus = 24.0;
-  private dofAperture = 0.00018;
-  private drsScale: number = isMobileDevice() ? 1.0 : 1.05;
-  private drsCooldown = 0;
+export class PostProcessingStack {
+  private composer: EffectComposer;
+  private gtaoPass: GTAOPass | null = null;
+  private bloomPass: UnrealBloomPass;
+  private bokehPass: BokehPass;
+  private gradePass: ShaderPass;
+  private width: number;
+  private height: number;
+  private wantGtao = false;
 
   constructor(
-    private renderer: THREE.WebGLRenderer,
+    renderer: THREE.WebGLRenderer,
     private scene: THREE.Scene,
-    private camera: THREE.PerspectiveCamera
+    private camera: THREE.PerspectiveCamera,
+    width: number,
+    height: number,
+    pixelRatio: number,
+    msaaSamples: number
   ) {
-    // Zero GPU render-target / shader allocation at startup! Composer is lazily created ONLY if Ultra or DoF is enabled.
-    this.setTier('aaa');
+    this.width = width;
+    this.height = height;
+
+    // HalfFloat HDR target with its own MSAA (independent of the canvas context's antialias flag)
+    const rt = new THREE.WebGLRenderTarget(width, height, {
+      type: THREE.HalfFloatType,
+      samples: msaaSamples,
+    });
+    this.composer = new EffectComposer(renderer, rt);
+    this.composer.setPixelRatio(pixelRatio);
+    this.composer.setSize(width, height);
+
+    this.composer.addPass(new RenderPass(scene, camera));
+
+    const halfW = Math.max(1, Math.floor(width * 0.5));
+    const halfH = Math.max(1, Math.floor(height * 0.5));
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(halfW, halfH), 0.16, 0.42, 1.48);
+    this.bokehPass = new BokehPass(scene, camera, { focus: 24, aperture: 0.00018, maxblur: 0.012 });
+    this.bokehPass.enabled = false;
+    this.gradePass = new ShaderPass(CinematicGradeShader);
+
+    this.composer.addPass(this.bloomPass);
+    this.composer.addPass(this.bokehPass);
+    this.composer.addPass(new OutputPass());
+    this.composer.addPass(this.gradePass);
   }
 
-  private ensureComposer(): void {
-    if (this.composer) return;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-
-    // Hardware WebGL2 4x MSAA HalfFloat HDR target — lazily allocated ONLY for Ultra / Photo-DoF!
-    const rt = new THREE.WebGLRenderTarget(w, h, {
-      type: THREE.HalfFloatType,
-      samples: 4,
-    });
-
-    this.composer = new EffectComposer(this.renderer, rt);
-    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
-    this.composer.setSize(w, h);
-
-    const renderPass = new RenderPass(this.scene, this.camera);
-    this.composer.addPass(renderPass);
-
-    this.gtaoPass = new GTAOPass(this.scene, this.camera, Math.floor(w * 0.5), Math.floor(h * 0.5));
-    this.gtaoPass.output = GTAOPass.OUTPUT.Default;
-    this.gtaoPass.blendIntensity = 0.58;
-    this.gtaoPass.updateGtaoMaterial({
+  /** GTAO allocates several full/half-res targets; only build it when a tier actually asks for it. */
+  private ensureGtao(): void {
+    if (this.gtaoPass) return;
+    const halfW = Math.max(1, Math.floor(this.width * 0.5));
+    const halfH = Math.max(1, Math.floor(this.height * 0.5));
+    const gtao = new GTAOPass(this.scene, this.camera, halfW, halfH);
+    gtao.output = GTAOPass.OUTPUT.Default;
+    gtao.blendIntensity = 0.58;
+    gtao.updateGtaoMaterial({
       radius: 0.9,
       distanceExponent: 1.5,
       thickness: 1.1,
@@ -118,7 +130,7 @@ export class PostProcessingPipeline {
       samples: 8,
       distanceFallOff: 1.0,
     });
-    this.gtaoPass.updatePdMaterial({
+    gtao.updatePdMaterial({
       lumaPhi: 10,
       depthPhi: 2,
       normalPhi: 3,
@@ -127,147 +139,62 @@ export class PostProcessingPipeline {
       rings: 2,
       samples: 8,
     });
-    this.gtaoPass.enabled = false;
-    this.composer.addPass(this.gtaoPass);
-
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(Math.floor(w * 0.5), Math.floor(h * 0.5)), 0.16, 0.42, 1.48);
-    this.composer.addPass(this.bloomPass);
-
-    this.bokehPass = new BokehPass(this.scene, this.camera, {
-      focus: this.dofFocus,
-      aperture: this.dofAperture,
-      maxblur: 0.012,
-    });
-    this.bokehPass.enabled = false;
-    this.composer.addPass(this.bokehPass);
-
-    const outputPass = new OutputPass();
-    this.composer.addPass(outputPass);
-
-    this.gradePass = new ShaderPass(CinematicGradeShader);
-    this.composer.addPass(this.gradePass);
-
-    this.setNightBloomFactor(this.nightFactor);
+    // Insert directly after the RenderPass (index 1), before bloom
+    this.composer.insertPass(gtao, 1);
+    this.gtaoPass = gtao;
   }
 
-  public setTier(tier: GraphicsTier): void {
-    this.tier = tier;
-    if (tier === 'ultra') {
-      this.ensureComposer();
-      const dpr = Math.min(window.devicePixelRatio, 1.25);
-      this.renderer.setPixelRatio(dpr);
-      this.composer!.setPixelRatio(dpr);
-      this.gtaoPass!.enabled = true;
-      this.bloomPass!.enabled = true;
-      this.gradePass!.enabled = true;
-      this.bokehPass!.enabled = this.dofEnabled;
-    } else if (tier === 'aaa') {
-      const dpr = Math.min(window.devicePixelRatio, this.drsScale);
-      this.renderer.setPixelRatio(dpr);
-      if (this.composer) {
-        this.composer.setPixelRatio(dpr);
-        this.gtaoPass!.enabled = false;
-        this.bloomPass!.enabled = false;
-        this.gradePass!.enabled = false;
-        this.bokehPass!.enabled = this.dofEnabled;
-      }
-    } else {
-      const dpr = Math.min(window.devicePixelRatio, isMobileDevice() ? 0.72 : 0.85);
-      this.renderer.setPixelRatio(dpr);
-      if (this.composer) {
-        this.gtaoPass!.enabled = false;
-        this.bloomPass!.enabled = false;
-        this.gradePass!.enabled = false;
-        this.bokehPass!.enabled = false;
-      }
-    }
-    this.setSize(window.innerWidth, window.innerHeight);
+  public configure(cfg: PostStackConfig): void {
+    this.wantGtao = cfg.gtao;
+    if (cfg.gtao) this.ensureGtao();
+    if (this.gtaoPass) this.gtaoPass.enabled = cfg.gtao;
+    this.bloomPass.enabled = cfg.bloom;
+    this.gradePass.enabled = cfg.colorGrade;
+    this.bokehPass.enabled = cfg.dof;
+    this.setSize(this.width, this.height);
   }
 
-  /**
-   * Automatic Dynamic Resolution Scaling (DRS) for Desktop iGPUs & Mobile GPUs:
-   * Smoothly adapts pixel ratio in 'aaa' tier to keep interactive framerates fluid without touching geometry/lights!
-   */
-  public updateDrs(dt: number, currentFps: number): void {
-    if (this.tier !== 'aaa') return;
-    const mobile = isMobileDevice();
-    const interval = mobile ? 1.6 : 2.0;
-    this.drsCooldown += dt;
-    if (this.drsCooldown < interval) return;
-    this.drsCooldown = 0;
-
-    const minScale = mobile ? 0.70 : 0.80;
-    const maxScale = mobile ? 1.15 : 1.10;
-    const lowFps = mobile ? 36 : 44;
-    const highFps = mobile ? 52 : 56;
-    const stepDown = 0.08;
-    const stepUp = mobile ? 0.06 : 0.05;
-
-    let next = this.drsScale;
-    if (currentFps < lowFps && next > minScale) {
-      next = Math.max(minScale, next - stepDown);
-    } else if (currentFps > highFps && next < maxScale) {
-      next = Math.min(maxScale, next + stepUp);
-    }
-    if (Math.abs(next - this.drsScale) > 0.01) {
-      this.drsScale = next;
-      const dpr = Math.min(window.devicePixelRatio, this.drsScale);
-      this.renderer.setPixelRatio(dpr);
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
+  public get gtaoEnabled(): boolean {
+    return this.wantGtao;
   }
 
-  public updateMobileDrs(dt: number, currentFps: number): void {
-    this.updateDrs(dt, currentFps);
-  }
-
-  public cycleTier(): GraphicsTier {
-    const order: GraphicsTier[] = ['aaa', 'ultra', 'fast'];
-    const next = order[(order.indexOf(this.tier) + 1) % order.length];
-    this.setTier(next);
-    return next;
-  }
-
-  public setDof(enabled: boolean, focus?: number, aperture?: number): void {
-    this.dofEnabled = enabled;
-    if (focus !== undefined) this.dofFocus = focus;
-    if (aperture !== undefined) this.dofAperture = aperture;
-    if (enabled && this.tier !== 'fast') {
-      this.ensureComposer();
-    }
-    if (this.bokehPass) {
-      this.bokehPass.enabled = enabled && this.tier !== 'fast';
-      const u = this.bokehPass.uniforms as Record<string, THREE.IUniform>;
-      if (focus !== undefined && u.focus) u.focus.value = focus;
-      if (aperture !== undefined && u.aperture) u.aperture.value = aperture;
-    }
+  public setDofParams(focus: number, aperture: number): void {
+    const u = this.bokehPass.uniforms as Record<string, THREE.IUniform>;
+    if (u.focus) u.focus.value = focus;
+    if (u.aperture) u.aperture.value = aperture;
   }
 
   public setNightBloomFactor(nightFactor: number): void {
-    this.nightFactor = nightFactor;
-    if (this.bloomPass) {
-      this.bloomPass.strength = THREE.MathUtils.lerp(0.15, 0.34, nightFactor);
-      this.bloomPass.threshold = THREE.MathUtils.lerp(1.48, 1.12, nightFactor);
-    }
+    this.bloomPass.strength = THREE.MathUtils.lerp(0.15, 0.34, nightFactor);
+    this.bloomPass.threshold = THREE.MathUtils.lerp(1.48, 1.12, nightFactor);
+  }
+
+  public setPixelRatio(pr: number): void {
+    this.composer.setPixelRatio(pr);
+    this.setSize(this.width, this.height);
   }
 
   public setSize(width: number, height: number): void {
-    if (!this.composer) return;
+    this.width = width;
+    this.height = height;
     this.composer.setSize(width, height);
-    this.gtaoPass!.setSize(Math.max(1, Math.floor(width * 0.5)), Math.max(1, Math.floor(height * 0.5)));
-    this.bloomPass!.setSize(Math.max(1, Math.floor(width * 0.5)), Math.max(1, Math.floor(height * 0.5)));
+    const halfW = Math.max(1, Math.floor(width * 0.5));
+    const halfH = Math.max(1, Math.floor(height * 0.5));
+    this.gtaoPass?.setSize(halfW, halfH);
+    this.bloomPass.setSize(halfW, halfH);
   }
 
-  public render(dt = 0.016): void {
-    if (this.tier === 'ultra' || (this.tier === 'aaa' && this.dofEnabled)) {
-      this.ensureComposer();
-      if (this.gradePass?.uniforms.uTime) {
-        this.gradePass.uniforms.uTime.value = (this.gradePass.uniforms.uTime.value + dt) % 1000.0;
-      }
-      this.composer!.render();
-    } else {
-      // Crisp single-pass hardware MSAA + AgX direct render (3x faster on integrated GPUs!)
-      this.renderer.render(this.scene, this.camera);
-    }
+  public render(dt: number): void {
+    const u = this.gradePass.uniforms.uTime;
+    if (u) u.value = (u.value + dt) % 1000.0;
+    this.composer.render(dt);
+  }
+
+  public dispose(): void {
+    this.gtaoPass?.dispose();
+    this.bloomPass.dispose();
+    this.bokehPass.dispose();
+    this.gradePass.dispose();
+    this.composer.dispose();
   }
 }

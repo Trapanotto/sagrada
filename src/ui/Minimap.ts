@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FloorLevel } from '../data/teleports';
+import { t } from '../i18n';
 
 export class Minimap {
   private ctx: CanvasRenderingContext2D;
@@ -51,6 +52,12 @@ export class Minimap {
     this.activeLevel = level;
     const tabs = (container ?? document.getElementById('minimap-levels'))?.querySelectorAll<HTMLButtonElement>('.level-tab');
     tabs?.forEach((b) => b.classList.toggle('active', b.dataset.level === level));
+  }
+
+  /** Re-bakes the cardinal labels in the current language on the next render. */
+  public refreshLanguage(): void {
+    this.cachedLevel = null;
+    this.lastDrawLevel = null;
   }
 
   private worldToX(wx: number): number {
@@ -187,16 +194,16 @@ export class Minimap {
       }
     }
 
-    // Cardinal labels (N, S, O, W)
+    // Cardinal labels (localized: N/S/O/W in German, N/S/E/W in English)
     ctx.fillStyle = 'rgba(240, 232, 218, 0.55)';
     ctx.font = '600 9px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('N · Apsis', w * 0.5, 11);
-    ctx.fillText('S · Glorien', w * 0.5, h - 5);
+    ctx.fillText(t('minimap.north'), w * 0.5, 11);
+    ctx.fillText(t('minimap.south'), w * 0.5, h - 5);
     ctx.textAlign = 'right';
-    ctx.fillText('O · Geburt', w - 5, h * 0.45);
+    ctx.fillText(t('minimap.east'), w - 5, h * 0.45);
     ctx.textAlign = 'left';
-    ctx.fillText('W · Passion', 5, h * 0.45);
+    ctx.fillText(t('minimap.west'), 5, h * 0.45);
 
     this.cachedLevel = level;
   }

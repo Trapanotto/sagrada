@@ -1,4 +1,4 @@
-import { isTouchDevice, triggerHaptic } from '../utils/device';
+import { prefersTouchUI, triggerHaptic } from '../utils/device';
 
 /**
  * AAA Mobile & Tablet Multi-Touch Controller (Genshin / PUBG Mobile style):
@@ -24,6 +24,8 @@ export class TouchControls {
   private lookVelX = 0;
   private lookVelY = 0;
   private readonly maxRadius = 48;
+  private touchActive = false;
+  private hiddenByApp = false;
 
   public onLookDelta?: (dx: number, dy: number) => void;
   public onJump?: () => void;
@@ -50,7 +52,9 @@ export class TouchControls {
     this.flyToggleBtnEl = document.getElementById('touch-fly-toggle')!;
     this.elevBtnEl = document.getElementById('touch-elevator-btn')!;
 
-    if (isTouchDevice() || window.innerWidth <= 900) {
+    // Touch UI only for real touch / coarse-pointer devices (never for a narrow desktop window with a mouse)
+    this.touchActive = prefersTouchUI();
+    if (this.touchActive) {
       this.rootEl.classList.remove('hidden');
     }
 
@@ -111,7 +115,8 @@ export class TouchControls {
     canvas.addEventListener(
       'touchstart',
       (e) => {
-        this.rootEl.classList.remove('hidden'); // Auto-reveal touch controls on first touch!
+        this.touchActive = true;
+        if (!this.hiddenByApp) this.rootEl.classList.remove('hidden'); // Auto-reveal touch controls on first touch!
         if (e.touches.length === 2) {
           // Start two-finger pinch zoom
           this.lookTouchId = null;
@@ -272,10 +277,16 @@ export class TouchControls {
   }
 
   public setVisible(visible: boolean): void {
+    this.hiddenByApp = !visible;
     if (!visible) {
       this.rootEl.classList.add('hidden');
-    } else if (isTouchDevice() || window.innerWidth <= 900) {
+    } else if (this.touchActive) {
       this.rootEl.classList.remove('hidden');
     }
+  }
+
+  /** True once the touch UI is (or should be) shown: coarse-pointer device or a real touch happened. */
+  public get isTouchActive(): boolean {
+    return this.touchActive;
   }
 }

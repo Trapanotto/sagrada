@@ -360,6 +360,106 @@ body,
   color: #fff2d6;
 }
 
+/* Graphics quality selector (styled like a HUD button) */
+.hud-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 20px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 10px) 52%, calc(100% - 6px) 52%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  font-family: inherit;
+}
+
+.hud-select option {
+  background: #15130f;
+  color: var(--text-main);
+}
+
+/* DE | EN language switch (top bar + loading card). Active state keys off <html lang>, which the
+   inline boot script sets before first paint, so it is correct even before the bundle runs. */
+.lang-switch {
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.lang-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.lang-switch button + button {
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.lang-switch button:hover {
+  color: var(--text-main);
+  background: rgba(217, 174, 103, 0.14);
+}
+
+html[lang='de'] .lang-switch [data-lang='de'],
+html[lang='en'] .lang-switch [data-lang='en'] {
+  background: rgba(217, 174, 103, 0.25);
+  color: #fff2d6;
+}
+
+.loading-minimal {
+  position: relative;
+  padding-top: 38px;
+}
+
+.loading-lang {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* Fatal error in the loading card (no WebGL 2, core asset failed) */
+.loading-error {
+  text-align: center;
+}
+
+.loading-error-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 8px;
+}
+
+.loading-error-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+/* WebGL context lost / restoring notice */
+#gl-status {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 120;
+  padding: 12px 18px;
+  font-size: 13px;
+  text-align: center;
+  max-width: min(420px, calc(100vw - 32px));
+}
+
 /* Bottom-Left: Tabbed Time & Historical Construction Timelapse */
 #hud-time {
   left: 14px;
@@ -384,10 +484,11 @@ body,
   border: none;
   background: transparent;
   color: var(--text-muted);
-  padding: 5px 6px;
+  padding: 5px 4px;
   border-radius: 6px;
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -1043,6 +1144,20 @@ body,
     right: calc(8px + env(safe-area-inset-right, 0px));
     padding: 6px 10px;
     gap: 6px;
+    /* Strictly one row on phones/tablets: the zone badge shrinks (ellipsis) instead of the bar wrapping */
+    flex-wrap: nowrap;
+  }
+
+  .hud-brand {
+    flex: 1 1 auto;
+  }
+
+  .hud-brand .zone-badge {
+    min-width: 0;
+  }
+
+  .lang-switch button {
+    padding: 4px 5px;
   }
 
   .brand-title,

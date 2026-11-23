@@ -51,6 +51,9 @@ export class PlayerController {
     startPitch: 0,
     endPitch: 0,
   };
+  private readonly _fwd = new THREE.Vector3();
+  private readonly _right = new THREE.Vector3();
+  private readonly _move = new THREE.Vector3();
 
   public onModeChange?: (flyMode: boolean) => void;
   public onStep?: () => void;
@@ -278,10 +281,11 @@ export class PlayerController {
     }
 
     // Movement vectors
-    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    // Scratch vectors (no per-frame allocations)
+    const forward = this._fwd.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    const right = this._right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
-    const move = new THREE.Vector3();
+    const move = this._move.set(0, 0, 0);
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) move.add(forward);
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) move.sub(forward);
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) move.add(right);

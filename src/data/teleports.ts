@@ -1,9 +1,11 @@
+import type { Localized } from '../i18n';
+
 export type FloorLevel = 'crypt' | 'ground' | 'gallery' | 'towers';
 
 export interface TeleportPreset {
   id: string;
-  label: string;
-  shortLabel: string;
+  label: Localized;
+  shortLabel: Localized;
   level: FloorLevel;
   position: [number, number, number];
   lookAt: [number, number, number];
@@ -13,8 +15,8 @@ export interface TeleportPreset {
 export const TELEPORT_PRESETS: TeleportPreset[] = [
   {
     id: 'placa-gaudi',
-    label: 'Plaça de Gaudí (Teich & Geburtsfassade)',
-    shortLabel: 'Geburtsfassade',
+    label: { de: 'Plaça de Gaudí (Teich & Geburtsfassade)', en: 'Plaça de Gaudí (pond & Nativity façade)' },
+    shortLabel: { de: 'Geburtsfassade', en: 'Nativity' },
     level: 'ground',
     position: [103.5, 2.35, 5.5],
     lookAt: [31, 29, 0],
@@ -22,8 +24,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'main-nave',
-    label: 'Hauptschiff — Säulenwald',
-    shortLabel: 'Hauptschiff',
+    label: { de: 'Hauptschiff — Säulenwald', en: 'Nave — forest of columns' },
+    shortLabel: { de: 'Hauptschiff', en: 'Nave' },
     level: 'ground',
     position: [0, 2.95, 34],
     lookAt: [0, 21, -14],
@@ -31,8 +33,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'crossing-altar',
-    label: 'Vierung & Hochaltar',
-    shortLabel: 'Vierung/Altar',
+    label: { de: 'Vierung & Hochaltar', en: 'Crossing & high altar' },
+    shortLabel: { de: 'Vierung/Altar', en: 'Crossing/Altar' },
     level: 'ground',
     position: [0, 2.95, 6],
     lookAt: [0, 14, -22],
@@ -40,8 +42,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'gallery-east',
-    label: 'Empore (Cantoria 14,5 m)',
-    shortLabel: 'Empore',
+    label: { de: 'Empore (Cantoria 14,5 m)', en: 'Choir gallery (Cantoria, 14.5 m)' },
+    shortLabel: { de: 'Empore', en: 'Gallery' },
     level: 'gallery',
     position: [19.2, 16.25, 28],
     lookAt: [-4, 18, -8],
@@ -49,8 +51,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'crypt-gaudi',
-    label: 'Krypta & Gaudís Grab',
-    shortLabel: 'Krypta',
+    label: { de: 'Krypta & Gaudís Grab', en: "Crypt & Gaudí's tomb" },
+    shortLabel: { de: 'Krypta', en: 'Crypt' },
     level: 'crypt',
     position: [0, -3.75, -14.5],
     lookAt: [-8.5, -4.5, -23.5],
@@ -58,8 +60,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'cloister-east',
-    label: 'Kreuzgang & Sakristei',
-    shortLabel: 'Kreuzgang',
+    label: { de: 'Kreuzgang & Sakristei', en: 'Cloister & sacristy' },
+    shortLabel: { de: 'Kreuzgang', en: 'Cloister' },
     level: 'ground',
     position: [26.2, 2.95, 36],
     lookAt: [26.2, 5.2, 14],
@@ -67,8 +69,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'passion-facade',
-    label: 'Passionsfassade (West)',
-    shortLabel: 'Passionsfassade',
+    label: { de: 'Passionsfassade (West)', en: 'Passion façade (west)' },
+    shortLabel: { de: 'Passionsfassade', en: 'Passion' },
     level: 'ground',
     position: [-58, 1.75, 5],
     lookAt: [-31, 24, 0],
@@ -76,8 +78,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'glory-facade',
-    label: 'Glorienfassade & Freitreppe (Süd)',
-    shortLabel: 'Glorienfassade',
+    label: { de: 'Glorienfassade & Freitreppe (Süd)', en: 'Glory façade & staircase (south)' },
+    shortLabel: { de: 'Glorienfassade', en: 'Glory' },
     level: 'ground',
     position: [0, 1.75, 86],
     lookAt: [0, 34, 48],
@@ -85,8 +87,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'spiral-stair',
-    label: 'Gaudí-Wendeltreppe (Ostturm, begehbar)',
-    shortLabel: 'Ost-Treppe',
+    label: { de: 'Gaudí-Wendeltreppe (Ostturm, begehbar)', en: 'Gaudí spiral staircase (east tower, walkable)' },
+    shortLabel: { de: 'Ost-Treppe', en: 'East stair' },
     level: 'towers',
     position: [32.88, 34.0, 3.6],
     lookAt: [31.5, 42.0, 3.6],
@@ -94,8 +96,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'west-spiral-stair',
-    label: 'Passions-Wendeltreppe (Westturm, begehbar)',
-    shortLabel: 'West-Treppe',
+    label: { de: 'Passions-Wendeltreppe (Westturm, begehbar)', en: 'Passion spiral staircase (west tower, walkable)' },
+    shortLabel: { de: 'West-Treppe', en: 'West stair' },
     level: 'towers',
     position: [-30.12, 32.0, 3.6],
     lookAt: [-31.5, 40.0, 3.6],
@@ -103,8 +105,11 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'jesus-elevator',
-    label: 'Glas-Aufzug im Turm Jesu Christi (ab 56 m über Gewölbe)',
-    shortLabel: 'Aufzug [L]',
+    label: {
+      de: 'Glas-Aufzug im Turm Jesu Christi (ab 56 m über Gewölbe)',
+      en: 'Glass elevator in the Tower of Jesus Christ (from 56 m, above the vault)',
+    },
+    shortLabel: { de: 'Aufzug [L]', en: 'Elevator [L]' },
     level: 'towers',
     position: [0.0, 57.75, 4.9],
     lookAt: [0.0, 58.2, 0.0],
@@ -112,8 +117,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'tower-bridge',
-    label: 'Turm-Brücke Ost (65 m)',
-    shortLabel: 'Turm-Brücke',
+    label: { de: 'Turm-Brücke Ost (65 m)', en: 'East tower bridge (65 m)' },
+    shortLabel: { de: 'Turm-Brücke', en: 'Tower bridge' },
     level: 'towers',
     position: [31.5, 66.85, 0.0],
     lookAt: [95, 22, 0],
@@ -121,8 +126,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'jesus-viewpoint',
-    label: 'Jesus-Turm Aussicht (136 m)',
-    shortLabel: 'Jesus-Turm',
+    label: { de: 'Jesus-Turm Aussicht (136 m)', en: 'Tower of Jesus viewpoint (136 m)' },
+    shortLabel: { de: 'Jesus-Turm', en: 'Jesus tower' },
     level: 'towers',
     position: [3.6, 137.9, -3.6],
     lookAt: [0, 122, -48],
@@ -130,8 +135,8 @@ export const TELEPORT_PRESETS: TeleportPreset[] = [
   },
   {
     id: 'aerial-overview',
-    label: 'Vogelperspektive (Flug)',
-    shortLabel: 'Luftbild',
+    label: { de: 'Vogelperspektive (Flug)', en: "Bird's-eye view (flight)" },
+    shortLabel: { de: 'Luftbild', en: 'Aerial' },
     level: 'towers',
     position: [172, 114, 152],
     lookAt: [0, 74, -4],

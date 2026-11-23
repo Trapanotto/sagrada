@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ARCHITECTURAL_HOTSPOTS, ArchitecturalHotspot } from '../data/hotspots';
+import { loc } from '../i18n';
 
 const INTERIOR_ONLY_IDS = new Set([
   'double-twisted-columns',
@@ -69,7 +70,8 @@ export class HotspotPanel {
     for (const hs of ARCHITECTURAL_HOTSPOTS) {
       const btn = document.createElement('button');
       btn.className = 'hotspot-pin';
-      btn.innerHTML = `<span class="pin-dot"></span><span class="pin-label">${hs.title}</span>`;
+      btn.innerHTML = '<span class="pin-dot"></span><span class="pin-label"></span>';
+      btn.querySelector('.pin-label')!.textContent = loc(hs.title);
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.openDrawer(hs);
@@ -97,15 +99,34 @@ export class HotspotPanel {
 
   public openDrawer(hs: ArchitecturalHotspot): void {
     this.activeHotspot = hs;
-    this.catEl.textContent = hs.category;
-    this.titleEl.textContent = hs.title;
-    this.bodyEl.textContent = hs.description;
-    this.metricsEl.innerHTML = hs.metrics.map((m) => `<span class="metric-pill">${m}</span>`).join('');
+    this.renderDrawer(hs);
     this.drawer.classList.remove('hidden');
 
     if (document.pointerLockElement) {
       document.exitPointerLock();
     }
+  }
+
+  private renderDrawer(hs: ArchitecturalHotspot): void {
+    this.catEl.textContent = loc(hs.category);
+    this.titleEl.textContent = loc(hs.title);
+    this.bodyEl.textContent = loc(hs.description);
+    this.metricsEl.textContent = '';
+    for (const m of loc(hs.metrics)) {
+      const pill = document.createElement('span');
+      pill.className = 'metric-pill';
+      pill.textContent = m;
+      this.metricsEl.appendChild(pill);
+    }
+  }
+
+  /** Re-renders pin labels and an open drawer after a language switch (keeps the drawer open). */
+  public refreshLanguage(): void {
+    for (const hs of ARCHITECTURAL_HOTSPOTS) {
+      const label = this.markerEls.get(hs.id)?.querySelector('.pin-label');
+      if (label) label.textContent = loc(hs.title);
+    }
+    if (this.activeHotspot) this.renderDrawer(this.activeHotspot);
   }
 
   public closeDrawer(): void {
