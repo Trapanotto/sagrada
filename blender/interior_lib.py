@@ -283,6 +283,144 @@ def build_hyperboloid_bay(
         add_cylinder(bm_lamp, Vector((bay.cx, bay.cy, bay.z_top + 0.05)), Vector((bay.cx, bay.cy, bay.z_top + 0.25)), bay.a, bay.a, segments=max(12, n_rulings // 2), cap=True)
 
 
+def build_bay_heightfield(bay: HyperboloidBay, bm_shell: bmesh.types.BMesh, nu: int = 16, nv: int = 4) -> None:
+    """Mesh a rectangular bay as a height field of its hyperboloid (faces down). Used for the half bays
+    against the Glory wall, whose hyperboloid axis lies outside the bay (mirror of the neighbouring bay,
+    so the shared edge matches exactly); the ruling mesher needs the collar inside the polygon."""
+    xs = [p[0] for p in bay.poly]
+    ys = [p[1] for p in bay.poly]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    grid = [[bm_shell.verts.new((x0 + (x1 - x0) * i / nu, y0 + (y1 - y0) * j / nv, bay.height(x0 + (x1 - x0) * i / nu, y0 + (y1 - y0) * j / nv)))
+             for j in range(nv + 1)] for i in range(nu + 1)]
+    for i in range(nu):
+        for j in range(nv):
+            f = bm_shell.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]))
+            f.normal_update()
+            if f.normal.z > 0.0:
+                f.normal_flip()
+
+
+def add_annulus_sector(bm: bmesh.types.BMesh, cx: float, cy: float, r0: float, r1: float, a0: float, a1: float, z0: float, z1: float, segs: int = 16) -> None:
+    """Closed solid ring sector (angles in radians, CCW from +x) between radii r0 < r1 and heights z0 < z1."""
+    r0 = max(r0, 0.01)
+    rings = []
+    for (r, z) in ((r0, z0), (r1, z0), (r1, z1), (r0, z1)):
+        rings.append([bm.verts.new((cx + r * math.cos(a0 + (a1 - a0) * k / segs), cy + r * math.sin(a0 + (a1 - a0) * k / segs), z)) for k in range(segs + 1)])
+    for a in range(4):
+        ra, rb = rings[a], rings[(a + 1) % 4]
+        for k in range(segs):
+            bm.faces.new((ra[k], ra[k + 1], rb[k + 1], rb[k]))
+    bm.faces.new([rings[i][0] for i in range(4)])
+    bm.faces.new([rings[i][segs] for i in reversed(range(4))])
+
+
+def add_square_tile_with_hole(bm: bmesh.types.BMesh, cx: float, cy: float, half: float, r_hole: float, z0: float, z1: float, segs: int = 16) -> None:
+    """Square slab (side 2*half) with a round hole of radius r_hole: stairwell openings in decks and floors.
+    Outer vertices are the radial projections of the hole vertices onto the square (corners included)."""
+    segs = max(8, segs - segs % 4)
+    inner, outer = [], []
+    for z in (z0, z1):
+        ri, ro = [], []
+        for k in range(segs):
+            th = math.pi / 4 + 2 * math.pi * k / segs
+            c, s = math.cos(th), math.sin(th)
+            sq = half / max(abs(c), abs(s))
+            ri.append(bm.verts.new((cx + r_hole * c, cy + r_hole * s, z)))
+            ro.append(bm.verts.new((cx + sq * c, cy + sq * s, z)))
+        inner.append(ri)
+        outer.append(ro)
+    for k in range(segs):
+        n = (k + 1) % segs
+        bm.faces.new((inner[1][k], outer[1][k], outer[1][n], inner[1][n]))   # top
+        bm.faces.new((inner[0][n], outer[0][n], outer[0][k], inner[0][k]))   # bottom
+        bm.faces.new((inner[0][k], inner[1][k], inner[1][n], inner[0][n]))   # hole wall
+        bm.faces.new((outer[0][n], outer[1][n], outer[1][k], outer[0][k]))   # outer edge
+
+
+def add_xz_prism(bm: bmesh.types.BMesh, poly_xz: list[tuple[float, float]], y0: float, y1: float) -> None:
+    """Extrude a polygon given in the (x, z) plane between y0 and y1 (closing walls under sloped roofs)."""
+    front = [bm.verts.new((x, y0, z)) for x, z in poly_xz]
+    back = [bm.verts.new((x, y1, z)) for x, z in poly_xz]
+    bm.faces.new(front)
+    bm.faces.new(list(reversed(back)))
+    n = len(poly_xz)
+    for k in range(n):
+        m = (k + 1) % n
+        bm.faces.new((front[k], back[k], back[m], front[m]))
+
+
+def add_wave_balustrade(
+    bm: bmesh.types.BMesh,
+    p0: tuple[float, float],
+    p1: tuple[float, float],
+    inward: tuple[float, float],
+    z_deck: float,
+    amp: float = 0.4,
+    period: float = 3.75,
+    seg_len: float = 0.9,
+) -> None:
+    """Gaudí's undulating gallery balustrade along the deck edge p0 -> p1. `inward` points from the edge
+    onto the deck; the rail swells towards the edge every half bay (amplitude `amp`), never beyond it."""
+    ex, ey = p1[0] - p0[0], p1[1] - p0[1]
+    length = math.hypot(ex, ey)
+    n = max(2, int(round(length / seg_len)))
+    pts = []
+    for k in range(n + 1):
+        s = length * k / n
+        off = 0.12 + amp * (1.0 - abs(math.sin(math.pi * s / period)))   # 0.12 .. 0.12 + amp from the edge
+        bx, by = p0[0] + ex * k / n, p0[1] + ey * k / n
+        pts.append((bx + inward[0] * off, by + inward[1] * off))
+    for k in range(n):
+        (x0, y0), (x1, y1) = pts[k], pts[k + 1]
+        add_cylinder(bm, Vector((x0, y0, z_deck + 1.06)), Vector((x1, y1, z_deck + 1.06)), 0.15, 0.15, segments=5, cap=False)
+        add_cylinder(bm, Vector((x0, y0, z_deck + 0.14)), Vector((x1, y1, z_deck + 0.14)), 0.17, 0.17, segments=5, cap=False)
+        add_cylinder(bm, Vector((x0, y0, z_deck + 0.22)), Vector((x0, y0, z_deck + 1.02)), 0.065, 0.055, segments=5, cap=False)
+    x0, y0 = pts[-1]
+    add_cylinder(bm, Vector((x0, y0, z_deck + 0.22)), Vector((x0, y0, z_deck + 1.02)), 0.065, 0.055, segments=5, cap=False)
+
+
+def add_wall_with_openings(
+    bm: bmesh.types.BMesh,
+    cx: float,
+    cy: float,
+    rot: float,
+    length: float,
+    thick: float,
+    z0: float,
+    z1: float,
+    openings: list[tuple[float, float, float, float]],
+) -> None:
+    """Straight wall centred on (cx, cy), running along angle `rot`, with rectangular openings given as
+    (u0, u1, za, zb) in the wall's own coordinate u in [-length/2, length/2]. Built from boxes."""
+    h = 0.5 * length
+    breaks = {-h, h}
+    for u0, u1, _, _ in openings:
+        breaks.add(max(-h, min(h, u0)))
+        breaks.add(max(-h, min(h, u1)))
+    bs = sorted(breaks)
+    ca, sa = math.cos(rot), math.sin(rot)
+    for ua, ub in zip(bs[:-1], bs[1:]):
+        if ub - ua < 1e-3:
+            continue
+        um = 0.5 * (ua + ub)
+        covers = sorted((za, zb) for u0, u1, za, zb in openings if u0 <= um <= u1)
+        z = z0
+        spans = []
+        for za, zb in covers:
+            if za > z:
+                spans.append((z, min(za, z1)))
+            z = max(z, zb)
+        if z < z1:
+            spans.append((z, z1))
+        for sa_z, sb_z in spans:
+            if sb_z - sa_z < 1e-3:
+                continue
+            bm_c = (cx + ca * um, cy + sa * um, 0.5 * (sa_z + sb_z))
+            mat = (ub - ua, thick, sb_z - sa_z)
+            from common import add_box as _ab
+            _ab(bm, bm_c, mat, rot_euler=(0.0, 0.0, rot))
+
+
 def add_flat_ring(bm: bmesh.types.BMesh, cx: float, cy: float, z: float, r_in: float, r_out: float, h: float, segs: int = 16) -> None:
     """Closed annular ring (rectangular cross-section) so normal recalculation is unambiguous."""
     rings = []

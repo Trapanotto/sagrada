@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { LAYOUT, planToWorld, pondRuntime } from '../data/layout';
+import { EYE_HEIGHT, isEyeUnderground, isNearCryptLevel } from './walkModel';
+import { FOG_DENSITY_DAY } from './atmosphere';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
@@ -17,6 +20,12 @@ import { getBootQuality, QualitySettings } from '../utils/quality';
 import { t, type MessageKey } from '../i18n';
 
 /** Loading-status message, resolved lazily so the UI can re-render it after a language switch. */
+
+const POND = pondRuntime();
+const FOUNTAIN_XZ = { x: LAYOUT.city.fountain.x, z: -LAYOUT.city.fountain.y };
+const BASILICA_XZ = { x: LAYOUT.zones.basilicaCenter[0], z: -LAYOUT.zones.basilicaCenter[1] };
+const APSE_XZ = { x: LAYOUT.apse.center[0], z: -LAYOUT.apse.center[1] };
+const CRYPT_STAIRS_XZ = LAYOUT.crypt.stairs.map((st) => ({ x: st.x, z: -st.y }));
 export type LoadStatus = () => string;
 
 interface ModelSpec {
@@ -27,13 +36,13 @@ interface ModelSpec {
 }
 
 const MODEL_SPECS: ModelSpec[] = [
-  { id: 'facades', labelKey: 'module.facades', url: './models/facades.glb', weightKB: 1122 },
-  { id: 'towers', labelKey: 'module.towers', url: './models/towers.glb', weightKB: 1916 },
-  { id: 'interior', labelKey: 'module.interior', url: './models/interior.glb', weightKB: 1732 },
-  { id: 'furnishings', labelKey: 'module.furnishings', url: './models/furnishings.glb', weightKB: 298 },
-  { id: 'cloister_crypt', labelKey: 'module.cloister_crypt', url: './models/cloister_crypt.glb', weightKB: 358 },
-  { id: 'eixample', labelKey: 'module.eixample', url: './models/eixample.glb', weightKB: 154 },
-  { id: 'plaza_life', labelKey: 'module.plaza_life', url: './models/plaza_life.glb', weightKB: 67 },
+  { id: 'facades', labelKey: 'module.facades', url: './models/facades.glb', weightKB: 1201 },
+  { id: 'towers', labelKey: 'module.towers', url: './models/towers.glb', weightKB: 1884 },
+  { id: 'interior', labelKey: 'module.interior', url: './models/interior.glb', weightKB: 1703 },
+  { id: 'furnishings', labelKey: 'module.furnishings', url: './models/furnishings.glb', weightKB: 311 },
+  { id: 'cloister_crypt', labelKey: 'module.cloister_crypt', url: './models/cloister_crypt.glb', weightKB: 642 },
+  { id: 'eixample', labelKey: 'module.eixample', url: './models/eixample.glb', weightKB: 173 },
+  { id: 'plaza_life', labelKey: 'module.plaza_life', url: './models/plaza_life.glb', weightKB: 70 },
 ];
 
 /** Without these the basilica itself is missing, so loading stops with an error screen. */
@@ -140,7 +149,10 @@ export class SagradaScene {
   public reflectorRes: number;
 
   private pondReflector!: Reflector;
-  private pondBox = new THREE.Box3(new THREE.Vector3(67.5, -1.0, -17.5), new THREE.Vector3(97.5, 1.5, 17.5));
+  private pondBox = new THREE.Box3(
+    new THREE.Vector3(POND.cx - POND.width / 2, POND.waterY - 0.5, POND.cz - POND.depth / 2),
+    new THREE.Vector3(POND.cx + POND.width / 2, POND.waterY + 1.5, POND.cz + POND.depth / 2)
+  );
   private frustum = new THREE.Frustum();
   private projScreenMat = new THREE.Matrix4();
 
@@ -198,7 +210,7 @@ export class SagradaScene {
     this.reflHalfRate = quality.reflectorHalfRate;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2('#c8dff5', 0.0012);
+    this.scene.fog = new THREE.FogExp2('#c8dff5', FOG_DENSITY_DAY);
 
     this.lighting = new LightingSystem(this.scene, this.renderer);
     this.geometryOverlay = new GeometryOverlay();
@@ -252,7 +264,7 @@ export class SagradaScene {
       type: THREE.HalfFloatType,
     });
     this.interiorCubeCam = new THREE.CubeCamera(0.5, 130, this.interiorProbeRT);
-    this.interiorCubeCam.position.set(0, 6.5, 22);
+    this.interiorCubeCam.position.set(...planToWorld(...LAYOUT.lights.interiorProbe.pos));
     this.scene.add(this.interiorCubeCam);
     this.interiorPmrem = new THREE.PMREMGenerator(this.renderer);
 
@@ -381,7 +393,7 @@ export class SagradaScene {
   }
 
   private buildReflectivePond(multisample: number): void {
-    const pondGeo = new THREE.PlaneGeometry(29.0, 34.0);
+    const pondGeo = new THREE.PlaneGeometry(POND.width, POND.depth);
     const reflector = new Reflector(pondGeo, {
       clipBias: 0.003,
       textureWidth: this.reflectorRes,
@@ -426,8 +438,8 @@ export class SagradaScene {
       }
     };
     reflector.rotation.x = -Math.PI / 2;
-    // Water surface sits cleanly at Y = +0.16m inside the +0.36m sculpted coping rim (completely clear above ground!)
-    reflector.position.set(82.5, 0.16, 0.0);
+    // Water surface at the layout's pond water level, below the coping that follows the sloped bank
+    reflector.position.set(POND.cx, POND.waterY, POND.cz);
     this.pondReflector = reflector;
     this.scene.add(reflector);
 
@@ -457,7 +469,7 @@ export class SagradaScene {
         void main() {
           vec2 p = vUv * vec2(22.0, 26.0);
           // Concentric animated fountain ripples radiating outward from center of pond!
-          float distC = length(vWorldPos.xz - vec2(82.5, 0.0));
+          float distC = length(vWorldPos.xz - vec2(${FOUNTAIN_XZ.x.toFixed(3)}, ${FOUNTAIN_XZ.z.toFixed(3)}));
           float ringWave = sin(distC * 3.8 - uTime * 4.2) * exp(-distC * 0.14);
           float foamRing = smoothstep(0.65, 0.98, sin(distC * 2.5 - uTime * 3.2)) * exp(-abs(distC - 2.4) * 1.4) * 0.55;
 
@@ -501,7 +513,7 @@ export class SagradaScene {
 
     const overlay = new THREE.Mesh(pondGeo, waterOverlayMat);
     overlay.rotation.x = -Math.PI / 2;
-    overlay.position.set(82.5, 0.175, 0.0);
+    overlay.position.set(POND.cx, POND.waterY + 0.015, POND.cz);
     this.scene.add(overlay);
   }
 
@@ -816,6 +828,7 @@ export class SagradaScene {
       // Register spatial zone & pond-reflector culling lists ONCE (no per-frame scene traversals!)
       if (spec.id === 'eixample' || spec.id === 'plaza_life') {
         this.weather.registerExteriorGroundMaterials(root);
+        this.weather.registerStreetLamps(root);
       }
       if (spec.id === 'facades') {
         this.exteriorShellRoots.push(root);
@@ -1022,10 +1035,11 @@ export class SagradaScene {
     camera.updateMatrixWorld();
     this.projScreenMat.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projScreenMat);
-    const distPond = Math.hypot(cameraPos.x - 82.5, cameraPos.z);
+    const distPond = Math.hypot(cameraPos.x - FOUNTAIN_XZ.x, cameraPos.z - FOUNTAIN_XZ.z);
+    const underground = isEyeUnderground(cameraPos.x, cameraPos.y, cameraPos.z);
     const pondVisible =
       indoorFactor < 0.85 &&
-      cameraPos.y > -1.0 &&
+      !underground &&
       distPond < 250 &&
       this.frustum.intersectsBox(this.pondBox);
     if (pondVisible && !this.pondReflector.visible) {
@@ -1034,19 +1048,20 @@ export class SagradaScene {
     this.pondReflector.visible = pondVisible;
     this.reflectorActive = pondVisible;
 
-    const distBasilica = Math.hypot(cameraPos.x, cameraPos.z - 8.0);
-    const distApse = Math.hypot(cameraPos.x, cameraPos.z + 21.0);
+    const distBasilica = Math.hypot(cameraPos.x - BASILICA_XZ.x, cameraPos.z - BASILICA_XZ.z);
+    const distApse = Math.hypot(cameraPos.x - APSE_XZ.x, cameraPos.z - APSE_XZ.z);
     const distCenter = Math.hypot(cameraPos.x, cameraPos.z);
 
     // Conservative Spatial Zone Culling (~40-70% triangle & draw-call reduction with ZERO visual pop-in!)
-    const showInternalStairs = cameraPos.y > 10.5 && distBasilica < 68.0;
+    const showInternalStairs = cameraPos.y > 10.5 && distBasilica < 90.0;
     if (!this.timeline.isHistorical) {
-      const inDeepCrypt = cameraPos.y < -2.2;
-      const nearCryptStairExit = inDeepCrypt && Math.hypot(cameraPos.x - -15.0, cameraPos.z - -13.8) <= 7.5;
-      const inDeepInterior = !inDeepCrypt && indoorFactor > 0.88 && cameraPos.y < 46.0 && cameraPos.y > -1.0;
-      const farExterior = !inDeepCrypt && indoorFactor < 0.01 && distBasilica > 54.0;
+      const inDeepCrypt = underground;
+      // Near either crypt stair the nave above stays drawn (it shows through the stair doors)
+      const nearCryptStairExit = inDeepCrypt && CRYPT_STAIRS_XZ.some((p) => Math.hypot(cameraPos.x - p.x, cameraPos.z - p.z) <= 6.0);
+      const inDeepInterior = !inDeepCrypt && indoorFactor > 0.88 && cameraPos.y < 46.0 && !isNearCryptLevel(cameraPos.x, cameraPos.y, cameraPos.z);
+      const farExterior = !inDeepCrypt && indoorFactor < 0.01 && distBasilica > 75.0;
 
-      const showCrypt = cameraPos.y < 3.5 && distApse < 36.0;
+      const showCrypt = cameraPos.y < LAYOUT.levels.nave + EYE_HEIGHT + 0.55 && distApse < 40.0;
       for (let i = 0; i < this.cryptMeshes.length; i++) {
         this.cryptMeshes[i].visible = showCrypt;
       }
@@ -1104,19 +1119,19 @@ export class SagradaScene {
     if (this.candles.group.visible) {
       this.candles.update(dt);
     }
-    this.glassCarpets.group.visible = indoorFactor > 0.05 && cameraPos.y > -1.0 && cameraPos.y < 52.0;
+    this.glassCarpets.group.visible = indoorFactor > 0.05 && !underground && cameraPos.y < 52.0;
     if (this.glassCarpets.group.visible) {
       this.glassCarpets.update(this.lighting.eastSunHit, this.lighting.westSunHit, this.lighting.sunDir.y);
     }
     this.weather.update(dt, cameraPos, indoorFactor, this.lighting.nightFactor, this.lighting.dayFactor, this.scene);
     this.waterUniforms.uRainFactor.value = this.weather.rainFactor;
 
-    this.birds.group.visible = indoorFactor < 0.85 && cameraPos.y > -1.0 && this.lighting.dayFactor > 0.12 && this.weather.rainFactor < 0.5;
+    this.birds.group.visible = indoorFactor < 0.85 && !underground && this.lighting.dayFactor > 0.12 && this.weather.rainFactor < 0.5;
     if (this.birds.group.visible) {
       this.birds.update(dt, this.lighting.dayFactor);
     }
 
-    const fountainNear = indoorFactor < 0.85 && distPond < 165 && cameraPos.y > -1.0;
+    const fountainNear = indoorFactor < 0.85 && distPond < 165 && !underground;
     this.fountain.points.visible = fountainNear;
     if (fountainNear) {
       this.fountain.update(dt, this.lighting.dayFactor);

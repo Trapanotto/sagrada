@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 import type { MeshBVH } from 'three-mesh-bvh';
-import { t, type MessageKey } from '../i18n';
+import { t } from '../i18n';
+import { LAYOUT } from '../data/layout';
+import {
+  CITY_BLOCK_BOXES,
+  EYE_HEIGHT,
+  INTERIOR_COLUMNS,
+  Z_NAVE,
+  analyticSupportY,
+  clampToWalkBounds,
+  cryptCeilingY,
+  detectZoneInfo,
+  indoorFactorAt,
+} from './walkModel';
 
 // three-mesh-bvh is only needed once the GLBs are in, so it is split out of the startup bundle and
 // fetched in parallel with the model downloads (see CollisionSystem.preload()).
@@ -16,137 +28,9 @@ export interface WalkConstraints {
   clampedZ: number;
 }
 
-const EYE_HEIGHT = 1.75;
-const STEP_UP_MAX = 1.45; // Max vertical step-up allowed onto stairs/ramps/platforms
 const CAPSULE_RADIUS = 0.34;
 const CAPSULE_KNEE_Y = 0.52; // Clears all 0.12-0.36m stair treads & curbs while blocking walls/altars/pews/railings
 const CAPSULE_HEAD_Y = 1.65;
-
-interface BoxObstacle {
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
-  maxY: number;
-}
-
-const EXTERIOR_OBSTACLES: BoxObstacle[] = [
-  // Eixample apartment blocks (rooftops at Y=25m are landable if you jump onto them!)
-  { minX: -131, maxX: -59, minZ: -144, maxZ: -72, maxY: 25 },
-  { minX: -36, maxX: 36, minZ: -144, maxZ: -72, maxY: 25 },
-  { minX: 59, maxX: 131, minZ: -144, maxZ: -72, maxY: 25 },
-  { minX: -131, maxX: -59, minZ: 82, maxZ: 154, maxY: 25 },
-  { minX: -36, maxX: 36, minZ: 88, maxZ: 160, maxY: 25 },
-  { minX: 59, maxX: 131, minZ: 82, maxZ: 154, maxY: 25 },
-  { minX: 142, maxX: 214, minZ: -144, maxZ: 144, maxY: 25 },
-  { minX: -214, maxX: -142, minZ: -144, maxZ: 144, maxY: 25 },
-];
-
-// Fallback structural columns (also represented in full 3D BVH once built)
-const INTERIOR_COLUMNS: Array<[number, number, number]> = [
-  [-7.5, -7.5, 1.38], [7.5, -7.5, 1.38], [-7.5, 7.5, 1.38], [7.5, 7.5, 1.38],
-  [-7.5, 15.0, 1.05], [7.5, 15.0, 1.05], [-7.5, 22.5, 1.05], [7.5, 22.5, 1.05],
-  [-7.5, 30.0, 1.05], [7.5, 30.0, 1.05], [-7.5, 37.5, 1.05], [7.5, 37.5, 1.05],
-  [-7.5, 45.0, 1.05], [7.5, 45.0, 1.05],
-  [-15.0, 15.0, 0.88], [15.0, 15.0, 0.88], [-15.0, 22.5, 0.88], [15.0, 22.5, 0.88],
-  [-15.0, 30.0, 0.88], [15.0, 30.0, 0.88], [-15.0, 37.5, 0.88], [15.0, 37.5, 0.88],
-  [-15.0, 45.0, 0.88], [15.0, 45.0, 0.88],
-  [-15.0, -7.5, 0.88], [15.0, -7.5, 0.88], [-15.0, 7.5, 0.88], [15.0, 7.5, 0.88],
-  [-22.5, -7.5, 0.88], [22.5, -7.5, 0.88], [-22.5, 7.5, 0.88], [22.5, 7.5, 0.88],
-];
-
-interface WalkBridge {
-  x0: number;
-  y0: number;
-  z0: number;
-  x1: number;
-  y1: number;
-  z1: number;
-  halfWidth: number;
-}
-
-const WALK_BRIDGES: WalkBridge[] = [
-  // Emporen (14.5m) -> Between-Tower Base Gaps (14.5m)
-  { x0: 21.0, y0: 14.5, z0: 14.5, x1: 30.1, y1: 14.5, z1: 7.2, halfWidth: 1.75 },
-  { x0: -21.0, y0: 14.5, z0: 14.5, x1: -30.1, y1: 14.5, z1: 7.2, halfWidth: 1.75 },
-  { x0: -7.6, y0: 14.5, z0: 43.0, x1: -7.6, y1: 14.5, z1: 48.2, halfWidth: 1.65 },
-  { x0: 0.0, y0: 14.5, z0: 43.0, x1: 0.0, y1: 14.5, z1: 48.2, halfWidth: 1.65 },
-  { x0: 7.6, y0: 14.5, z0: 43.0, x1: 7.6, y1: 14.5, z1: 48.2, halfWidth: 1.65 },
-
-  // Segmented Between-Tower Galleries (14.5m) & Upper Skybridges (65m East/West & 72m South Glory)
-  // East Nativity gaps (Z = -8.9..-5.5, -1.7..+1.7, +5.5..+8.9)
-  { x0: 31.5, y0: 14.5, z0: 5.2, x1: 31.5, y1: 14.5, z1: 9.2, halfWidth: 1.65 },
-  { x0: 31.5, y0: 14.5, z0: -2.0, x1: 31.5, y1: 14.5, z1: 2.0, halfWidth: 1.65 },
-  { x0: 31.5, y0: 14.5, z0: -9.2, x1: 31.5, y1: 14.5, z1: -5.2, halfWidth: 1.65 },
-  { x0: 31.5, y0: 65.0, z0: 5.2, x1: 31.5, y1: 65.0, z1: 9.2, halfWidth: 1.65 },
-  { x0: 31.5, y0: 65.0, z0: -2.0, x1: 31.5, y1: 65.0, z1: 2.0, halfWidth: 1.65 },
-  { x0: 31.5, y0: 65.0, z0: -9.2, x1: 31.5, y1: 65.0, z1: -5.2, halfWidth: 1.65 },
-  // West Passion gaps
-  { x0: -31.5, y0: 14.5, z0: 5.2, x1: -31.5, y1: 14.5, z1: 9.2, halfWidth: 1.65 },
-  { x0: -31.5, y0: 14.5, z0: -2.0, x1: -31.5, y1: 14.5, z1: 2.0, halfWidth: 1.65 },
-  { x0: -31.5, y0: 14.5, z0: -9.2, x1: -31.5, y1: 14.5, z1: -5.2, halfWidth: 1.65 },
-  { x0: -31.5, y0: 65.0, z0: 5.2, x1: -31.5, y1: 65.0, z1: 9.2, halfWidth: 1.65 },
-  { x0: -31.5, y0: 65.0, z0: -2.0, x1: -31.5, y1: 65.0, z1: 2.0, halfWidth: 1.65 },
-  { x0: -31.5, y0: 65.0, z0: -9.2, x1: -31.5, y1: 65.0, z1: -5.2, halfWidth: 1.65 },
-  // South Glory gaps (X = -9.5..-5.7, -1.9..+1.9, +5.7..+9.5)
-  { x0: -9.8, y0: 14.5, z0: 49.5, x1: -5.4, y1: 14.5, z1: 49.5, halfWidth: 1.65 },
-  { x0: -2.2, y0: 14.5, z0: 49.5, x1: 2.2, y1: 14.5, z1: 49.5, halfWidth: 1.65 },
-  { x0: 5.4, y0: 14.5, z0: 49.5, x1: 9.8, y1: 14.5, z1: 49.5, halfWidth: 1.65 },
-  { x0: -9.8, y0: 72.0, z0: 49.5, x1: -5.4, y1: 72.0, z1: 49.5, halfWidth: 1.65 },
-  { x0: -2.2, y0: 72.0, z0: 49.5, x1: 2.2, y1: 72.0, z1: 49.5, halfWidth: 1.65 },
-  { x0: 5.4, y0: 72.0, z0: 49.5, x1: 9.8, y1: 72.0, z1: 49.5, halfWidth: 1.65 },
-
-  // Jesus Crossing Gallery (56m) -> All 4 Evangelist Towers (56m)
-  { x0: 5.0, y0: 56.0, z0: 5.0, x1: 10.2, y1: 56.0, z1: 10.2, halfWidth: 1.55 },
-  { x0: -5.0, y0: 56.0, z0: 5.0, x1: -10.2, y1: 56.0, z1: 10.2, halfWidth: 1.55 },
-  { x0: 5.0, y0: 56.0, z0: -5.0, x1: 10.2, y1: 56.0, z1: -10.2, halfWidth: 1.55 },
-  { x0: -5.0, y0: 56.0, z0: -5.0, x1: -10.2, y1: 56.0, z1: -10.2, halfWidth: 1.55 },
-
-  // Horizontal 76.0m North Skybridge: Jesus Spiral (76m) <-> Virgin Mary Tower Entry (76m) ABOVE Apse Vault!
-  { x0: 0.0, y0: 76.0, z0: -3.5, x1: 0.0, y1: 76.0, z1: -19.8, halfWidth: 1.65 },
-
-  // Stepped Roof Stair-Bridges connecting Jesus Crossing (56m) <-> East/West (65m) & South Glory (72m)
-  { x0: 7.0, y0: 56.0, z0: 0.0, x1: 30.2, y1: 65.0, z1: 0.0, halfWidth: 1.65 },
-  { x0: -7.0, y0: 56.0, z0: 0.0, x1: -30.2, y1: 65.0, z1: 0.0, halfWidth: 1.65 },
-  { x0: 0.0, y0: 56.0, z0: 7.0, x1: 0.0, y1: 72.0, z1: 48.1, halfWidth: 1.75 },
-
-  // Nave (1.2m) <-> Subterranean Crypt (-5.5m) Straight Recessed Descending Staircase
-  { x0: -21.0, y0: 1.2, z0: -13.8, x1: -11.2, y1: -5.5, z1: -13.8, halfWidth: 1.55 },
-];
-
-export interface TowerStairShaft {
-  /** Tower name shown in the zone badge ('Spiral stair · <tower>'). */
-  towerKey: MessageKey;
-  cx: number;
-  cz: number;
-  zStart: number;
-  zEnd: number;
-  rInner: number;
-  rOuter: number;
-  turnsPer10m: number;
-  clockwise: boolean;
-}
-
-export const TOWER_STAIR_SHAFTS: TowerStairShaft[] = [
-  { towerKey: 'tower.jesus', cx: 0.0, cz: 0.0, zStart: 56.0, zEnd: 136.0, rInner: 2.35, rOuter: 4.15, turnsPer10m: 1.1, clockwise: true },
-  { towerKey: 'tower.mary', cx: 0.0, cz: -22.5, zStart: 76.0, zEnd: 118.0, rInner: 1.70, rOuter: 3.25, turnsPer10m: 1.25, clockwise: true },
-  { towerKey: 'tower.mark', cx: -11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: true },
-  { towerKey: 'tower.luke', cx: -11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: false },
-  { towerKey: 'tower.matthew', cx: 11.5, cz: 11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: false },
-  { towerKey: 'tower.john', cx: 11.5, cz: -11.5, zStart: 56.0, zEnd: 114.0, rInner: 1.05, rOuter: 2.35, turnsPer10m: 1.35, clockwise: true },
-  { towerKey: 'tower.nativitySE', cx: 31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
-  { towerKey: 'tower.nativityInnerS', cx: 31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
-  { towerKey: 'tower.nativityInnerN', cx: 31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
-  { towerKey: 'tower.nativityNE', cx: 31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
-  { towerKey: 'tower.passionSW', cx: -31.5, cz: 10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
-  { towerKey: 'tower.passionInnerS', cx: -31.5, cz: 3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
-  { towerKey: 'tower.passionInnerN', cx: -31.5, cz: -3.6, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: true },
-  { towerKey: 'tower.passionNW', cx: -31.5, cz: -10.8, zStart: 14.5, zEnd: 65.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.68, clockwise: false },
-  { towerKey: 'tower.gloryW', cx: -11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: false },
-  { towerKey: 'tower.gloryInnerW', cx: -3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: true },
-  { towerKey: 'tower.gloryInnerE', cx: 3.8, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: false },
-  { towerKey: 'tower.gloryE', cx: 11.4, cz: 49.5, zStart: 14.5, zEnd: 72.0, rInner: 0.78, rOuter: 2.05, turnsPer10m: 1.62, clockwise: true },
-];
 
 // Non-collidable visual-only meshes (floors, stairs, distant horizon, canopies, glow accents)
 const NON_COLLIDABLE_SUBSTRINGS = [
@@ -189,8 +73,20 @@ const NON_COLLIDABLE_SUBSTRINGS = [
   '_Leaves',
 ];
 
+/**
+ * Meshes that collide only with their triangles lying wholly below a height, although their name contains a
+ * non-collidable part. Facade_GloryAndRoofs holds the Glory wall, its tower bases and the portico columns
+ * (must block) and the roof prisms / pinnacles over the 46.8 / 31.8 roof decks (must not): checked against
+ * facades.glb that a cap just below the aisle roof deck keeps the decks, the five door tunnels, the porch
+ * (except the columns themselves), the south gallery and the Glory entry bridges free.
+ */
+const COLLIDE_BELOW: Record<string, number> = {
+  Facade_GloryAndRoofs: LAYOUT.levels.roofDeckAisle - 0.5,
+};
+
 function isCollidableMeshName(name: string): boolean {
   if (!name) return false;
+  if (collideBelowFor(name) !== null) return true;
   // Tree foliage & lamp globe instances end with "_B"
   if (name.endsWith('_B') && (name.includes('PlaneTree') || name.includes('CypressTree') || name.includes('StreetLamp'))) {
     return false;
@@ -201,30 +97,15 @@ function isCollidableMeshName(name: string): boolean {
   return true;
 }
 
-// Reused result object: distToSegment2D runs ~33x per collision query, several queries per frame
-const segResult = { dist: 0, t: 0 };
-function distToSegment2D(px: number, pz: number, x0: number, z0: number, x1: number, z1: number): { dist: number; t: number } {
-  const dx = x1 - x0;
-  const dz = z1 - z0;
-  const lenSq = dx * dx + dz * dz;
-  if (lenSq < 1e-6) {
-    segResult.dist = Math.hypot(px - x0, pz - z0);
-    segResult.t = 0;
-    return segResult;
-  }
-  const t = THREE.MathUtils.clamp(((px - x0) * dx + (pz - z0) * dz) / lenSq, 0, 1);
-  const cx = x0 + t * dx;
-  const cz = z0 + t * dz;
-  segResult.dist = Math.hypot(px - cx, pz - cz);
-  segResult.t = t;
-  return segResult;
+/** Height cap of a COLLIDE_BELOW mesh (also its auto-instanced copy "Instanced_<name>"), else null. */
+function collideBelowFor(name: string): number | null {
+  const base = name.startsWith('Instanced_') ? name.slice('Instanced_'.length) : name;
+  return base in COLLIDE_BELOW ? COLLIDE_BELOW[base] : null;
 }
-
-const SPIRAL_CANDIDATE_OFFSETS = [-1, 0, 1] as const;
 
 export class CollisionSystem {
   public readonly eyeHeight = EYE_HEIGHT;
-  public elevatorFloorY = 56.0;
+  public elevatorFloorY = LAYOUT.levels.jesusDeck;
   public bvhTriangles = 0;
   public bvhReady = false;
 
@@ -277,7 +158,7 @@ export class CollisionSystem {
     const instMat = new THREE.Matrix4();
     const worldMat = new THREE.Matrix4();
 
-    const appendGeometry = (geo: THREE.BufferGeometry, mat: THREE.Matrix4) => {
+    const appendGeometry = (geo: THREE.BufferGeometry, mat: THREE.Matrix4, maxY = Infinity) => {
       const pos = geo.attributes.position;
       if (!pos) return;
       const index = geo.index;
@@ -293,6 +174,7 @@ export class CollisionSystem {
         vA.fromBufferAttribute(pos, i0).applyMatrix4(mat);
         vB.fromBufferAttribute(pos, i1).applyMatrix4(mat);
         vC.fromBufferAttribute(pos, i2).applyMatrix4(mat);
+        if (vA.y >= maxY || vB.y >= maxY || vC.y >= maxY) continue;
         out[cursor++] = vA.x;
         out[cursor++] = vA.y;
         out[cursor++] = vA.z;
@@ -303,22 +185,24 @@ export class CollisionSystem {
         out[cursor++] = vC.y;
         out[cursor++] = vC.z;
       }
-      posChunks.push(out);
-      totalFloats += out.length;
+      const used = cursor === out.length ? out : out.slice(0, cursor);
+      posChunks.push(used);
+      totalFloats += used.length;
     };
 
     for (const mesh of this.pendingMeshes) {
       mesh.updateMatrixWorld(true);
+      const maxY = collideBelowFor(mesh.name) ?? Infinity;
       if (mesh instanceof THREE.InstancedMesh) {
         meshCount += mesh.count;
         for (let i = 0; i < mesh.count; i++) {
           mesh.getMatrixAt(i, instMat);
           worldMat.multiplyMatrices(mesh.matrixWorld, instMat);
-          appendGeometry(mesh.geometry, worldMat);
+          appendGeometry(mesh.geometry, worldMat, maxY);
         }
       } else {
         meshCount++;
-        appendGeometry(mesh.geometry, mesh.matrixWorld);
+        appendGeometry(mesh.geometry, mesh.matrixWorld, maxY);
       }
     }
 
@@ -433,14 +317,12 @@ export class CollisionSystem {
   }
 
   /**
-   * Optional upward ceiling check so jumping in the subterranean Crypt or low Cloister arcades
-   * cleanly respects overhead stone vaults instead of poking through the floor above.
+   * Optional upward ceiling check so jumping in the crypt or low cloister arcades respects the vaults
+   * instead of poking through the floor above.
    */
   public getCeilingY(x: number, feetY: number, z: number): number | null {
-    // Subterranean Crypt vault peaks smoothly around -1.1m.. -0.8m
-    if (feetY < -1.5 && Math.hypot(x, z - -21.0) <= 15.8) {
-      return -1.1;
-    }
+    const crypt = cryptCeilingY(x, feetY, z);
+    if (crypt !== null) return crypt;
     if (!this.bvh) return null;
     this._ray.origin.set(x, feetY + 1.1, z);
     this._ray.direction.set(0, 1, 0);
@@ -452,23 +334,24 @@ export class CollisionSystem {
   }
 
   /**
-   * True Multi-Level Support-Surface + 3D Mesh BVH Resolver:
-   * - Runs iterative 3D capsule-vs-mesh collision against walls, columns, altar, pews, railings & urban obstacles.
-   * - Finds the HIGHEST walkable floor/bridge/stair/deck/roof at (x, z) below (feetY + STEP_UP_MAX).
+   * Multi-level support surface + 3D mesh BVH resolver:
+   * - iterative 3D capsule-vs-mesh collision against walls, columns, altar, pews, railings & urban obstacles;
+   * - then the HIGHEST walkable floor / bridge / stair / deck / roof at (x, z) below feetY + STEP_UP_MAX
+   *   (analytic, see walkModel.ts; all positions from the layout).
    */
   public resolveWalkPosition(x: number, feetY: number, z: number): WalkConstraints {
-    let cx = THREE.MathUtils.clamp(x, -165, 165);
-    let cz = THREE.MathUtils.clamp(z, -105, 118);
-    const maxStepY = feetY + STEP_UP_MAX;
+    const bounded = clampToWalkBounds(x, z);
+    let cx = bounded.x;
+    let cz = bounded.z;
 
     if (this.bvhReady) {
       this.resolveBVHCapsuleXZ(cx, feetY, cz);
       cx = this._solveX;
       cz = this._solveZ;
     } else {
-      // Pre-BVH analytical fallback
-      const pushOutBox = (obs: BoxObstacle) => {
-        if (cx > obs.minX && cx < obs.maxX && cz > obs.minZ && cz < obs.maxZ) {
+      // Pre-BVH analytical fallback: Eixample blocks and the interior columns
+      for (const obs of CITY_BLOCK_BOXES) {
+        if (feetY < obs.y - 1.0 && cx > obs.minX && cx < obs.maxX && cz > obs.minZ && cz < obs.maxZ) {
           const dL = Math.abs(cx - obs.minX);
           const dR = Math.abs(obs.maxX - cx);
           const dT = Math.abs(cz - obs.minZ);
@@ -479,11 +362,8 @@ export class CollisionSystem {
           else if (m === dT) cz = obs.minZ;
           else cz = obs.maxZ;
         }
-      };
-      if (feetY < 24.0) {
-        for (const obs of EXTERIOR_OBSTACLES) pushOutBox(obs);
       }
-      if (feetY >= 0.0 && feetY < 22.0) {
+      if (feetY >= Z_NAVE - 1.2 && feetY < LAYOUT.levels.gallery + 5.8) {
         for (const [colX, colZ, colR] of INTERIOR_COLUMNS) {
           const dx = cx - colX;
           const dz = cz - colZ;
@@ -496,292 +376,19 @@ export class CollisionSystem {
       }
     }
 
-    // Start with the base ground surface (Crypt, Pond, Street, Nave, High Altar, or Eixample Rooftop)
-    let bestY = this.getBaseGroundY(cx, feetY, cz);
-
-    const consider = (surfaceY: number) => {
-      if (surfaceY <= maxStepY && surfaceY > bestY) {
-        bestY = surfaceY;
-      }
-    };
-
-    const rCenter = Math.hypot(cx, cz);
-
-    // 1. Central Glass Panorama Elevator Cabin Floor inside Tower of Jesus Christ (56m <-> 136m)
-    if (feetY >= 53.0 && rCenter < 2.02 && Math.abs(feetY - this.elevatorFloorY) < 2.6) {
-      consider(this.elevatorFloorY);
-    }
-
-    // 2. Top Panoramic Observation Decks & Mary Tower 76m Entry Ring
-    if (rCenter <= 6.5) {
-      consider(136.0);
-    }
-    const dMary = Math.hypot(cx, cz - -22.5);
-    if (dMary <= 3.75) {
-      consider(118.0);
-    }
-    if (dMary >= 1.70 && dMary <= 4.10) {
-      consider(76.0);
-    }
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        if (Math.hypot(cx - sx * 11.5, cz - sz * 11.5) <= 2.75) {
-          consider(114.0);
-        }
-      }
-    }
-
-    // 3. Crossing Vault Gallery Ring Deck at Y = 56.0m
-    if (rCenter >= 1.9 && rCenter <= 7.8) {
-      consider(56.0);
-    }
-
-    // 4. All Walkable Bridges, Connecting Galleries, Skybridges, Roof Stair-Bridges & Crypt Staircase
-    for (const b of WALK_BRIDGES) {
-      const { dist, t } = distToSegment2D(cx, cz, b.x0, b.z0, b.x1, b.z1);
-      if (dist <= b.halfWidth) {
-        const y = THREE.MathUtils.lerp(b.y0, b.y1, t);
-        if (b.y1 < 0 && feetY < 2.8 && Math.abs(feetY - y) < 2.6) {
-          return { groundY: y, clampedX: cx, clampedZ: cz };
-        }
-        consider(y);
-      }
-    }
-
-    // 5. All 18 Internal Tower Helical Spiral Staircases (seamless automatic climbing UP and DOWN!)
-    for (const shaft of TOWER_STAIR_SHAFTS) {
-      if (feetY < shaft.zStart - 1.5 || feetY > shaft.zEnd + 1.5) continue;
-      const dist = Math.hypot(cx - shaft.cx, cz - shaft.cz);
-      if (dist >= shaft.rInner && dist <= shaft.rOuter) {
-        const dx = cx - shaft.cx;
-        const dz = cz - shaft.cz;
-        const ang = Math.atan2(-dz, dx);
-        const signedAng = shaft.clockwise ? ang : -ang;
-        const baseAngle = ((signedAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-        const fracTurn = baseAngle / (Math.PI * 2);
-        const pitchPerTurn = 10.0 / shaft.turnsPer10m;
-        const estTurn = Math.round((feetY - shaft.zStart) / pitchPerTurn - fracTurn);
-        let bestSpiralY: number | null = null;
-        let bestDiff = Infinity;
-        for (const dt of SPIRAL_CANDIDATE_OFFSETS) {
-          const candY = shaft.zStart + (estTurn + dt + fracTurn) * pitchPerTurn;
-          if (candY < shaft.zStart - 0.8 || candY > shaft.zEnd + 0.8) continue;
-          const clampedY = THREE.MathUtils.clamp(candY, shaft.zStart, shaft.zEnd);
-          const diff = clampedY - feetY;
-          if (diff <= 1.45 && diff >= -1.55 && Math.abs(diff) < bestDiff) {
-            bestDiff = Math.abs(diff);
-            bestSpiralY = clampedY;
-          }
-        }
-        if (bestSpiralY !== null) {
-          // While inside a spiral shaft mid-flight, return exact helix tread height so descending isn't blocked by floors below
-          if (bestSpiralY > shaft.zStart + 1.2 && bestSpiralY < shaft.zEnd - 1.2) {
-            return { groundY: bestSpiralY, clampedX: cx, clampedZ: cz };
-          }
-          consider(bestSpiralY);
-        }
-      }
-    }
-
-    // 6. Basilica Upper Roof Decks
-    if (Math.abs(cx) <= 10.5 && cz >= -16.0 && cz <= 45.5) {
-      consider(45.0);
-    } else if (Math.abs(cx) <= 22.5 && cz >= -16.0 && cz <= 45.5) {
-      consider(30.0);
-    }
-    if (Math.abs(cx) <= 30.0 && Math.abs(cz) <= 11.0) {
-      consider(45.0);
-    }
-
-    // 7. 2 Walkable Gaudí Corner Helical Staircases: Nave Floor (1.2m) <-> Emporen Galleries (14.5m) at (±19.6, Z=+42.6)
-    for (const sx of [-1, 1]) {
-      const scx = sx * 19.6;
-      const scz = 42.6;
-      const dCorner = Math.hypot(cx - scx, cz - scz);
-      if (dCorner >= 0.36 && dCorner <= 1.92 && feetY >= 0.4 && feetY <= 15.8) {
-        const ang = Math.atan2(-(cz - scz), cx - scx);
-        // Matches build_interior.py exact ang_offset (0.0 for East +X, PI for West -X) & turns = 2.5
-        const rawSigned = (ang - (sx > 0 ? 0 : Math.PI)) * sx;
-        const baseFrac = (((rawSigned % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
-        const pitch = (14.5 - 1.2) / 2.5;
-        const estTurn = Math.round((feetY - 1.2) / pitch - baseFrac);
-        let bestCornerY: number | null = null;
-        let bestDiff = Infinity;
-        for (const dt of SPIRAL_CANDIDATE_OFFSETS) {
-          const candY = 1.2 + (estTurn + dt + baseFrac) * pitch;
-          if (candY < 0.8 || candY > 14.9) continue;
-          const clampedY = THREE.MathUtils.clamp(candY, 1.2, 14.5);
-          const diff = clampedY - feetY;
-          if (diff <= 1.45 && diff >= -1.55 && Math.abs(diff) < bestDiff) {
-            bestDiff = Math.abs(diff);
-            bestCornerY = clampedY;
-          }
-        }
-        if (bestCornerY !== null) {
-          return { groundY: bestCornerY, clampedX: cx, clampedZ: cz };
-        }
-      }
-    }
-
-    // 8. Elevated Choir Galleries / Emporen (Y = 14.5m) — exclude open corner spiral stairwell holes at (±19.6, Z=+42.6)!
-    const inCornerHole =
-      Math.hypot(cx - 19.6, cz - 42.6) < 1.82 ||
-      Math.hypot(cx + 19.6, cz - 42.6) < 1.82;
-    if (!inCornerHole) {
-      const onSouthEmpore = cz >= 40.6 && cz <= 45.4 && Math.abs(cx) <= 18.4;
-      const onEastEmpore = cx >= 16.8 && cx <= 22.4 && cz >= 13.8 && cz <= 40.8;
-      const onWestEmpore = cx <= -16.8 && cx >= -22.4 && cz >= 13.8 && cz <= 40.8;
-      if (onSouthEmpore || onEastEmpore || onWestEmpore) {
-        consider(14.5);
-      }
-    }
-
-    // 9. Eixample Apartment Rooftops (Y = 25.0m)
-    for (const obs of EXTERIOR_OBSTACLES) {
-      if (cx >= obs.minX && cx <= obs.maxX && cz >= obs.minZ && cz <= obs.maxZ) {
-        consider(obs.maxY);
-      }
-    }
-
-    return { groundY: bestY, clampedX: cx, clampedZ: cz };
-  }
-
-  private getBaseGroundY(cx: number, feetY: number, cz: number): number {
-    // Subterranean Crypt (-5.5m) when already underground
-    const distCrypt = Math.hypot(cx, cz - -21.0);
-    if (feetY < -1.5 && distCrypt <= 15.6) {
-      return -5.5;
-    }
-
-    // Plaça de Gaudí Reflective Pond
-    const inPondOuter = cx >= 67.4 && cx <= 97.6 && cz >= -17.6 && cz <= 17.6;
-    const inPondWater = cx >= 68.4 && cx <= 96.6 && cz >= -16.6 && cz <= 16.6;
-    if (inPondWater) {
-      const distFountain = Math.hypot(cx - 82.5, cz);
-      return distFountain < 2.65 ? 0.35 : -0.45;
-    }
-    if (inPondOuter) {
-      return 0.36;
-    }
-
-    // Presbytery High Altar stepped platform (center X=0, Z=-17.5)
-    const dAltar = Math.hypot(cx, cz - -17.5);
-    if (dAltar < 8.8) {
-      return 2.4;
-    }
-    if (dAltar < 10.8) {
-      const t = 1.0 - (dAltar - 8.8) / 2.0;
-      return 1.2 + t * 1.2;
-    }
-    // Stepped Baptistery Dais in East Transept (+19.2, Z=+9.8)
-    const dBapt = Math.hypot(cx - 19.2, cz - 9.8);
-    if (dBapt < 1.95) return 1.64;
-    if (dBapt < 2.55) return 1.42;
-
-    if (this.isOnBasilicaPodium(cx, cz)) {
-      return 1.2;
-    }
-    // Exterior entrance steps / ramps (Nativity East, Passion West, Glory South, East/West Cloister Portals)
-    if (cx > 31.8 && cx <= 37.0 && Math.abs(cz) <= 14.5) {
-      return (1.0 - THREE.MathUtils.clamp((cx - 32.5) / 4.2, 0, 1)) * 1.2;
-    }
-    if (cx < -31.8 && cx >= -40.5 && Math.abs(cz) <= 15.0) {
-      return (1.0 - THREE.MathUtils.clamp((-cx - 35.0) / 5.0, 0, 1)) * 1.2;
-    }
-    if (cz > 57.5 && cz <= 71.0 && Math.abs(cx) <= 19.0) {
-      return (1.0 - THREE.MathUtils.clamp((cz - 58.0) / 12.5, 0, 1)) * 1.2;
-    }
-    if (Math.abs(cx) > 28.5 && Math.abs(cx) <= 31.2 && cz >= 25.0 && cz <= 31.2) {
-      return (1.0 - THREE.MathUtils.clamp((Math.abs(cx) - 28.8) / 2.2, 0, 1)) * 1.2;
-    }
-    return 0.0;
-  }
-
-  private isOnBasilicaPodium(x: number, z: number): boolean {
-    if (Math.abs(x) <= 29.0 && z >= -16.0 && z <= 58.0) return true;
-    if (x >= -35.5 && x <= 33.0 && Math.abs(z) <= 15.5) return true;
-    if (Math.hypot(x, z - -16.5) <= 19.5 && z <= -15.0) return true;
-    if (Math.hypot(Math.abs(x) - 27.5, z - -32.5) <= 8.5) return true;
-    if (Math.abs(x) >= 23.0 && Math.abs(x) <= 29.5 && z >= -26.5 && z <= -15.0) return true;
-    return false;
+    return { groundY: analyticSupportY(cx, feetY, cz, this.elevatorFloorY), clampedX: cx, clampedZ: cz };
   }
 
   public getIndoorFactor(pos: THREE.Vector3): number {
-    if (pos.y < -1.0) return 1.0;
-    const rCenter = Math.hypot(pos.x, pos.z);
-    if (rCenter < 8.5 && pos.y >= 1.0 && pos.y < 134.0) {
-      return THREE.MathUtils.smoothstep(134.0 - pos.y, 0.0, 6.0) * 0.92;
-    }
-    if (pos.y > 46.0) return 0.0;
-
-    const naveX = THREE.MathUtils.smoothstep(25.5 - Math.abs(pos.x), 0.0, 5.5);
-    const naveZ =
-      THREE.MathUtils.smoothstep(pos.z - -18.0, 0.0, 5.0) *
-      THREE.MathUtils.smoothstep(50.0 - pos.z, 0.0, 6.0);
-    const fNave = naveX * naveZ;
-
-    const tranX = THREE.MathUtils.smoothstep(33.5 - Math.abs(pos.x), 0.0, 6.0);
-    const tranZ = THREE.MathUtils.smoothstep(16.5 - Math.abs(pos.z), 0.0, 4.0);
-    const fTransept = tranX * tranZ;
-
-    const fApse =
-      THREE.MathUtils.smoothstep(21.0 - Math.hypot(pos.x, pos.z - -16.5), 0.0, 5.0) *
-      THREE.MathUtils.smoothstep(-12.0 - pos.z, 0.0, 4.0);
-
-    const fMain = Math.max(fNave, fTransept, fApse);
-    if (fMain > 0.01) return Math.min(1.0, fMain);
-
-    if (Math.abs(pos.x) < 29.5 && pos.z > -38.0 && pos.z < 47.0 && pos.y < 12.0) return 0.55;
-    return 0.0;
+    return indoorFactorAt(pos.x, pos.y, pos.z);
   }
 
   /** Localized name of the area around pos (current UI language). */
   public detectZone(pos: THREE.Vector3): string {
-    const rCenter = Math.hypot(pos.x, pos.z);
-    if (rCenter < 2.25 && pos.y >= 54.0 && pos.y < 138.0 && Math.abs(pos.y - 1.75 - this.elevatorFloorY) < 2.5) {
-      return t('zone.elevator', { y: pos.y.toFixed(0) });
-    }
-    if (pos.y > 132 && rCenter < 10) return t('zone.jesusView');
-    if (pos.y > 115 && Math.hypot(pos.x, pos.z - -22.5) < 7) return t('zone.maryView');
-    if (pos.y > 111 && Math.abs(Math.abs(pos.x) - 11.5) < 5 && Math.abs(Math.abs(pos.z) - 11.5) < 5) {
-      return t('zone.evangelistView');
-    }
-    if (pos.y >= 54 && pos.y <= 61 && rCenter < 8.5) return t('zone.crossingGallery');
-
-    for (const shaft of TOWER_STAIR_SHAFTS) {
-      if (Math.hypot(pos.x - shaft.cx, pos.z - shaft.cz) < shaft.rOuter + 0.6 && pos.y >= shaft.zStart - 0.5 && pos.y < shaft.zEnd - 0.5) {
-        return t('zone.stair', { tower: t(shaft.towerKey), y: pos.y.toFixed(0) });
-      }
-    }
-
-    if (pos.y > 54 && pos.y < 76) {
-      if (Math.abs(pos.x - 31.5) < 5 && Math.abs(pos.z) < 13) return t('zone.bridgeEast');
-      if (Math.abs(pos.x - -31.5) < 5 && Math.abs(pos.z) < 13) return t('zone.bridgeWest');
-      if (Math.abs(pos.z - 49.5) < 5 && Math.abs(pos.x) < 14) return t('zone.bridgeSouth');
-      if (Math.abs(pos.z) < 4 || Math.abs(pos.x) < 4) return t('zone.roofBridge', { y: pos.y.toFixed(0) });
-    }
-    if (pos.y >= 44 && pos.y <= 53 && Math.abs(pos.x) < 32 && pos.z > -26 && pos.z < 50) {
-      return t('zone.roofscape');
-    }
-    if (pos.y > 55) return t('zone.airspace');
-    if (pos.y < -1.5) return t('zone.crypt');
-    if (pos.y > 11 && pos.y < 24 && Math.abs(pos.x) < 34 && pos.z > -32 && pos.z < 52) {
-      return t('zone.galleries');
-    }
-    if (Math.hypot(pos.x, pos.z - -17.5) < 12.5 && pos.y < 14) return t('zone.altar');
-    if (Math.abs(pos.x) < 11 && Math.abs(pos.z) < 11 && pos.y < 55) return t('zone.crossing');
-    if (Math.abs(pos.x) < 22.5 && pos.z >= 10 && pos.z < 46.5 && pos.y < 46) return t('zone.nave');
-    if (Math.abs(pos.x) < 31 && Math.abs(pos.z) < 15 && pos.y < 46) return t('zone.transept');
-    if (Math.hypot(Math.abs(pos.x) - 27.5, pos.z - -32.5) < 9.5) return t('zone.sacristy');
-    if (Math.abs(pos.x) >= 22.8 && Math.abs(pos.x) <= 29.5 && pos.z > -30 && pos.z < 47) return t('zone.cloister');
-    if (pos.x >= 68.4 && pos.x <= 96.6 && Math.abs(pos.z) <= 16.6 && pos.y < 2.2) {
-      return t('zone.inPond');
-    }
-    if (pos.x > 52 && Math.abs(pos.z) < 48) return t('zone.pondEast');
-    if (pos.x > 31 && Math.abs(pos.z) < 22) return t('zone.nativityForecourt');
-    if (pos.x < -52 && Math.abs(pos.z) < 48) return t('zone.placaWest');
-    if (pos.x < -31 && Math.abs(pos.z) < 22) return t('zone.passionForecourt');
-    if (pos.z > 47) return t('zone.glory');
-    return t('zone.eixample');
+    const zi = detectZoneInfo(pos.x, pos.y, pos.z, this.elevatorFloorY);
+    const params: Record<string, string | number> = {};
+    if (zi.y !== undefined) params.y = zi.y;
+    if (zi.towerKey) params.tower = t(zi.towerKey);
+    return t(zi.key, params);
   }
 }

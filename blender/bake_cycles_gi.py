@@ -28,8 +28,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 from common import MODEL_DIR, TEX_DIR, export_glb
+from layout import BAKE_LIGHTS
 
 LM_DIR = os.path.join(TEX_DIR, "lightmaps")
+INTERIOR_BAKE_LIGHTS = ("Bake_Cross", "Bake_NaveTop", "Bake_Apse")
+CRYPT_BAKE_LIGHTS = tuple(k for k in BAKE_LIGHTS if k.startswith("Bake_Crypt"))   # centre, tomb, east, stair W/E
+CRYPT_LIGHTMAP_RES = 2048   # the crypt surface roughly tripled (handover §4.3)
 os.makedirs(LM_DIR, exist_ok=True)
 
 BAKE_SAMPLES = 1024
@@ -93,6 +97,12 @@ def add_bake_point_light(name: str, loc, color, power: float, radius: float = 2.
     lobj = bpy.data.objects.new(name=name, object_data=ldata)
     lobj.location = loc
     bpy.context.collection.objects.link(lobj)
+
+
+def add_layout_lights(names) -> None:
+    for name in names:
+        loc, color, power, radius = BAKE_LIGHTS[name]
+        add_bake_point_light(name, loc, color, power, radius=radius)
 
 
 def boost_emitters(substr: str, strength: float) -> list[tuple[bpy.types.Material, float]]:
@@ -171,8 +181,12 @@ def build_lightmap_uvs(obj: bpy.types.Object, cull_down_faces: bool = False) -> 
         if area < DETAIL_AREA_M2 or down:
             detail.update(c.index for c in comp)
             shrunk += 1
+    # Hide the detail faces (not just deselect them): pack_islands otherwise still reserves atlas room
+    # for their islands, which shrinks the big surfaces
     for f in bm.faces:
-        f.select = f.index not in detail
+        hidden = f.index in detail
+        f.hide = hidden
+        f.select = not hidden
     bm.to_mesh(mesh)
     bm.free()
 
@@ -182,6 +196,7 @@ def build_lightmap_uvs(obj: bpy.types.Object, cull_down_faces: bool = False) -> 
     bpy.ops.uv.select_all(action="SELECT")
     res_guess = 2048
     bpy.ops.uv.pack_islands(rotate=True, scale=True, margin_method="FRACTION", margin=(MARGIN_PX + 2) / res_guess, shape_method="CONCAVE")
+    bpy.ops.mesh.reveal(select=False)
     bpy.ops.object.mode_set(mode="OBJECT")
 
     # Shrink the packed layout by 1.5% and drop every detail face into a shared corner patch
@@ -216,6 +231,7 @@ def build_lightmap_uvs(obj: bpy.types.Object, cull_down_faces: bool = False) -> 
                 l[uvl].uv.x *= 0.985
                 l[uvl].uv.y *= 0.985
     for f in bm.faces:
+        f.hide = False
         f.select = True
     bm.to_mesh(mesh)
     bm.free()
@@ -340,10 +356,8 @@ def bake_interior_lightmaps() -> dict:
     # The stained-glass panes are the light sources: their actual artwork colours the bounce light.
     saved = boost_emitters("StainedGlass", 26.0)
     saved += boost_emitters("CandleGlow", 6.0)
-    # Daylight through the vault oculi / crossing lantern and a soft apse glow (neutral, low power)
-    add_bake_point_light("Bake_Cross", (0.0, 0.0, 56.0), (1.0, 0.95, 0.86), 30000, radius=5.0)
-    add_bake_point_light("Bake_NaveTop", (0.0, -26.0, 40.0), (1.0, 0.95, 0.86), 18000, radius=6.0)
-    add_bake_point_light("Bake_Apse", (0.0, 20.0, 30.0), (0.92, 0.92, 1.0), 14000, radius=5.0)
+    # Daylight through the vault oculi / crossing lantern and a soft apse glow (positions: layout.BAKE_LIGHTS)
+    add_layout_lights(INTERIOR_BAKE_LIGHTS)
 
     targets = (
         ("Interior_HyperboloidVaults", "lightmap_vaults.webp", 2048),
@@ -381,18 +395,15 @@ def bake_crypt_lightmaps() -> dict:
     setup_world_sky(strength=0.04, color=(0.25, 0.22, 0.18, 1.0))
     saved = boost_emitters("CandleGlow", 40.0)
 
-    # Warm votive candlelight inside the Neo-Gothic crypt + faint daylight down the stair tunnel
-    add_bake_point_light("Bake_CryptCenter", (0.0, 21.0, -2.2), (1.0, 0.68, 0.32), 2500, radius=1.8)
-    add_bake_point_light("Bake_CryptTomb", (-9.5, 23.5, -3.2), (1.0, 0.64, 0.28), 1500, radius=1.2)
-    add_bake_point_light("Bake_CryptEast", (8.5, 21.0, -3.0), (1.0, 0.70, 0.36), 1400, radius=1.5)
-    add_bake_point_light("Bake_CryptStair", (-16.0, 13.8, 0.0), (0.85, 0.9, 1.0), 900, radius=1.5)
+    # Warm votive candlelight inside the crypt + faint daylight down the two spiral stairs (layout.BAKE_LIGHTS)
+    add_layout_lights(CRYPT_BAKE_LIGHTS)
 
     stats = {}
     obj = bpy.data.objects.get("Crypt_Architecture")
     if obj is not None:
         build_lightmap_uvs(obj)
         t0 = time.time()
-        arr = denoise(bake_object(obj, 1024))
+        arr = denoise(bake_object(obj, CRYPT_LIGHTMAP_RES))
         stats["Crypt_Architecture"] = time.time() - t0
         encode_and_save(arr, shared_exposure([arr], target=0.95), "lightmap_crypt.webp")
 

@@ -1,5 +1,17 @@
 import * as THREE from 'three';
 import { t, type Localized } from '../i18n';
+import { LAYOUT } from '../data/layout';
+
+const LV = LAYOUT.levels;
+/** Lowest point of the Nativity / Passion porches and stairs (their feet sit on the sloped ground). */
+const FACADE_MIN_Y = Math.min(LAYOUT.nativity.stair.bottomZ, LAYOUT.passion.stair.bottomZ) - 0.4;
+/** The Glory stair reaches down to ground_z at its foot. */
+const GLORY_MIN_Y = LAYOUT.glory.stair.bottomZ - 0.1;
+/** Crypt: from below its floor to above the central vault crown. */
+const CRYPT_MIN_Y = LV.crypt - 1.0;
+const CRYPT_MAX_Y = LV.cryptVaultCentral + 0.2;
+/** Cloister & corner buildings: up to the sacristy lanterns. */
+const CLOISTER_MAX_Y = Math.max(...Object.values(LAYOUT.cornerBuildings).map((b) => b.top)) + 1.0;
 
 export interface TimelineMilestone {
   year: number;
@@ -123,12 +135,12 @@ export class ConstructionTimeline {
       if (name.includes('Crypt')) {
         startYear = 1882;
         endYear = 1889;
-        minY = -6.5;
-        maxY = 1.5;
+        minY = CRYPT_MIN_Y;
+        maxY = CRYPT_MAX_Y;
       } else if (name.includes('Facade_Nativity') || name.includes('Facade_Cypress') || name.includes('Facade_Doves')) {
         startYear = 1894;
         endYear = 1928;
-        minY = 0.0;
+        minY = FACADE_MIN_Y;
         maxY = 54.0;
       } else if (name.includes('Towers_Nativity')) {
         startYear = 1912;
@@ -138,7 +150,7 @@ export class ConstructionTimeline {
       } else if (name.includes('Facade_Passion') || name.includes('Towers_Passion')) {
         startYear = 1954;
         endYear = 1976;
-        minY = 0.0;
+        minY = FACADE_MIN_Y;
         maxY = 115.0;
       } else if (
         name.includes('Interior_MarbleFloor') ||
@@ -195,12 +207,12 @@ export class ConstructionTimeline {
       } else if (name.includes('Cloister_') || name.includes('Sacristy_')) {
         startYear = 2015;
         endYear = 2026;
-        minY = 0.0;
-        maxY = 42.0;
-      } else if (name.includes('Facade_GloryAndRoofs')) {
+        minY = LV.nave - 1.2;
+        maxY = CLOISTER_MAX_Y;
+      } else if (name.includes('Facade_GloryAndRoofs') || name.includes('Facade_GloryBridge') || name.includes('Facade_EntranceStairs_Glory')) {
         startYear = 2026;
         endYear = 2034;
-        minY = 0.0;
+        minY = GLORY_MIN_Y;
         maxY = 66.0;
       }
 

@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { LAYOUT } from '../data/layout';
+
+const FOUNTAIN = LAYOUT.city.fountain;
+const FORECOURT_X = LAYOUT.nativity.frontX + 10;
 
 interface BirdAgent {
   centerX: number;
@@ -56,8 +60,9 @@ export class FlockingBirds {
     for (let i = 0; i < count; i++) {
       const nearTree = i < 6;
       this.birds.push({
-        centerX: nearTree ? 52 + (i % 3) * 6 : 82 + (Math.random() - 0.5) * 18,
-        centerZ: nearTree ? (Math.random() - 0.5) * 14 : (Math.random() - 0.5) * 28,
+        // Over the Nativity forecourt trees / circling the Plaça de Gaudí pond (layout)
+        centerX: nearTree ? FORECOURT_X + (i % 3) * 6 : FOUNTAIN.x + (Math.random() - 0.5) * 36,
+        centerZ: nearTree ? (Math.random() - 0.5) * 14 : -FOUNTAIN.y + (Math.random() - 0.5) * 40,
         baseY: nearTree ? 34 + Math.random() * 18 : 14 + Math.random() * 16,
         radiusX: nearTree ? 12 + Math.random() * 10 : 18 + Math.random() * 16,
         radiusZ: nearTree ? 14 + Math.random() * 10 : 16 + Math.random() * 18,

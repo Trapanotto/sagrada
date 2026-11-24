@@ -8,6 +8,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+import layout
 import generate_textures
 import build_interior
 import build_towers
@@ -21,6 +22,8 @@ import build_plaza_life
 def main() -> None:
     t0 = time.time()
     print("=== Sagrada Família 3D — Blender Asset Pipeline ===")
+    # Master ground plan -> src/data/layout.generated.ts (the web runtime reads the same numbers)
+    layout.main([])
     generate_textures.generate_all_textures()
     build_interior.build_interior()
     build_towers.build_towers()

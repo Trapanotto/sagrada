@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { LAYOUT } from '../data/layout';
+
+const FOUNTAIN = LAYOUT.city.fountain;
+const FOUNTAIN_RANGE = Math.max(LAYOUT.city.pond.x1 - LAYOUT.city.pond.x0, LAYOUT.city.pond.y1 - LAYOUT.city.pond.y0) * 0.9;
 
 /**
  * Procedural Web Audio API Spatial Ambience Engine:
@@ -186,7 +190,7 @@ export class AmbienceAudio {
     windSrc.start();
     windLfo.start();
 
-    // 4. Spatial Plaça de Gaudí Fountain Water Trickle (scales smoothly with distance to (82.5, 0))
+    // 4. Spatial Plaça de Gaudí Fountain Water Trickle (scales smoothly with distance to the fountain)
     const fountainSrc = ctx.createBufferSource();
     fountainSrc.buffer = noiseBuf;
     fountainSrc.loop = true;
@@ -254,10 +258,10 @@ export class AmbienceAudio {
     this.indoorGain.gain.setTargetAtTime(indoorFactor * 0.95, t, 0.35);
     this.outdoorGain.gain.setTargetAtTime((1.0 - indoorFactor * 0.85) * 0.82, t, 0.35);
 
-    // Spatial fountain trickle around Plaça de Gaudí Pond (82.5, 0)
+    // Spatial fountain trickle around the Plaça de Gaudí pond (layout fountain; audible to about the far bank)
     if (this.fountainGain) {
-      const distFountain = Math.hypot(playerPos.x - 82.5, playerPos.z);
-      const nearness = Math.max(0, 1.0 - distFountain / 48.0);
+      const distFountain = Math.hypot(playerPos.x - FOUNTAIN.x, playerPos.z + FOUNTAIN.y);
+      const nearness = Math.max(0, 1.0 - distFountain / FOUNTAIN_RANGE);
       const targetF = nearness * nearness * 0.28 * (1.0 - indoorFactor * 0.9);
       this.fountainGain.gain.setTargetAtTime(targetF, t, 0.25);
     }

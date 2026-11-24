@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import { ARCHITECTURAL_HOTSPOTS, ArchitecturalHotspot } from '../data/hotspots';
 import { loc } from '../i18n';
+import { LAYOUT } from '../data/layout';
+import { isEyeUnderground } from '../scene/walkModel';
+
+/** Camera counts as "inside the basilica" in this box (runtime): church incl. apse, ±(transept + 1 m). */
+const INDOOR_BOX = {
+  maxX: LAYOUT.transept.halfLength + 1.0,
+  minZ: -(LAYOUT.apse.center[1] + LAYOUT.apse.wallOuterR + 1.0),
+  maxZ: -LAYOUT.nave.gloryInnerY + 0.75,
+};
 
 const INTERIOR_ONLY_IDS = new Set([
   'double-twisted-columns',
@@ -152,13 +161,13 @@ export class HotspotPanel {
 
     camera.getWorldDirection(this.camDir);
 
-    const inCryptCam = camPos.y < -1.5;
+    const inCryptCam = isEyeUnderground(camPos.x, camPos.y, camPos.z);
     const inInteriorCam =
       !inCryptCam &&
       camPos.y < 52 &&
-      Math.abs(camPos.x) < 28 &&
-      camPos.z > -32 &&
-      camPos.z < 46;
+      Math.abs(camPos.x) < INDOOR_BOX.maxX &&
+      camPos.z > INDOOR_BOX.minZ &&
+      camPos.z < INDOOR_BOX.maxZ;
 
     for (const hs of ARCHITECTURAL_HOTSPOTS) {
       const el = this.markerEls.get(hs.id)!;
@@ -167,7 +176,7 @@ export class HotspotPanel {
       const dist = worldPos.distanceTo(camPos);
 
       // Context-aware visibility: hide crypt pins above ground, hide interior pins from outside/aerial, and vice-versa
-      const isCryptHs = hs.position[1] < -1.0;
+      const isCryptHs = isEyeUnderground(hs.position[0], hs.position[1], hs.position[2]);
       if (
         (inCryptCam && !isCryptHs) ||
         (!inCryptCam && isCryptHs) ||

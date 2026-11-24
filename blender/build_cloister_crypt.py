@@ -1,4 +1,9 @@
-"""Build the walkable Cloister (Kreuzgang), 2 domed Sacristies, and Subterranean Crypt with Gaudí's tomb."""
+"""Build the walkable cloister (closed rectangle round the church), the four corner buildings (two
+sacristies, Baptistery, Penitence chapel), the Assumption chapel, and the crypt under the apse with
+its two spiral stairs and Gaudí's tomb.
+
+All plan positions, radii, levels and extents come from blender/layout.py.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +17,6 @@ from mathutils import Vector
 sys.path.insert(0, os.path.dirname(__file__))
 from common import (
     MODEL_DIR,
-    Z_CRYPT,
     Z_NAVE,
     add_box,
     add_cylinder,
@@ -25,398 +29,559 @@ from common import (
     reset_scene,
     save_candle_anchors,
 )
+from layout import (
+    APSE_PIER_ANGLES_DEG,
+    ASSUMPTION_CHAPEL,
+    BOCABELLA_TOMB_POS,
+    CLOISTER_CLEAR_WIDTH,
+    CLOISTER_HEIGHT,
+    CLOISTER_WALKS,
+    CLOISTER_WIDTH,
+    CORNER_BUILDINGS,
+    CRYPT_ALTAR_POS,
+    CRYPT_CENTER,
+    CRYPT_CHAPEL_BACK_R,
+    CRYPT_CHAPEL_FRONT_R,
+    CRYPT_FLOOR_Z,
+    CRYPT_HALF_WIDTH,
+    CRYPT_KEYSTONE,
+    CRYPT_PIER_COUNT,
+    CRYPT_PIER_RING_R,
+    CRYPT_SOUTH_CHAPEL_DEPTH,
+    CRYPT_SOUTH_CHAPEL_X,
+    CRYPT_SOUTH_WALL_Y,
+    CRYPT_STAIRS,
+    CRYPT_STAIR_BOTTOM_DOOR,
+    CRYPT_STAIR_TOP_DOOR,
+    CRYPT_WALL_OUTER_R,
+    GAUDI_TOMB_POS,
+    GLORY,
+    NATIVITY,
+    PASSION,
+    PRESBYTERY_FRONT_Y,
+    PRESBYTERY_HALF_WIDTH,
+    PRESBYTERY_RADIUS,
+    Z_CRYPT_VAULT_LOW,
+    ground_z,
+)
 from interior_lib import (
+    add_annulus_sector,
     add_clustered_pier,
     add_groin_vault_cell,
     add_paraboloid_dome,
     add_ruled_hyperboloid_shell,
+    add_square_tile_with_hole,
+    add_wall_with_openings,
     add_web_vault_sector,
     finalize_oriented,
 )
 
-
-def add_cloister_gallery_wing(
-    bm_stone: bmesh.types.BMesh,
-    bm_floor: bmesh.types.BMesh,
-    x_center: float,
-    y_start: float,
-    y_end: float,
-    width: float = 5.2,
-    height: float = 9.0,
-    bm_stairs: bmesh.types.BMesh | None = None,
-) -> None:
-    """Walkable vaulted cloister arcade running along the outer side of the nave."""
-    length = abs(y_end - y_start)
-    y_mid = 0.5 * (y_start + y_end)
-    # Marble cloister floor slab (Z = Z_NAVE)
-    add_box(bm_floor, (x_center, y_mid, Z_NAVE - 0.35), (width, length, 0.7))
-    # Ribbed cloister roof slab
-    add_box(bm_stone, (x_center, y_mid, Z_NAVE + height), (width + 0.8, length + 0.6, 0.9))
-
-    # Outer arched colonnade bays (open arches letting sunlight filter into the cloister!)
-    outer_x = x_center + (width * 0.48 if x_center > 0 else -width * 0.48)
-    bays = max(4, int(length / 5.0))
-    dy = (y_end - y_start) / bays
-    sx_out = 1.0 if x_center > 0 else -1.0
-    for i in range(bays + 1):
-        py = y_start + i * dy
-        # Outer gothic tracery pier
-        add_box(bm_stone, (outer_x, py, Z_NAVE + height * 0.5), (0.85, 0.85, height))
-        # Overhead vault transverse rib spanning width
-        add_box(bm_stone, (x_center, py, Z_NAVE + height - 0.65), (width, 0.48, 0.75))
-        if i < bays:
-            mid_y = py + dy * 0.5
-            # Low stone sill wall on exterior edge (leaving one middle bay open as exterior portal!)
-            if i != bays // 2:
-                add_box(bm_stone, (outer_x, mid_y, Z_NAVE + 0.65), (0.55, abs(dy) - 0.8, 1.3))
-            elif bm_stairs is not None and length > 15.0:
-                # 4 exterior stone steps linking Panot street sidewalk (Z=0) seamlessly into the open cloister portal (Z=1.2)!
-                for st in range(4):
-                    sz = (4 - st) * (Z_NAVE / 4.0)
-                    st_x = outer_x + sx_out * (0.45 + st * 0.55)
-                    add_box(bm_stairs, (st_x, mid_y, sz * 0.5), (0.58, abs(dy) - 0.9, sz))
-            # Pointed arch head above bay
-            add_box(bm_stone, (outer_x, mid_y, Z_NAVE + height - 1.1), (0.68, abs(dy) - 0.6, 1.5))
+Z_GROUND_EPS = 0.0         # façade porch slabs sit 0.04 below Z_NAVE, so the walk floors stay at the layout level
+CRYPT_WALL_TOP = Z_NAVE - 0.75   # 0.45: under the 0.7 m nave floor slab
 
 
-def add_sacristy_pavilion(
-    bm_stone: bmesh.types.BMesh,
-    bm_floor: bmesh.types.BMesh,
-    bm_mosaic: bmesh.types.BMesh,
-    bm_gold: bmesh.types.BMesh,
-    cx: float,
-    cy: float,
-) -> None:
-    """Sacristy (west one built 2011-2016 to Gaudí's model, Wikipedia es): square ground floor,
-    octagonal (chamfered) first floor, dome of TWELVE paraboloids, hyperboloid lantern; height 35 m,
-    base 18 x 18 m. Here 14 x 14 m: the apse buttresses of the facades module stand at x ~19-20.5
-    and the walkable podium of the runtime is a disc of r 8.5 m about (+-27.5, 32.5)."""
-    half = 7.0             # half side of the square ground floor (real: 9 m)
-    z0 = Z_NAVE
-    z_sq = 12.0            # top of the square storey
-    z_oct = 19.0           # top of the octagonal storey = springing of the dome
-    z_dome = 31.0          # dome crown at the lantern ring
-    z_lantern = 35.0       # lantern top = 35 m total height (source)
-    wt = 0.8
-    sgn = 1.0 if cx > 0 else -1.0
+def box_span(bm, x0, x1, y0, y1, z0, z1):
+    if x1 - x0 < 1e-4 or y1 - y0 < 1e-4 or z1 - z0 < 1e-4:
+        return
+    add_box(bm, (0.5 * (x0 + x1), 0.5 * (y0 + y1), 0.5 * (z0 + z1)), (x1 - x0, y1 - y0, z1 - z0))
 
-    # Interior floor (walk disc r 8.5 at runtime): octagon inscribed in the square
-    add_cylinder(bm_floor, Vector((cx, cy, z0 - 0.7)), Vector((cx, cy, z0)), half, half, segments=8, cap=True)
 
-    # Square storey: four walls, door to the south (toward the cloister connector), chamfered inner corners
-    for side in range(4):
-        ang = side * math.pi / 2.0
-        nx, ny = math.cos(ang), math.sin(ang)
-        wx, wy = cx + nx * (half - wt * 0.5), cy + ny * (half - wt * 0.5)
-        rot = ang + math.pi / 2.0
-        if ny < -0.5:  # south face: arched doorway 4 m wide, 6.5 m high
-            for s in (-1, 1):
-                seg = half - 2.0
-                add_box(bm_stone, (cx + s * (2.0 + seg * 0.5), wy, z0 + 0.5 * (z_sq - z0)), (seg, wt, z_sq - z0))
-            add_box(bm_stone, (cx, wy, 0.5 * (z0 + 6.5 + z_sq)), (4.2, wt, z_sq - z0 - 6.5))
+# ─────────────────────────────────────────────────────────────────────────────
+# Cloister walks
+# ─────────────────────────────────────────────────────────────────────────────
+
+def walk_segments() -> list[tuple[str, float, float, float, float, bool]]:
+    """(walk, x0, y0, x1, y1, roofed) pieces of the four walks. Where a walk crosses a façade porch the
+    porch (façade package) provides walls and roof; the walk keeps only its floor there."""
+    segs = []
+    e = CLOISTER_WALKS["east"]
+    # the walk passes under the outer Nativity tower bases (|y| 16 .. 18.4, soffit z 6.0, façade package):
+    # the roofed walk starts just beyond them
+    nat = NATIVITY["halfWidth"] + 2.5
+    segs += [("east", e[0], e[1], e[2], -nat, True), ("east", e[0], -nat, e[2], nat, False), ("east", e[0], nat, e[2], e[3], True)]
+    w = CLOISTER_WALKS["west"]
+    pas = PASSION["halfWidth"]
+    segs += [("west", w[0], w[1], w[2], -pas, True), ("west", w[0], -pas, w[2], pas, False), ("west", w[0], pas, w[2], w[3], True)]
+    n = CLOISTER_WALKS["north"]
+    ac = ASSUMPTION_CHAPEL
+    segs += [("north", n[0], n[1], ac["x0"], n[3], True), ("north", ac["x1"], n[1], n[2], n[3], True)]
+    s = CLOISTER_WALKS["south"]
+    gp = GLORY["porch"]
+    segs += [("south", s[0], s[1], gp["x0"], s[3], False), ("south", gp["x0"], s[1], gp["x1"], s[3], False), ("south", gp["x1"], s[1], s[2], s[3], False)]
+    return segs
+
+
+def add_cloister_walk(bm_stone, bm_floor, walk: str, x0: float, y0: float, x1: float, y1: float, roofed: bool) -> None:
+    """One straight piece of the covered double-façade walk: floor at Z_NAVE, outer wall with windows
+    (street side, down to the sloped ground), inner arcade towards the patio, roof slab with ribs.
+    Bays of ~7.5 m with few boxes each (the walk is ~3.4x longer than before)."""
+    along_y = walk in ("east", "west")
+    porch = not roofed and walk != "south"
+    z_top = Z_NAVE - (Z_GROUND_EPS if (porch or (walk == "south" and abs(0.5 * (x0 + x1)) < GLORY["porch"]["x1"])) else 0.0)
+    box_span(bm_floor, x0, x1, y0, y1, Z_NAVE - 0.45, z_top)
+    if not roofed:
+        return
+    H = CLOISTER_HEIGHT
+    wt = 0.5 * (CLOISTER_WIDTH - CLOISTER_CLEAR_WIDTH)      # 1.0 wall / arcade thickness
+    L = (y1 - y0) if along_y else (x1 - x0)
+    n_bays = max(1, round(L / 7.5))
+    pitch = L / n_bays
+    if along_y:
+        outer_sgn = 1.0 if walk == "east" else -1.0
+        x_out = x1 - 0.5 * wt if walk == "east" else x0 + 0.5 * wt
+        x_in = x0 + 0.5 * wt if walk == "east" else x1 - 0.5 * wt
+        cx_mid, rot = 0.5 * (x0 + x1), math.pi / 2
+        u0 = y0
+        lines = [(x_out, "outer"), (x_in, "inner")]
+        ground = ground_z(min(y0, y1)) - 0.3
+    else:
+        x_out = None
+        y_out = y1 - 0.5 * wt if walk == "north" else y0 + 0.5 * wt
+        y_in = y0 + 0.5 * wt if walk == "north" else y1 - 0.5 * wt
+        rot = 0.0
+        u0 = x0
+        lines = [(y_out, "outer"), (y_in, "inner")]
+        ground = ground_z(y1 if walk == "north" else y0) - 0.3
+    for pos, kind in lines:
+        openings = []
+        for b in range(n_bays):
+            a, c = b * pitch + 0.7, (b + 1) * pitch - 0.7
+            if kind == "outer":
+                openings.append((a - 0.5 * L + 0.5, c - 0.5 * L - 0.5, Z_NAVE + 1.0, Z_NAVE + 6.2))
+            else:
+                openings.append((a - 0.5 * L, c - 0.5 * L, Z_NAVE - 0.1, Z_NAVE + 5.6))
+        mid = u0 + 0.5 * L
+        cx, cy = (pos, mid) if along_y else (mid, pos)
+        zb = ground if kind == "outer" else Z_NAVE - 0.45
+        add_wall_with_openings(bm_stone, cx, cy, rot, L, wt, zb, Z_NAVE + H, openings)
+        if kind == "inner":
+            # pointed-arch soffits of the arcade (stepped), one per bay
+            for b in range(n_bays):
+                a, c = b * pitch + 0.7, (b + 1) * pitch - 0.7
+                span = c - a
+                for k in range(4):
+                    t0, t1 = k / 4, (k + 1) / 4
+                    tm = 0.5 * (t0 + t1)
+                    z_soffit = Z_NAVE + 4.0 + 1.6 * math.sin(math.pi * tm) ** 0.7
+                    um = u0 + a + span * tm
+                    px, py = (pos, um) if along_y else (um, pos)
+                    add_box(bm_stone, (px, py, 0.5 * (z_soffit + Z_NAVE + 5.6)), (span * 0.25 + 0.02, wt * 0.8, Z_NAVE + 5.6 - z_soffit), rot_euler=(0, 0, rot))
+    # roof slab + transverse ribs on the bay lines
+    box_span(bm_stone, x0 - (0.2 if along_y else 0.0), x1 + (0.2 if along_y else 0.0), y0 - (0.0 if along_y else 0.2), y1 + (0.0 if along_y else 0.2), Z_NAVE + H, Z_NAVE + H + 0.6)
+    for b in range(1, n_bays):
+        u = u0 + b * pitch
+        if along_y:
+            box_span(bm_stone, x0, x1, u - 0.22, u + 0.22, Z_NAVE + H - 0.7, Z_NAVE + H)
         else:
-            # closed face with three tall window openings (sill 2 m, head 8.4 m above the floor)
-            tx, ty = math.cos(rot), math.sin(rot)
-            w_lo, w_hi, w_w = z0 + 2.0, z0 + 8.4, 1.2
-            add_box(bm_stone, (wx, wy, 0.5 * (z0 + w_lo)), (2 * half, wt, w_lo - z0), rot_euler=(0, 0, rot))
-            add_box(bm_stone, (wx, wy, 0.5 * (w_hi + z_sq)), (2 * half, wt, z_sq - w_hi), rot_euler=(0, 0, rot))
-            edges = [-half] + [e for s in (-2.6, 0.0, 2.6) for e in (s - 0.5 * w_w, s + 0.5 * w_w)] + [half]
-            for e0, e1 in zip(edges[0::2], edges[1::2]):
-                m = 0.5 * (e0 + e1)
-                add_box(bm_stone, (wx + tx * m, wy + ty * m, 0.5 * (w_lo + w_hi)), (e1 - e0, wt, w_hi - w_lo), rot_euler=(0, 0, rot))
-    # Solid chamfer masses in the inner corners (keep the walkable interior inside r 8.5)
+            box_span(bm_stone, u - 0.22, u + 0.22, y0, y1, Z_NAVE + H - 0.7, Z_NAVE + H)
+
+
+def build_patio_floor(bm: bmesh.types.BMesh) -> None:
+    """The ground inside the cloister rectangle is walkable at Z_NAVE in the runtime (basilica podium), so
+    the patios between church and cloister get a paved deck just under Z_NAVE (hidden under every church
+    floor it overlaps). Left open: the presbytery hollow over the crypt's central vault and the two crypt
+    stair towers (square tiles with a round hole)."""
+    z0, z1 = Z_NAVE - 0.33, Z_NAVE - 0.03
+    xi = CLOISTER_WALKS["east"][0]                  # 32.5 inner face of the E/W walks
+    ys = CLOISTER_WALKS["south"][3]                 # -53.1
+    yn = CLOISTER_WALKS["north"][1]                 # 44.7
+    yp = PRESBYTERY_FRONT_Y
+    box_span(bm, -xi, xi, ys, yp, z0, z1)
+    st = CRYPT_STAIRS[0]
+    half = st["rOuter"] + 0.6
+    r_hole = st["rOuter"] + 0.2
+    sx0, sx1 = abs(st["x"]) - half, abs(st["x"]) + half
+    sy0, sy1 = st["y"] - half, st["y"] + half
+    for sx in (-1, 1):
+        def bx(a, b, c, d):
+            xa, xb = sorted((sx * a, sx * b))
+            box_span(bm, xa, xb, c, d, z0, z1)
+        bx(PRESBYTERY_HALF_WIDTH, sx0, yp, yn)
+        bx(sx1, xi, yp, yn)
+        bx(sx0, sx1, yp, sy0)
+        bx(sx0, sx1, sy1, yn)
+        add_square_tile_with_hole(bm, sx * abs(st["x"]), st["y"], half, r_hole, z0, z1, segs=16)
+    box_span(bm, -PRESBYTERY_HALF_WIDTH, PRESBYTERY_HALF_WIDTH, CRYPT_CENTER[1] + PRESBYTERY_RADIUS, yn, z0, z1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Corner buildings and Assumption chapel (one pavilion function)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def pavilion_doors(cx: float, cy: float, half: float) -> dict[int, list[float]]:
+    """Door centres (world point) per face index (0 E, 1 N, 2 W, 3 S) where a cloister walk ends on the face."""
+    doors: dict[int, list[tuple[float, float]]] = {0: [], 1: [], 2: [], 3: []}
+    for name, (x0, y0, x1, y1) in CLOISTER_WALKS.items():
+        xm, ym = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+        ends = [(xm, y0), (xm, y1)] if name in ("east", "west") else [(x0, ym), (x1, ym)]
+        for ex, ey in ends:
+            if abs(ex - cx) <= half + 0.02 and abs(ey - cy) <= half + 0.02:
+                if abs(abs(ey - cy) - half) < 0.05:
+                    doors[1 if ey > cy else 3].append((ex, ey))
+                elif abs(abs(ex - cx) - half) < 0.05:
+                    doors[0 if ex > cx else 2].append((ex, ey))
+    return doors
+
+
+def add_pavilion(
+    bm_stone, bm_floor, bm_mosaic, bm_gold, cx: float, cy: float, side: float, z_top: float, z_dome_max: float,
+    detail: int = 4, extra_doors: dict[int, list[tuple[float, float]]] | None = None,
+    closed_doors: dict[int, list[tuple[float, float]]] | None = None,
+) -> None:
+    """Square storey with doorways for the cloister walks, octagonal storey with windows, dome of twelve
+    paraboloids, hyperboloid lantern (Gaudí's sacristy model). Walls reach down to the sloped ground."""
+    half = 0.5 * side
+    z0 = Z_NAVE
+    z_dome = min(z_dome_max, z_top - 3.0)
+    z_sq = z0 + 0.36 * (z_dome - z0)
+    z_oct = z0 + 0.60 * (z_dome - z0)
+    z_lantern = z_top
+    wt = 0.8
+    z_ground = ground_z(cy - half) - 0.3
+    doors = pavilion_doors(cx, cy, half)
+    for k, v in (extra_doors or {}).items():
+        doors[k] += v
+    door_w, door_h = CLOISTER_CLEAR_WIDTH, 3.8
+
+    box_span(bm_floor, cx - half + wt, cx + half - wt, cy - half + wt, cy + half - wt, z0 - 0.4, z0)
+    for face in range(4):
+        ang = face * math.pi / 2.0
+        nx, ny = math.cos(ang), math.sin(ang)
+        wx, wy = cx + nx * (half - 0.5 * wt), cy + ny * (half - 0.5 * wt)
+        rot = ang + math.pi / 2.0
+        tx, ty = math.cos(rot), math.sin(rot)
+        L = 2 * half
+        ops = []
+        for (dx, dy) in doors[face]:
+            u = (dx - cx) * tx + (dy - cy) * ty
+            ops.append((u - 0.5 * door_w, u + 0.5 * door_w, z0 - 0.5, z0 + door_h))
+        w_lo, w_hi, w_w = z0 + 4.6, z_sq - 2.0, 1.3
+        for s in (-0.55, 0.0, 0.55):
+            u = s * half
+            if all(not (o[0] - 0.4 < u < o[1] + 0.4) for o in ops):
+                ops.append((u - 0.5 * w_w, u + 0.5 * w_w, w_lo, w_hi))
+        add_wall_with_openings(bm_stone, wx, wy, rot, L, wt, z_ground, z_sq, ops)
+        for (dx, dy) in (closed_doors or {}).get(face, []):     # bronze street doors (closed)
+            u = (dx - cx) * tx + (dy - cy) * ty
+            add_box(bm_gold, (cx + nx * (half - 0.15) + tx * u, cy + ny * (half - 0.15) + ty * u, z0 + 1.6), (1.8, 0.06, 3.2), rot_euler=(0, 0, rot))
+        add_box(bm_stone, (cx + nx * (half - 0.2), cy + ny * (half - 0.2), z_sq + 0.3), (L + 0.4, 1.2, 0.6), rot_euler=(0, 0, rot))
+    # squinches (octagon transition, above head height) + corner pinnacles
     for k in range(4):
         a = math.pi / 4 + k * math.pi / 2
-        px, py = cx + (half - 1.25) * math.cos(a) * math.sqrt(2) * 0.84, cy + (half - 1.25) * math.sin(a) * math.sqrt(2) * 0.84
-        add_box(bm_stone, (px, py, 0.5 * (z0 + z_sq)), (3.0, 3.0, z_sq - z0), rot_euler=(0, 0, a))
-        # corner pinnacles on the square (the obelisks around the dome)
-        ox, oy = cx + (half - 0.6) * math.copysign(1.0, math.cos(a)), cy + (half - 0.6) * math.copysign(1.0, math.sin(a))
-        add_lathe(bm_stone, ox, oy, [(z_sq, 0.75), (z_sq + 2.0, 0.6), (z_sq + 5.5, 0.32), (z_sq + 7.5, 0.05)], segments=8, cap_bottom=True)
-        add_lathe(bm_mosaic, ox, oy, [(z_sq + 7.3, 0.0), (z_sq + 7.6, 0.28), (z_sq + 8.1, 0.0)], segments=8)
-    for side in range(4):  # cornice ring of the square storey (the interior stays open up into the dome)
-        ang = side * math.pi / 2.0
-        add_box(bm_stone, (cx + math.cos(ang) * (half - 0.4), cy + math.sin(ang) * (half - 0.4), z_sq + 0.3), (2 * half + 0.4, 1.6, 0.6), rot_euler=(0, 0, ang + math.pi / 2.0))
-
-    # Octagonal storey (chamfered square), walls with oculi
+        sxc, syc = math.copysign(1.0, math.cos(a)), math.copysign(1.0, math.sin(a))
+        add_box(bm_stone, (cx + sxc * (half - 1.3), cy + syc * (half - 1.3), z_sq - 0.9), (2.6, 2.6, 1.8), rot_euler=(0, 0, a))
+        ox, oy = cx + sxc * (half - 0.6), cy + syc * (half - 0.6)
+        ph = 0.22 * (z_dome - z0)
+        add_lathe(bm_stone, ox, oy, [(z_sq, 0.8), (z_sq + 0.27 * ph, 0.62), (z_sq + 0.73 * ph, 0.33), (z_sq + ph, 0.05)], segments=8, cap_bottom=True)
+        add_lathe(bm_mosaic, ox, oy, [(z_sq + ph - 0.25, 0.0), (z_sq + ph + 0.05, 0.3), (z_sq + ph + 0.6, 0.0)], segments=8)
+    # octagonal storey with one tall window per face
     r_oct = half - 0.4
     oct_pts = [(cx + r_oct / math.cos(math.pi / 8) * math.cos(math.pi / 8 + k * math.pi / 4), cy + r_oct / math.cos(math.pi / 8) * math.sin(math.pi / 8 + k * math.pi / 4)) for k in range(8)]
     for k in range(8):
         (x0, y0), (x1, y1) = oct_pts[k], oct_pts[(k + 1) % 8]
-        mx, my = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
         seg = math.hypot(x1 - x0, y1 - y0) + 0.3
         rot = math.atan2(y1 - y0, x1 - x0)
-        tx, ty = math.cos(rot), math.sin(rot)
-        zb, w_lo, w_hi = z_sq + 0.6, z_sq + 2.6, z_oct - 1.4  # one tall window per octagon face
-        add_box(bm_stone, (mx, my, 0.5 * (zb + w_lo)), (seg, wt, w_lo - zb), rot_euler=(0, 0, rot))
-        add_box(bm_stone, (mx, my, 0.5 * (w_hi + z_oct)), (seg, wt, z_oct - w_hi), rot_euler=(0, 0, rot))
-        side_w = 0.5 * (seg - 1.8)
-        for s in (-1, 1):
-            off = s * (0.9 + 0.5 * side_w)
-            add_box(bm_stone, (mx + tx * off, my + ty * off, 0.5 * (w_lo + w_hi)), (side_w, wt, w_hi - w_lo), rot_euler=(0, 0, rot))
+        add_wall_with_openings(bm_stone, 0.5 * (x0 + x1), 0.5 * (y0 + y1), rot, seg, wt, z_sq + 0.6, z_oct,
+                               [(-0.9, 0.9, z_sq + 2.4, z_oct - 1.4)])
     add_cylinder(bm_stone, Vector((cx, cy, z_oct - 0.2)), Vector((cx, cy, z_oct + 0.4)), r_oct + 0.4, r_oct + 0.2, segments=24, cap=False)
-
-    # Dome of twelve paraboloids (exact ridges), springing from the octagon, open at the lantern ring
-    add_paraboloid_dome(bm_stone, cx, cy, r_oct, z_oct + 0.3, z_dome, r_open=1.4, thickness=0.4, lobes=12, steps_per_lobe=4, rings=7, ecc=0.6, rib_r=0.22)
-    # Lantern: hyperboloid of one sheet (straight rulings) clad in trencadís + gilded finial
-    add_ruled_hyperboloid_shell(bm_mosaic, cx, cy, z_dome - 0.5, z_lantern - 0.6, 1.55, 1.9, n=20)
-    add_lathe(bm_mosaic, cx, cy, [(z_lantern - 0.6, 1.55), (z_lantern - 0.2, 1.2), (z_lantern, 0.4), (z_lantern + 0.1, 0.0)], segments=20)
+    add_paraboloid_dome(bm_stone, cx, cy, r_oct, z_oct + 0.3, z_dome, r_open=0.2 * r_oct, thickness=0.4, lobes=12,
+                        steps_per_lobe=detail, rings=detail + 3, ecc=0.6, rib_r=0.22)
+    r_l = 0.2 * r_oct + 0.15
+    add_ruled_hyperboloid_shell(bm_mosaic, cx, cy, z_dome - 0.5, z_lantern - 0.6, r_l, 1.9, n=4 * detail + 4)
+    add_lathe(bm_mosaic, cx, cy, [(z_lantern - 0.6, r_l), (z_lantern - 0.2, 0.78 * r_l), (z_lantern, 0.25 * r_l), (z_lantern + 0.1, 0.0)], segments=4 * detail + 4)
     add_cylinder(bm_gold, Vector((cx, cy, z_lantern)), Vector((cx, cy, z_lantern + 1.6)), 0.14, 0.05, segments=8)
     add_cylinder(bm_gold, Vector((cx - 0.45, cy, z_lantern + 1.1)), Vector((cx + 0.45, cy, z_lantern + 1.1)), 0.06, 0.06, segments=6)
-    _ = sgn
 
 
-def add_crypt_mosaic(
-    bm_light: bmesh.types.BMesh,
-    bm_red: bmesh.types.BMesh,
-    cx: float,
-    cy: float,
-    inner: list[Vector],
-    outer: list[Vector],
-    r1: float,
-    r2: float,
-    y_trans: float,
-    y_south: float,
-) -> None:
-    """Roman-style (opus tessellatum) floor pattern: guilloche-like border bands and a central rosette
-    in porphyry red / white marble, 1 cm proud of the crypt floor (visual only, name contains 'Floor')."""
-    z = Z_CRYPT + 0.012
-    # Central rosette (16 petals) under the keystone and two concentric bands
-    rc = Vector((cx, cy - 1.0, z))
+# ─────────────────────────────────────────────────────────────────────────────
+# Crypt
+# ─────────────────────────────────────────────────────────────────────────────
+
+def add_crypt_mosaic(bm_light, bm_red, cx, cy, r_pier, r_front, y_front) -> None:
+    """Roman-style (opus tessellatum) floor: rosette under the keystone, concentric bands, red panels in
+    the ambulatory bays and the transverse aisle (1 cm proud of the floor, visual only)."""
+    z = CRYPT_FLOOR_Z + 0.012
+    rc = Vector((cx, cy, z))
     for k in range(16):
         a0 = 2 * math.pi * k / 16
         a1 = a0 + 2 * math.pi / 32
-        p0 = rc + Vector((0.6 * math.cos(a0), 0.6 * math.sin(a0), 0))
-        p1 = rc + Vector((2.2 * math.cos(a1), 2.2 * math.sin(a1), 0))
-        p2 = rc + Vector((0.6 * math.cos(a0 + 2 * math.pi / 16), 0.6 * math.sin(a0 + 2 * math.pi / 16), 0))
-        f = (bm_red if k % 2 == 0 else bm_light).faces.new([(bm_red if k % 2 == 0 else bm_light).verts.new(p) for p in (p0, p1, p2)])
+        bm = bm_red if k % 2 == 0 else bm_light
+        pts = [rc + Vector((0.6 * math.cos(a0), 0.6 * math.sin(a0), 0)), rc + Vector((2.2 * math.cos(a1), 2.2 * math.sin(a1), 0)),
+               rc + Vector((0.6 * math.cos(a0 + 2 * math.pi / 16), 0.6 * math.sin(a0 + 2 * math.pi / 16), 0))]
+        f = bm.faces.new([bm.verts.new(p) for p in pts])
         f.normal_update()
         if f.normal.z < 0:
             f.normal_flip()
-    for (ri, ro, bm) in ((2.5, 2.75, bm_red), (3.05, 3.2, bm_light), (r1 - 1.0, r1 - 0.8, bm_red)):
-        ring_i = [bm.verts.new((rc.x + ri * math.cos(2 * math.pi * k / 40), rc.y + ri * math.sin(2 * math.pi * k / 40), z)) for k in range(40)]
-        ring_o = [bm.verts.new((rc.x + ro * math.cos(2 * math.pi * k / 40), rc.y + ro * math.sin(2 * math.pi * k / 40), z)) for k in range(40)]
-        for k in range(40):
-            nk = (k + 1) % 40
-            bm.faces.new((ring_i[k], ring_o[k], ring_o[nk], ring_i[nk]))
-    # Ambulatory: chequer of red tesserae panels along the mid-line of every bay
-    for k in range(7):
-        a = 0.5 * (math.atan2(inner[k].y - cy, inner[k].x - cx) + math.atan2(inner[k + 1].y - cy, inner[k + 1].x - cx))
-        rm = 0.5 * (r1 + r2)
+    for (ri, ro, bm, a_end, n) in ((2.5, 2.75, bm_red, 2 * math.pi, 40), (3.05, 3.2, bm_light, 2 * math.pi, 40), (r_pier - 1.0, r_pier - 0.8, bm_red, math.pi, 24)):
+        closed = a_end > 6.0
+        cnt = n if closed else n + 1
+        ring_i = [bm.verts.new((cx + ri * math.cos(a_end * k / n), cy + ri * math.sin(a_end * k / n), z)) for k in range(cnt)]
+        ring_o = [bm.verts.new((cx + ro * math.cos(a_end * k / n), cy + ro * math.sin(a_end * k / n), z)) for k in range(cnt)]
+        for k in range(n):
+            nk = (k + 1) % cnt
+            f = bm.faces.new((ring_i[k], ring_o[k], ring_o[nk], ring_i[nk]))
+            f.normal_update()
+            if f.normal.z < 0:
+                f.normal_flip()
+    rm = 0.5 * (r_pier + r_front)
+    for k in range(CRYPT_PIER_COUNT - 1):
+        a = math.radians(20.0 * k + 10.0)
         add_box(bm_red, (cx + rm * math.cos(a), cy + rm * math.sin(a), z - 0.004), (1.3, 1.3, 0.01), rot_euler=(0, 0, a + math.pi / 4))
-    for x in (-7.6, -3.7, 0.0, 3.7, 7.6):
-        add_box(bm_red, (x, 0.5 * (y_trans + y_south), z - 0.004), (1.1, 1.1, 0.01), rot_euler=(0, 0, math.pi / 4))
+    for x in (-17.0, -11.25, 11.25, 17.0):
+        add_box(bm_red, (x, 0.5 * (y_front + cy), z - 0.004), (1.1, 1.1, 0.01), rot_euler=(0, 0, math.pi / 4))
 
 
-def build_crypt(
-    bm_crypt: bmesh.types.BMesh,
-    bm_crypt_stairs: bmesh.types.BMesh,
-    bm_floor: bmesh.types.BMesh,
-    bm_gold: bmesh.types.BMesh,
-    bm_marble: bmesh.types.BMesh,
-    bm_candle: bmesh.types.BMesh,
-    candle_anchors: list[tuple[float, float, float, float]],
-    bm_mosaic_floor: bmesh.types.BMesh,
-    bm_mosaic_red: bmesh.types.BMesh,
-    bm_porphyry: bmesh.types.BMesh,
-) -> None:
-    """Neo-Gothic crypt (Villar 1882-83 / Gaudí) under the apse, floor Z_CRYPT = -5.5 m.
+def stair_angle(s: dict, t: float) -> float:
+    """Tread angle (rad) at fraction t of the spiral: phaseDeg + sgn * t * turns * 2pi, sgn = +1 if clockwise
+    (towers_lib / src/scene/walkModel.ts convention)."""
+    sgn = 1.0 if s["clockwise"] else -1.0
+    return math.radians(s["phaseDeg"]) + sgn * t * s["turns"] * 2.0 * math.pi
 
-    Layout (Wikipedia es/ca, basilica site; dimensions scaled to fit the runtime walk disc of r 15.6 m
-    about (0, 21) and the pinned tomb / candle / teleport positions):
-      * central space: semicircle + straight part, vault on TEN clustered piers (8 on the semicircle,
-        2 on the straight side), central keystone with the Annunciation;
-      * ambulatory around it, SEVEN radiating chapels on the semicircle facing FIVE chapels in a row on
-        the straight (south) side; Gaudí's tomb in the chapel of Our Lady of Mount Carmel (westernmost
-        apse chapel, pinned at (-9.8, 23.5));
-      * ribbed groin vaults over ambulatory and chapels, Roman-style (opus tessellatum) mosaic floor.
-    Real crypt: ~40 x 30 m, semicircular; its vaults rise higher than here (the central vault pokes ~2 m
-    above the presbytery floor) - everything is kept below -0.65 m so it never shows through the street
-    slab or the nave floor.
-    """
-    cx, cy = 0.0, 21.0
-    R1, R2, R3 = 5.6, 9.6, 13.8          # central piers / ambulatory outer ring / chapel back walls
-    Y_TRANS, Y_SOUTH = 15.6, 12.0        # straight side: central space ends / transverse aisle ends
-    Y_SCHAP = 9.0                        # back wall of the five south chapels
-    X_SCHAP = (-9.6, -5.6, -1.87, 1.87, 5.6, 9.6)
-    z_f = Z_CRYPT
-    z_cap = Z_CRYPT + 2.9                # pier capitals / vault springing (-2.6 m)
-    z_key = -0.72                        # central keystone (top of the crypt, < -0.65)
-    z_amb = -1.1                         # ambulatory groin crowns
-    z_chap = -1.3                        # chapel groin crowns
-    wall_top = -0.66
 
-    def V(x: float, y: float, z: float = 0.0) -> Vector:
+def build_crypt_stair(s: dict, bm_crypt, bm_tower, bm_steps, bm_floor, bm_mosaic) -> None:
+    """Gaudí's spiral stair from the crypt floor to the nave floor in a solid drum (inner r 2.42, outer
+    r 2.6); bottom door through the crypt side wall, top door towards -y through the transept north wall.
+    The drum stands outdoors above ground (corner between apse, transept and cloister) with a small roof."""
+    cx, cy, z0, z1 = s["x"], s["y"], s["z0"], s["z1"]
+    r_in, r_out = s["rInner"], s["rOuter"]
+    r_w0, r_w1 = r_out + 0.02, 2.6
+    r_mid = 0.5 * (r_in + r_out)
+    span = z1 - z0
+    n = int(round(span / 0.175))
+    for i in range(n + 1):
+        t = i / n
+        a = stair_angle(s, t)
+        z_line = z0 + t * span
+        z_tread = z_line + 0.12 if i > 0 else z0          # first tread flush with the crypt floor
+        add_box(bm_steps, (cx + r_mid * math.cos(a), cy + r_mid * math.sin(a), z_tread - 0.17), (r_out - r_in + 0.06, 0.74, 0.34), rot_euler=(0, 0, a))
+    # top landing: sector from the arrival direction onwards (never over the approach treads)
+    a_top = stair_angle(s, 1.0)
+    sgn = 1.0 if s["clockwise"] else -1.0
+    a0, a1 = sorted((a_top - sgn * math.radians(8.0), a_top + sgn * math.radians(130.0)))
+    add_annulus_sector(bm_steps, cx, cy, r_in, r_w0 + 0.02, a0, a1, z1 - 0.3, z1, segs=10)
+    # crypt floor under the drum
+    add_cylinder(bm_floor, Vector((cx, cy, z0 - 0.5)), Vector((cx, cy, z0)), r_w1, r_w1, segments=20, cap=True)
+    # newel
+    z_roof = z1 + 3.4
+    add_cylinder(bm_crypt, Vector((cx, cy, z0)), Vector((cx, cy, z_roof)), r_in, r_in, segments=12, cap=True)
+    # drum wall with two doors
+    bd = CRYPT_STAIR_BOTTOM_DOOR
+    a_bot = stair_angle(s, 0.0)
+    hb = math.asin(min(0.99, bd["halfWidth"] / r_w0))
+    ht = math.asin(min(0.99, CRYPT_STAIR_TOP_DOOR["halfWidth"] / r_w0))
+    a_exit = math.radians(270.0)
+    segs = 40
+    for k in range(segs):
+        th0, th1 = 2 * math.pi * k / segs, 2 * math.pi * (k + 1) / segs
+        thm = 0.5 * (th0 + th1)
+
+        def near(a, h):
+            d = (thm - a + math.pi) % (2 * math.pi) - math.pi
+            return abs(d) < h
+
+        gaps = []
+        if near(a_bot, hb):
+            gaps.append((z0, z0 + 2.6))
+        if near(a_exit, ht):
+            gaps.append((z1, z1 + 2.8))
+        z = z0
+        spans = []
+        for g0, g1 in gaps:
+            spans.append((z, g0))
+            z = g1
+        spans.append((z, z_roof))
+        for za, zb in spans:
+            for zs, ze, bm in ((za, min(zb, CRYPT_WALL_TOP), bm_crypt), (max(za, CRYPT_WALL_TOP), zb, bm_tower)):
+                if ze - zs > 1e-3:
+                    add_annulus_sector(bm, cx, cy, r_w0, r_w1, th0, th1, zs, ze, segs=1)
+    # roof of the drum (above ground) + trencadís finial
+    add_lathe(bm_tower, cx, cy, [(z_roof, r_w1 + 0.25), (z_roof + 0.35, r_w1 + 0.1), (z_roof + 1.4, 1.2), (z_roof + 2.0, 0.25)], segments=20, cap_bottom=True, cap_top=True)
+    add_lathe(bm_mosaic, cx, cy, [(z_roof + 1.9, 0.0), (z_roof + 2.3, 0.4), (z_roof + 2.9, 0.0)], segments=10)
+    # door frame where the drum meets the crypt side wall
+    sxs = 1.0 if cx > 0 else -1.0
+    xw = CRYPT_HALF_WIDTH
+    for yy in (cy - bd["halfWidth"] - 0.25, cy + bd["halfWidth"] + 0.25):
+        xa, xb = sorted((sxs * xw, sxs * (abs(cx) - 2.25)))
+        box_span(bm_crypt, xa, xb, yy - 0.25, yy + 0.25, z0, CRYPT_WALL_TOP)
+    xa, xb = sorted((sxs * xw, sxs * (abs(cx) - 2.45)))
+    box_span(bm_crypt, xa, xb, cy - bd["halfWidth"], cy + bd["halfWidth"], z0 + 2.6, CRYPT_WALL_TOP)
+    box_span(bm_floor, xa, xb, cy - bd["halfWidth"] - 0.5, cy + bd["halfWidth"] + 0.5, z0 - 0.5, z0)
+
+
+def build_crypt(bm_crypt, bm_tower, bm_steps, bm_floor, bm_gold, bm_marble, bm_candle, candle_anchors,
+                bm_mosaic_floor, bm_mosaic_red, bm_porphyry, bm_mosaic) -> None:
+    """Neo-Gothic crypt (Villar 1882-83 / Gaudí) under the apse, same plan as the apse and concentric with
+    it and the Tower of Mary (layout.crypt):
+      * central space: ring of CRYPT_PIER_COUNT clustered piers at r 7.5 + straight part to the south chapels,
+        raised central vault (crown at the Annunciation keystone, Z_CRYPT_VAULT_CENTRAL) with a clerestory
+        band under the presbytery;
+      * ambulatory r 7.5 .. 15, seven chapels r 15 .. 19 on the semicircle, five chapels on the south side
+        (Carmel with Gaudí's tomb, Sacrament, altar, Montserrat, Holy Christ with Bocabella's tomb);
+      * ribbed groin vaults (crown Z_CRYPT_VAULT_LOW), Roman-style mosaic floor, two spiral stairs."""
+    cx, cy = CRYPT_CENTER
+    zf = CRYPT_FLOOR_Z
+    R1, R2, R3, RW = CRYPT_PIER_RING_R, CRYPT_CHAPEL_FRONT_R, CRYPT_CHAPEL_BACK_R, CRYPT_WALL_OUTER_R
+    HW = CRYPT_HALF_WIDTH
+    YS = CRYPT_SOUTH_WALL_Y
+    YF = YS + CRYPT_SOUTH_CHAPEL_DEPTH          # 17.25 front of the south chapels
+    XS = CRYPT_SOUTH_CHAPEL_X
+    z_cap = zf + 4.4                            # pier capitals / vault springing
+    z_low = Z_CRYPT_VAULT_LOW                   # 0.2
+    z_key = CRYPT_KEYSTONE[2]                   # 2.4
+    z_cl0, z_cl1 = CRYPT_WALL_TOP, z_key - 0.4  # clerestory band 0.45 .. 2.0
+    wt = 0.5
+    z_open = zf + 4.2                           # chapel arch openings
+
+    def V(x, y, z=0.0):
         return Vector((x, y, z))
 
-    angs = [math.pi * k / 7.0 for k in range(8)]
-    inner = [V(cx + R1 * math.cos(a), cy + R1 * math.sin(a)) for a in angs]
-    outer = [V(cx + R2 * math.cos(a), cy + R2 * math.sin(a)) for a in angs]
-    back = [V(cx + R3 * math.cos(a), cy + R3 * math.sin(a)) for a in angs]
+    ring_deg = [180.0 * k / (CRYPT_PIER_COUNT - 1) for k in range(CRYPT_PIER_COUNT)]
+    inner = [V(cx + R1 * math.cos(math.radians(a)), cy + R1 * math.sin(math.radians(a))) for a in ring_deg]
+    outer = [V(cx + (R2 - 0.1) * math.cos(math.radians(a)), cy + (R2 - 0.1) * math.sin(math.radians(a))) for a in ring_deg]
+    pier_a = [math.radians(a) for a in APSE_PIER_ANGLES_DEG]
 
-    # Floor slab (base marble) under the whole crypt + vestibule
-    add_box(bm_floor, (0.0, 0.5 * (Y_SCHAP - 0.8 + cy), Z_CRYPT - 0.25), (2 * (R3 + 0.6), cy - Y_SCHAP + 0.8, 0.5))
-    add_box(bm_floor, (-11.6, 0.5 * (Y_SOUTH + Y_TRANS), Z_CRYPT - 0.25), (4.4, Y_TRANS - Y_SOUTH + 0.6, 0.5))
-    add_cylinder(bm_floor, Vector((cx, cy, Z_CRYPT - 0.5)), Vector((cx, cy, Z_CRYPT)), R3 + 0.6, R3 + 0.6, segments=28, cap=True)
-    add_crypt_mosaic(bm_mosaic_floor, bm_mosaic_red, cx, cy, inner, outer, R1, R2, Y_TRANS, Y_SOUTH)
+    # ── floor ──
+    add_annulus_sector(bm_floor, cx, cy, 0.0, RW, 0.0, math.pi, zf - 0.5, zf, segs=28)
+    box_span(bm_floor, -RW, RW, YS - 1.25, cy, zf - 0.5, zf)
+    add_crypt_mosaic(bm_mosaic_floor, bm_mosaic_red, cx, cy, R1, R2, YF)
 
-    # ── Piers: 10 clustered piers around the central space, engaged piers on the ambulatory ring ──
-    central_piers = inner + [V(-R1, Y_TRANS), V(R1, Y_TRANS)]
-    for p in central_piers:
-        add_clustered_pier(bm_crypt, p.x, p.y, z_f, z_cap, 0.42, shafts=6)
-    ring_piers = outer + [V(R2, Y_TRANS), V(-R2, Y_TRANS)] + [V(x, Y_SOUTH) for x in X_SCHAP]
-    for p in ring_piers:
-        add_clustered_pier(bm_crypt, p.x, p.y, z_f, z_cap, 0.32, shafts=4)
+    # ── piers ──
+    central = inner + [V(-R1, YF), V(R1, YF)]
+    for p in central:
+        add_clustered_pier(bm_crypt, p.x, p.y, zf, z_cap, 0.46, shafts=6)
+        add_cylinder(bm_crypt, V(p.x, p.y, z_cap), V(p.x, p.y, z_cl1), 0.4, 0.36, segments=10, cap=False)
+        add_lathe(bm_crypt, p.x, p.y, [(z_cl1 - 0.25, 0.4), (z_cl1, 0.62)], segments=10, cap_bottom=False, cap_top=True)
+    for p in outer[1:-1]:      # engaged piers on the chapel front wall
+        add_clustered_pier(bm_crypt, p.x, p.y, zf, z_cap, 0.3, shafts=4)
+    for x in (-15.0, -11.4, -3.8, 3.8, 11.4, 15.0):   # engaged piers on the south chapel front
+        add_clustered_pier(bm_crypt, x, YF - 0.1, zf, z_cap, 0.3, shafts=4)
 
-    # ── Central vault: webs from each pier pair up to the Annunciation keystone ──
-    key = V(cx, cy - 1.0, z_key)
-    loop = [V(R1, Y_TRANS)] + inner + [V(-R1, Y_TRANS)]
+    # ── central vault: arches between the central piers, clerestory band, shallow ribbed vault ──
+    key = V(CRYPT_KEYSTONE[0], CRYPT_KEYSTONE[1], z_key)
+    loop = inner + [V(-R1, YF), V(R1, YF)]
     for i in range(len(loop)):
         a, b = loop[i], loop[(i + 1) % len(loop)]
-        span = (b - a).length
-        rise = min(1.55, 0.36 * span)
-        add_web_vault_sector(bm_crypt, V(a.x, a.y, z_cap), V(b.x, b.y, z_cap), key, z_cap, rise, res_s=4, res_t=6 if span > 6 else 4)
-        # rib from the pier to the keystone, following the web
-        fr = (0.0, 0.35, 0.7, 1.0)
+        d = b - a
+        span = d.length
+        rot = math.atan2(d.y, d.x)
+        m = (a + b) * 0.5
+        n_st = 6 if span > 4 else 4
+        rise = min(3.0, 0.45 * span)
+        for k in range(n_st):   # stepped pointed-arch spandrel from the arch up to the clerestory sill
+            tm = (k + 0.5) / n_st
+            z_s = z_cap + rise * math.sin(math.pi * tm) ** 0.75
+            p = a.lerp(b, tm)
+            add_box(bm_crypt, (p.x, p.y, 0.5 * (z_s + z_cl0)), (span / n_st + 0.02, wt, z_cl0 - z_s), rot_euler=(0, 0, rot))
+        n_mull = max(1, int(span // 3.2))
+        ops = [((k + 0.5) / (n_mull + 1) * span - 0.5 * span + 0.35, (k + 1.5) / (n_mull + 1) * span - 0.5 * span - 0.35, z_cl0 + 0.12, z_cl1 - 0.15) for k in range(n_mull + 1)]
+        ops = [(-0.5 * span + 0.45 + k * (span - 0.9) / (n_mull + 1) + 0.18, -0.5 * span + 0.45 + (k + 1) * (span - 0.9) / (n_mull + 1) - 0.18, z_cl0 + 0.12, z_cl1 - 0.15) for k in range(n_mull + 1)]
+        add_wall_with_openings(bm_crypt, m.x, m.y, rot, span + 0.3, wt, z_cl0, z_cl1 + 0.05, ops)
+        add_web_vault_sector(bm_crypt, V(a.x, a.y, z_cl1), V(b.x, b.y, z_cl1), key, z_cl1, 0.12, res_s=3, res_t=6 if span > 6 else 3)
         pts = []
-        for f in fr:
-            q = V(a.x, a.y, z_cap).lerp(key, f)
-            q.z = z_cap + (key.z - z_cap) * (1.0 - (1.0 - f) ** 2) - 0.08
+        for f in (0.0, 0.4, 0.75, 1.0):
+            q = V(a.x, a.y, z_cl1).lerp(key, f)
+            q.z = z_cl1 + (key.z - z_cl1) * (1.0 - (1.0 - f) ** 2) - 0.08
             pts.append(q)
         add_swept_tube(bm_crypt, pts, [0.13] * 4, segments=5, cap=False)
     add_lathe(bm_crypt, key.x, key.y, [(key.z - 0.3, 0.75), (key.z - 0.12, 0.98), (key.z + 0.05, 1.0)], segments=20, cap_bottom=True, cap_top=True)
     # Annunciation keystone: gilded frame, porphyry ground, white figures of Gabriel and Mary
-    add_cylinder(bm_gold, Vector((key.x, key.y, key.z - 0.36)), Vector((key.x, key.y, key.z - 0.3)), 0.82, 0.82, segments=20, cap=True)
-    add_cylinder(bm_porphyry, Vector((key.x, key.y, key.z - 0.4)), Vector((key.x, key.y, key.z - 0.35)), 0.66, 0.66, segments=20, cap=True)
+    add_cylinder(bm_gold, V(key.x, key.y, key.z - 0.36), V(key.x, key.y, key.z - 0.3), 0.82, 0.82, segments=20, cap=True)
+    add_cylinder(bm_porphyry, V(key.x, key.y, key.z - 0.4), V(key.x, key.y, key.z - 0.35), 0.66, 0.66, segments=20, cap=True)
     for fx in (-0.26, 0.24):
         add_ellipsoid(bm_marble, (key.x + fx, key.y, key.z - 0.45), (0.12, 0.18, 0.07), subdivisions=1)
         add_ellipsoid(bm_marble, (key.x + fx, key.y + 0.24, key.z - 0.47), (0.07, 0.07, 0.06), subdivisions=1)
-    for s in (-1, 1):  # Gabriel's wings
+    for s in (-1, 1):
         add_ellipsoid(bm_gold, (key.x - 0.26 + 0.14 * s, key.y - 0.05, key.z - 0.44), (0.08, 0.2, 0.03), subdivisions=1, rot_z=0.5 * s)
 
-    # ── Groin-vaulted ambulatory, side bays, transverse aisle and the twelve chapels ──
-    cells: list[tuple[list[Vector], float]] = []
-    for k in range(7):
-        cells.append(([inner[k], outer[k], outer[k + 1], inner[k + 1]], z_amb))   # ambulatory
-        cells.append(([outer[k], back[k], back[k + 1], outer[k + 1]], z_chap))    # apse chapel
+    # ── groin-vaulted ambulatory, chapels, straight bays, south chapels ──
+    cells: list[list[Vector]] = []
+    for k in range(CRYPT_PIER_COUNT - 1):
+        cells.append([inner[k], outer[k], outer[k + 1], inner[k + 1]])
+    for k in range(len(pier_a) - 1):
+        a0, a1 = pier_a[k], pier_a[k + 1]
+        cells.append([V(cx + (R2 + 0.25) * math.cos(a0), cy + (R2 + 0.25) * math.sin(a0)), V(cx + R3 * math.cos(a0), cy + R3 * math.sin(a0)),
+                      V(cx + R3 * math.cos(a1), cy + R3 * math.sin(a1)), V(cx + (R2 + 0.25) * math.cos(a1), cy + (R2 + 0.25) * math.sin(a1))])
     for s in (-1, 1):
-        cells.append(([V(s * R1, Y_TRANS), V(s * R2, Y_TRANS), V(s * R2, cy), V(s * R1, cy)], z_amb))
-    for i in range(5):
-        x0, x1 = X_SCHAP[i], X_SCHAP[i + 1]
-        cells.append(([V(x0, Y_SOUTH), V(x1, Y_SOUTH), V(x1, Y_TRANS), V(x0, Y_TRANS)], z_amb))   # transverse aisle
-        cells.append(([V(x0, Y_SCHAP), V(x1, Y_SCHAP), V(x1, Y_SOUTH), V(x0, Y_SOUTH)], z_chap))  # south chapel
-    for corners, crown in cells:
-        boss = add_groin_vault_cell(bm_crypt, bm_crypt, corners, z_cap, crown, res=4, rib_r=0.09)
-        add_cylinder(bm_gold, boss - Vector((0, 0, 0.16)), boss + Vector((0, 0, 0.02)), 0.16, 0.2, segments=6, cap=True)
+        for xa, xb in ((R1, R2), (R2, HW)):
+            cells.append([V(s * xa, YF), V(s * xb, YF), V(s * xb, cy), V(s * xa, cy)])
+    for i in range(len(XS) - 1):
+        cells.append([V(XS[i], YS), V(XS[i + 1], YS), V(XS[i + 1], YF), V(XS[i], YF)])
+    for corners in cells:
+        boss = add_groin_vault_cell(bm_crypt, bm_crypt, corners, z_cap, z_low, res=4, rib_r=0.09)
+        add_cylinder(bm_gold, boss - V(0, 0, 0.16), boss + V(0, 0, 0.02), 0.16, 0.2, segments=6, cap=True)
 
-    # ── Walls ──
-    wt = 0.55
-    for k in range(7):
-        # chapel back wall: two flat panels per chapel
-        for half in range(2):
-            a0 = angs[k] + (angs[k + 1] - angs[k]) * half * 0.5
-            a1 = angs[k] + (angs[k + 1] - angs[k]) * (half + 1) * 0.5
-            p0 = V(cx + (R3 + wt * 0.5) * math.cos(a0), cy + (R3 + wt * 0.5) * math.sin(a0))
-            p1 = V(cx + (R3 + wt * 0.5) * math.cos(a1), cy + (R3 + wt * 0.5) * math.sin(a1))
-            m = (p0 + p1) * 0.5
-            add_box(bm_crypt, (m.x, m.y, 0.5 * (z_f + wall_top)), ((p1 - p0).length + 0.4, wt, wall_top - z_f), rot_euler=(0, 0, math.atan2(p1.y - p0.y, p1.x - p0.x)))
-        # small chapel altar against the back wall (the tomb chapel, k = 6, has Gaudí's tomb instead)
-        if k != 6:
-            am = 0.5 * (angs[k] + angs[k + 1])
-            add_box(bm_marble, (cx + (R3 - 0.55) * math.cos(am), cy + (R3 - 0.55) * math.sin(am), z_f + 0.5), (1.3, 0.6, 1.0), rot_euler=(0, 0, am + math.pi / 2))
-    for k in range(8):
-        # radial walls between the apse chapels (k = 0 / 7 close the outermost chapels)
-        a = angs[k]
-        r0, r1 = R2 + 0.35, R3 + 0.2
-        m = V(cx + 0.5 * (r0 + r1) * math.cos(a), cy + 0.5 * (r0 + r1) * math.sin(a))
-        add_box(bm_crypt, (m.x, m.y, 0.5 * (z_f + z_cap + 0.4)), (r1 - r0, 0.5, z_cap + 0.4 - z_f), rot_euler=(0, 0, a))
-    for s in (-1, 1):
-        # outer walls of the straight ambulatory bays (x = +-R2, y 15.6 .. 21)
-        add_box(bm_crypt, (s * (R2 + 0.3), 0.5 * (Y_TRANS + cy), 0.5 * (z_f + wall_top)), (wt, cy - Y_TRANS + 0.3, wall_top - z_f))
-    # east end of the transverse aisle (the west end opens into the stair vestibule)
-    add_box(bm_crypt, (R2 + 0.3, 0.5 * (Y_SOUTH + Y_TRANS), 0.5 * (z_f + wall_top)), (wt, Y_TRANS - Y_SOUTH, wall_top - z_f))
-    # five south chapels: back wall, outer walls, dividers, altars
-    add_box(bm_crypt, (0.0, Y_SCHAP - wt * 0.5, 0.5 * (z_f + wall_top)), (2 * R2 + 1.2, wt, wall_top - z_f))
-    for x in X_SCHAP:
-        outer_wall = abs(x) > 9.0
-        xc = x + (0.3 if x > 0 else -0.3) if outer_wall else x
-        top = wall_top if outer_wall else z_cap + 0.4
-        add_box(bm_crypt, (xc, 0.5 * (Y_SCHAP + Y_SOUTH - 0.35), 0.5 * (z_f + top)), (wt if outer_wall else 0.42, Y_SOUTH - Y_SCHAP - 0.35, top - z_f))
-    for i in range(5):
-        xm = 0.5 * (X_SCHAP[i] + X_SCHAP[i + 1])
-        add_box(bm_marble, (xm, Y_SCHAP + 0.45, z_f + 0.5), (1.3, 0.6, 1.0))
-    # Vestibule at the foot of the stair tunnel (x -13.6 .. -9.6): side walls + flat stone ceiling
-    for wy in (Y_SOUTH - 0.12, Y_TRANS + 0.12):
-        add_box(bm_crypt, (-11.6, wy, 0.5 * (z_f + wall_top)), (4.4, 0.36, wall_top - z_f))
-    add_box(bm_crypt, (-11.6, 0.5 * (Y_SOUTH + Y_TRANS), -0.8), (4.4, Y_TRANS - Y_SOUTH + 0.6, 0.28))
-
-    # Central Crypt Altar (under the main High Altar) + 2 brass altar candlesticks
-    add_box(bm_marble, (cx, cy + 1.5, Z_CRYPT + 0.65), (3.0, 1.4, 1.3))
-    add_cylinder(bm_gold, Vector((cx, cy + 1.5, Z_CRYPT + 1.3)), Vector((cx, cy + 1.5, Z_CRYPT + 3.0)), 0.08, 0.06, segments=8)
-    add_cylinder(bm_gold, Vector((cx - 0.55, cy + 1.5, Z_CRYPT + 2.45)), Vector((cx + 0.55, cy + 1.5, Z_CRYPT + 2.45)), 0.06, 0.06, segments=8)
+    # ── walls ──
+    add_annulus_sector(bm_crypt, cx, cy, R3, RW, 0.0, math.pi, zf, CRYPT_WALL_TOP, segs=28)    # outer semicircle
+    box_span(bm_crypt, -RW, RW, YS - 1.25, YS, zf, CRYPT_WALL_TOP)                              # south back wall
+    for s, st in ((1, next(t for t in CRYPT_STAIRS if t["x"] > 0)), (-1, next(t for t in CRYPT_STAIRS if t["x"] < 0))):
+        # straight side walls, split round the stair drum (door frame built with the stair)
+        h = math.sqrt(max(0.0, (st["rOuter"] + 0.02) ** 2 - (abs(st["x"]) - RW) ** 2))
+        xa, xb = sorted((s * HW, s * RW))
+        box_span(bm_crypt, xa, xb, YS - 1.25, st["y"] - h, zf, CRYPT_WALL_TOP)
+        box_span(bm_crypt, xa, xb, st["y"] + h, cy, zf, CRYPT_WALL_TOP)
+        xa2, xb2 = sorted((s * HW, s * (abs(st["x"]) - 2.25)))
+        box_span(bm_crypt, xa2, xb2, st["y"] - h, st["y"] - CRYPT_STAIR_BOTTOM_DOOR["halfWidth"] - 0.5, zf, CRYPT_WALL_TOP)
+        box_span(bm_crypt, xa2, xb2, st["y"] + CRYPT_STAIR_BOTTOM_DOOR["halfWidth"] + 0.5, st["y"] + h, zf, CRYPT_WALL_TOP)
+    # chapel front wall on r 15 with seven arched openings, radial walls between the chapels
+    for k in range(len(pier_a) - 1):
+        a0, a1 = pier_a[k], pier_a[k + 1]
+        am = 0.5 * (a0 + a1)
+        ho = math.asin(2.7 / R2)
+        add_annulus_sector(bm_crypt, cx, cy, R2, R2 + wt, a0, am - ho, zf, CRYPT_WALL_TOP, segs=2)
+        add_annulus_sector(bm_crypt, cx, cy, R2, R2 + wt, am + ho, a1, zf, CRYPT_WALL_TOP, segs=2)
+        add_annulus_sector(bm_crypt, cx, cy, R2, R2 + wt, am - ho, am + ho, z_open, CRYPT_WALL_TOP, segs=4)
+        add_box(bm_marble, (cx + (R3 - 0.5) * math.cos(am), cy + (R3 - 0.5) * math.sin(am), zf + 0.5), (1.4, 0.6, 1.0), rot_euler=(0, 0, am + math.pi / 2))
+    for a in pier_a:
+        m = V(cx + 0.5 * (R2 + R3) * math.cos(a), cy + 0.5 * (R2 + R3) * math.sin(a))
+        add_box(bm_crypt, (m.x, m.y, 0.5 * (zf + CRYPT_WALL_TOP)), (R3 - R2 + 0.1, 0.5, CRYPT_WALL_TOP - zf), rot_euler=(0, 0, a))
+    # five south chapels: dividers, front wall with openings, altars and the two tombs
+    for x in XS[1:-1]:
+        box_span(bm_crypt, x - 0.25, x + 0.25, YS, YF, zf, CRYPT_WALL_TOP)
+    ops = []
+    for i in range(len(XS) - 1):
+        xm, w = 0.5 * (XS[i] + XS[i + 1]), XS[i + 1] - XS[i] - 1.2
+        ops.append((xm - 0.5 * w, xm + 0.5 * w, zf - 0.1, z_open))
+    add_wall_with_openings(bm_crypt, 0.0, YF, 0.0, 2 * HW, wt, zf, CRYPT_WALL_TOP, ops)
+    for i in range(len(XS) - 1):
+        xm = 0.5 * (XS[i] + XS[i + 1])
+        if abs(xm - CRYPT_ALTAR_POS[0]) > 0.1:
+            add_box(bm_marble, (xm, YS + 0.45, zf + 0.5), (1.4, 0.6, 1.0))
+    ax, ay = CRYPT_ALTAR_POS
+    add_box(bm_marble, (ax, ay, zf + 0.65), (3.0, 1.4, 1.3))
+    add_cylinder(bm_gold, V(ax, ay - 0.5, zf + 1.3), V(ax, ay - 0.5, zf + 3.0), 0.08, 0.06, segments=8)
+    add_cylinder(bm_gold, V(ax - 0.55, ay - 0.5, zf + 2.45), V(ax + 0.55, ay - 0.5, zf + 2.45), 0.06, 0.06, segments=8)
     for sx_a in (-1.05, 1.05):
-        ax_c, ay_c = cx + sx_a, cy + 1.5
-        add_cylinder(bm_gold, Vector((ax_c, ay_c, Z_CRYPT + 1.30)), Vector((ax_c, ay_c, Z_CRYPT + 1.62)), 0.10, 0.05, segments=8)
-        add_cylinder(bm_candle, Vector((ax_c, ay_c, Z_CRYPT + 1.62)), Vector((ax_c, ay_c, Z_CRYPT + 1.98)), 0.045, 0.04, segments=8)
-        candle_anchors.append((ax_c, ay_c, Z_CRYPT + 2.00, 0.78))
-
-    # ANTONI GAUDÍ'S TOMB (Chapel of Our Lady of Mount Carmel, West side of Crypt: X = -9.8, Y = 23.5)
-    tx, ty = -9.8, 23.5
-    add_box(bm_marble, (tx, ty, Z_CRYPT + 0.14), (2.4, 1.35, 0.28))
-    add_box(bm_gold, (tx, ty, Z_CRYPT + 0.30), (1.9, 0.9, 0.04))  # Inscribed bronze/gold plaque
-    # Warm glowing votive candle rack beside Gaudí's tomb
-    add_box(bm_crypt, (tx - 0.62, ty + 1.4, Z_CRYPT + 0.42), (2.2, 0.45, 0.84))
-    add_box(bm_gold, (tx - 0.62, ty + 1.4, Z_CRYPT + 0.85), (2.26, 0.50, 0.04))
+        acx = ax + sx_a
+        add_cylinder(bm_gold, V(acx, ay, zf + 1.30), V(acx, ay, zf + 1.62), 0.10, 0.05, segments=8)
+        add_cylinder(bm_candle, V(acx, ay, zf + 1.62), V(acx, ay, zf + 1.98), 0.045, 0.04, segments=8)
+        candle_anchors.append((acx, ay, zf + 2.00, 0.78))
+    # Antoni Gaudí's tomb (Carmel chapel) and Josep Maria Bocabella's tomb (Holy Christ chapel)
+    for (tx, ty), plaque in ((GAUDI_TOMB_POS, True), (BOCABELLA_TOMB_POS, True)):
+        add_box(bm_marble, (tx, ty, zf + 0.14), (2.4, 1.35, 0.28))
+        add_box(bm_gold, (tx, ty, zf + 0.30), (1.9, 0.9, 0.04))
+    # votive candle rack along the outer side wall of the Carmel chapel
+    tx, ty = GAUDI_TOMB_POS
+    rx = -HW + 0.55
+    add_box(bm_crypt, (rx, ty, zf + 0.42), (0.45, 2.2, 0.84))
+    add_box(bm_gold, (rx, ty, zf + 0.85), (0.50, 2.26, 0.04))
     for k in range(6):
-        vx = tx - 1.5 + k * 0.35
-        vy = ty + 1.4
-        z_top_g = Z_CRYPT + 1.14 + (0.04 if k % 2 == 0 else 0.0)
-        add_cylinder(bm_candle, Vector((vx, vy, Z_CRYPT + 0.86)), Vector((vx, vy, z_top_g)), 0.042, 0.038, segments=7)
-        candle_anchors.append((vx, vy, z_top_g + 0.02, 0.68))
-
-    # Additional warm votive candles on proper sculpted bronze/stone candelabra stands around the central sanctuary
+        vy = ty - 0.875 + k * 0.35
+        z_top_g = zf + 1.14 + (0.04 if k % 2 == 0 else 0.0)
+        add_cylinder(bm_candle, V(rx, vy, zf + 0.86), V(rx, vy, z_top_g), 0.042, 0.038, segments=7)
+        candle_anchors.append((rx, vy, z_top_g + 0.02, 0.68))
+    # eight candelabra round the central space
     for i in range(8):
         ang = 2.0 * math.pi * i / 8.0 + 0.3
-        vx = cx + 4.8 * math.cos(ang)
-        vy = cy + 4.8 * math.sin(ang)
-        # Sculpted pedestal base + stem + drip dish resting firmly on Z_CRYPT
-        add_cylinder(bm_gold, Vector((vx, vy, Z_CRYPT)), Vector((vx, vy, Z_CRYPT + 0.12)), 0.24, 0.16, segments=10)
-        add_cylinder(bm_gold, Vector((vx, vy, Z_CRYPT + 0.12)), Vector((vx, vy, Z_CRYPT + 0.88)), 0.055, 0.045, segments=8)
-        add_cylinder(bm_gold, Vector((vx, vy, Z_CRYPT + 0.86)), Vector((vx, vy, Z_CRYPT + 0.92)), 0.16, 0.12, segments=10)
-        add_cylinder(
-            bm_candle,
-            Vector((vx, vy, Z_CRYPT + 0.92)),
-            Vector((vx, vy, Z_CRYPT + 1.26)),
-            0.055,
-            0.048,
-            segments=8,
-        )
-        candle_anchors.append((vx, vy, Z_CRYPT + 1.28, 0.82))
+        vx, vy = cx + 4.8 * math.cos(ang), cy + 4.8 * math.sin(ang)
+        add_cylinder(bm_gold, V(vx, vy, zf), V(vx, vy, zf + 0.12), 0.24, 0.16, segments=10)
+        add_cylinder(bm_gold, V(vx, vy, zf + 0.12), V(vx, vy, zf + 0.88), 0.055, 0.045, segments=8)
+        add_cylinder(bm_gold, V(vx, vy, zf + 0.86), V(vx, vy, zf + 0.92), 0.16, 0.12, segments=10)
+        add_cylinder(bm_candle, V(vx, vy, zf + 0.92), V(vx, vy, zf + 1.26), 0.055, 0.048, segments=8)
+        candle_anchors.append((vx, vy, zf + 1.28, 0.82))
 
-    # Watertight UNDERGROUND Stone Stairwell Tunnel: (-21.0, +13.8, Z=1.2) -> Crypt Entry (-11.2, +13.8, Z=-5.5)
-    # CRITICAL: Every underground tunnel wall & ceiling stays strictly BELOW Z = Z_NAVE (1.2m) so NOTHING protrudes above the Nave floor!
-    num_steps = 28
-    p_top = Vector((-21.0, 13.8, Z_NAVE))
-    p_bot = Vector((-11.2, 13.8, Z_CRYPT))
-    tunnel_half_w = 1.45
-    z_floor_cap = Z_NAVE - 0.04  # Strictly flush beneath the Nave marble floor!
-    for s in range(num_steps):
-        t = s / (num_steps - 1)
-        pos = p_top.lerp(p_bot, t)
-        # Solid stone step tread + deep masonry sub-base (in dedicated stair mesh so capsule climbs automatically!)
-        add_box(bm_crypt_stairs, (pos.x, pos.y, pos.z - 0.35), (0.52, tunnel_half_w * 2.0 + 0.2, 0.70))
-        # Left & right underground stone tunnel walls terminate cleanly at outer crypt wall (x <= -13.6) so they never jut into Crypt!
-        if pos.x <= -13.55:
-            wall_bot = pos.z - 0.65
-            wall_top = z_floor_cap
-            wall_ht = max(0.35, wall_top - wall_bot)
-            for side in (-1, 1):
-                wy = pos.y + side * (tunnel_half_w + 0.22)
-                add_box(bm_crypt, (pos.x, wy, wall_bot + wall_ht * 0.5), (0.62, 0.44, wall_ht))
-            # Sloped underground ceiling ONLY where headroom (pos.z + 3.1) is below the Nave floor!
-            if pos.z + 3.05 < z_floor_cap:
-                add_box(bm_crypt, (pos.x, pos.y, pos.z + 3.15), (0.65, tunnel_half_w * 2.0 + 0.9, 0.45))
-    # Underground end-wall sealing beneath the very top step (strictly below Nave floor Z=1.2!)
-    add_box(bm_crypt, (p_top.x - 0.35, p_top.y, Z_NAVE - 0.65), (0.45, tunnel_half_w * 2.0 + 0.9, 1.25))
+    # ── the two spiral stairs (replace the old straight tunnel) ──
+    for st in CRYPT_STAIRS:
+        build_crypt_stair(st, bm_crypt, bm_tower, bm_steps, bm_floor, bm_mosaic)
 
 
 def build_cloister_and_crypt() -> None:
@@ -425,45 +590,60 @@ def build_cloister_and_crypt() -> None:
 
     bm_stone = bmesh.new()
     bm_floor = bmesh.new()
+    bm_patio = bmesh.new()
     bm_mosaic = bmesh.new()
     bm_gold = bmesh.new()
     bm_crypt = bmesh.new()
+    bm_crypt_floor = bmesh.new()
     bm_crypt_stairs = bmesh.new()
-    bm_cloister_stairs = bmesh.new()
     bm_marble = bmesh.new()
     bm_candle = bmesh.new()
     bm_mosaic_floor = bmesh.new()
     bm_mosaic_red = bmesh.new()
     bm_porphyry = bmesh.new()
 
-    # ── 1. East & West Perimeter Cloister Galleries (walkable outer arcades + exterior steps) ──
-    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=26.2, y_start=-46.0, y_end=-15.2, bm_stairs=bm_cloister_stairs)
-    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=-26.2, y_start=-46.0, y_end=-15.2, bm_stairs=bm_cloister_stairs)
-    # North-East & North-West cloister connectors ending at the sacristies' south wall (y = 32.5 - 7.0)
-    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=26.2, y_start=15.2, y_end=25.5)
-    add_cloister_gallery_wing(bm_stone, bm_floor, x_center=-26.2, y_start=15.2, y_end=25.5)
+    # ── 1. Cloister: closed rectangle through the three porches, linking the four corner buildings ──
+    for seg in walk_segments():
+        add_cloister_walk(bm_stone, bm_floor, *seg)
+    build_patio_floor(bm_patio)
 
-    # ── 2. Two Monumental Domed Sacristies (NE & NW Corners) ──
-    add_sacristy_pavilion(bm_stone, bm_floor, bm_mosaic, bm_gold, cx=27.5, cy=32.5)
-    add_sacristy_pavilion(bm_stone, bm_floor, bm_mosaic, bm_gold, cx=-27.5, cy=32.5)
+    # ── 2. Corner buildings: sacristies (N), Baptistery / Penitence chapel (S); Assumption chapel ──
+    for name, cb in CORNER_BUILDINGS.items():
+        detail = 4 if name.startswith("sacristy") else 3
+        add_pavilion(bm_stone, bm_floor, bm_mosaic, bm_gold, cb["x"], cb["y"], cb["side"], cb["top"], cb["dome"], detail=detail)
+    ac = ASSUMPTION_CHAPEL
+    acx, acy = 0.5 * (ac["x0"] + ac["x1"]), 0.5 * (ac["y0"] + ac["y1"])
+    side = ac["x1"] - ac["x0"]
+    n = CLOISTER_WALKS["north"]
+    yw = 0.5 * (n[1] + n[3])
+    add_pavilion(bm_stone, bm_floor, bm_mosaic, bm_gold, acx, acy, side, ac["domeTop"], ac["domeTop"], detail=3,
+                 extra_doors={0: [(ac["x1"], yw)], 2: [(ac["x0"], yw)]},
+                 closed_doors={1: [(x, ac["y1"]) for x in ac["streetDoorsX"]]})
 
-    # ── 3. Subterranean Neo-Gothic Crypt & Gaudí's Tomb ──
+    # ── 3. Crypt ──
     crypt_candle_anchors: list[tuple[float, float, float, float]] = []
-    build_crypt(bm_crypt, bm_crypt_stairs, bm_floor, bm_gold, bm_marble, bm_candle, crypt_candle_anchors, bm_mosaic_floor, bm_mosaic_red, bm_porphyry)
+    build_crypt(bm_crypt, bm_stone, bm_crypt_stairs, bm_crypt_floor, bm_gold, bm_marble, bm_candle, crypt_candle_anchors,
+                bm_mosaic_floor, bm_mosaic_red, bm_porphyry, bm_mosaic)
+    merge = bpy.data.meshes.new("_m")
+    bm_crypt_floor.to_mesh(merge)
+    bm_crypt_floor.free()
+    bm_floor.from_mesh(merge)
+    bpy.data.meshes.remove(merge)
 
     finalize_bmesh_object(bm_stone, "Cloister_And_Sacristies", mats["sandstone_warm"], smooth=False, uv_scale=0.15)
     finalize_bmesh_object(bm_floor, "Cloister_And_Crypt_Floor", mats["floor_marble"], smooth=False, uv_scale=0.18)
+    finalize_bmesh_object(bm_patio, "Cloister_PatioFloor", mats["panot_paving"], smooth=False, uv_scale=0.25, bake_ao=False)
     finalize_bmesh_object(bm_mosaic, "Sacristy_Trencadis", mats["trencadis"], smooth=True, uv_scale=0.35)
     finalize_bmesh_object(bm_gold, "Cloister_Gold", mats["gold_accent"], smooth=True, uv_scale=0.35)
     finalize_bmesh_object(bm_crypt, "Crypt_Architecture", mats["crypt_stone"], smooth=False, uv_scale=0.16)
     finalize_bmesh_object(bm_crypt_stairs, "Crypt_StairSteps", mats["crypt_stone"], smooth=False, uv_scale=0.16, bake_ao=False)
-    finalize_bmesh_object(bm_cloister_stairs, "Cloister_EntranceStairs", mats["sandstone_warm"], smooth=False, uv_scale=0.16, bake_ao=False)
     finalize_bmesh_object(bm_marble, "Crypt_AltarAndGaudiTomb", mats["white_marble"], smooth=False, uv_scale=0.30)
     finalize_bmesh_object(bm_candle, "Crypt_VotiveCandles", mats["candle_glow"], smooth=True, uv_scale=0.50)
     finalize_oriented(bm_mosaic_floor, "Crypt_MosaicFloor_Marble", mats["white_marble"], smooth=False, uv_scale=0.5, ao=False)
     finalize_oriented(bm_mosaic_red, "Crypt_MosaicFloor_Porphyry", mats["porphyry_red"], smooth=False, uv_scale=0.5, ao=False)
     finalize_bmesh_object(bm_porphyry, "Crypt_KeystonePorphyry", mats["porphyry_red"], smooth=True, uv_scale=0.5, bake_ao=False)
 
+    assert len(crypt_candle_anchors) == 16, len(crypt_candle_anchors)
     save_candle_anchors("crypt", crypt_candle_anchors)
     export_glb(os.path.join(MODEL_DIR, "cloister_crypt.glb"))
 

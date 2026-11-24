@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import { LAYOUT } from '../data/layout';
+
+/** Just above the nave floor, in the bay the stained-glass projectors light (layout eastProjector). */
+const CARPET_Y = LAYOUT.levels.nave + 0.045;
+const CARPET_Z = -LAYOUT.lights.eastProjector.pos[1];
 
 /**
  * Projected Joan Vila-Grau Stained-Glass Light Carpets dancing across the Nave marble floor (Y = 1.24m).
@@ -79,13 +84,13 @@ export class StainedGlassCarpets {
 
     this.eastMesh = new THREE.Mesh(geo, makeCarpetMat(this.eastUniforms));
     this.eastMesh.rotation.x = -Math.PI / 2;
-    this.eastMesh.position.set(6.5, 1.245, 26.0);
+    this.eastMesh.position.set(6.5, CARPET_Y, CARPET_Z);
     this.eastMesh.renderOrder = 2;
     this.group.add(this.eastMesh);
 
     this.westMesh = new THREE.Mesh(geo, makeCarpetMat(this.westUniforms));
     this.westMesh.rotation.x = -Math.PI / 2;
-    this.westMesh.position.set(-6.5, 1.245, 26.0);
+    this.westMesh.position.set(-6.5, CARPET_Y, CARPET_Z);
     this.westMesh.renderOrder = 2;
     this.group.add(this.westMesh);
   }

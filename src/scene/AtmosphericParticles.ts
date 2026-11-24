@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import { LAYOUT } from '../data/layout';
+
+// Nave between the crossing and the Glory wall (runtime z = -plan y), 0.75 m clear of the walls: 15 ... 47
+const NAVE_Z0 = -LAYOUT.nave.northY;
+const NAVE_Z1 = -LAYOUT.nave.gloryInnerY - 0.75;
 
 /**
  * GPU-animated drifting dust & incense light motes inside the cathedral nave & crossing.
@@ -24,7 +29,7 @@ export class AtmosphericParticles {
       const inCrossing = i < count * 0.25;
       const x = inCrossing ? (Math.random() - 0.5) * 32 : (Math.random() - 0.5) * 41;
       const y = 2.2 + Math.random() * (inCrossing ? 42 : 31);
-      const z = inCrossing ? (Math.random() - 0.5) * 28 : 4 + Math.random() * 39;
+      const z = inCrossing ? (Math.random() - 0.5) * 28 : NAVE_Z0 + Math.random() * (NAVE_Z1 - NAVE_Z0);
       positions[i * 3] = x;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = z;

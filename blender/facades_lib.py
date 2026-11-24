@@ -15,6 +15,90 @@ from mathutils import Vector
 from common import add_cylinder, add_ellipsoid, add_lathe, add_swept_tube
 
 
+# ───────────────────────── solids & plan helpers (true-layout pass) ─────────────────────────
+
+def merge_bmesh_into(dst, src) -> None:
+    """Append every face of `src` into `dst` (geometry only; both get finalised as one mesh)."""
+    vmap = {}
+    for v in src.verts:
+        vmap[v] = dst.verts.new(v.co)
+    for f in src.faces:
+        dst.faces.new([vmap[v] for v in f.verts])
+    src.free()
+
+
+def add_hexa(bm, corners: list) -> None:
+    """Closed six-sided solid from 8 corners: bottom quad c0..c3 then top quad c4..c7 (same order).
+    Used for warped stair treads, sloped cheek walls and piers whose top/bottom follow ground_z."""
+    vs = [bm.verts.new(Vector(c)) for c in corners]
+    b, t = vs[:4], vs[4:]
+    bm.faces.new(list(reversed(b)))
+    bm.faces.new(t)
+    for i in range(4):
+        j = (i + 1) % 4
+        bm.faces.new((b[i], b[j], t[j], t[i]))
+
+
+def interval_complement(lo: float, hi: float, holes: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Solid sub-intervals of [lo, hi] once the `holes` (openings) are removed."""
+    out, cur = [], lo
+    for a, b in sorted(holes):
+        a, b = max(a, lo), min(b, hi)
+        if b <= cur:
+            continue
+        if a > cur + 1e-3:
+            out.append((cur, a))
+        cur = max(cur, b)
+    if hi > cur + 1e-3:
+        out.append((cur, hi))
+    return out
+
+
+def add_section_annulus(bm, cx: float, cy: float, z0: float, z1: float, r_in: float, r_out: float, section,
+                        a_from: float = 0.0, a_to: float = 2.0 * math.pi, segments: int = 16) -> None:
+    """Thick ring (or ring sector a_from..a_to, radians CCW from +X) between a round inner skin r_in and
+    an outer skin r_out * section(angle) — the tower base drum below the apostle shell, with the shell's
+    own square / elliptical section so it continues it seamlessly. A sector gets flat end caps."""
+    full = (a_to - a_from) >= 2.0 * math.pi - 1e-6
+    n = segments if full else max(2, int(math.ceil(segments * (a_to - a_from) / (2.0 * math.pi))))
+    cnt = n if full else n + 1
+    rings = {}
+    for key, z in (("b", z0), ("t", z1)):
+        oo, ii = [], []
+        for k in range(cnt):
+            a = a_from + (a_to - a_from) * k / n
+            ro = r_out * (section(a) if section is not None else 1.0)
+            oo.append(bm.verts.new((cx + ro * math.cos(a), cy + ro * math.sin(a), z)))
+            ii.append(bm.verts.new((cx + r_in * math.cos(a), cy + r_in * math.sin(a), z)))
+        rings[key] = (oo, ii)
+    (ob, ib), (ot, it) = rings["b"], rings["t"]
+    rng = range(n)
+    for k in rng:
+        j = (k + 1) % cnt
+        bm.faces.new((ob[k], ob[j], ot[j], ot[k]))      # outer skin
+        bm.faces.new((ib[j], ib[k], it[k], it[j]))      # inner skin (faces the hollow)
+        bm.faces.new((ot[k], ot[j], it[j], it[k]))      # top
+        bm.faces.new((ob[j], ob[k], ib[k], ib[j]))      # bottom
+    if not full:
+        bm.faces.new((ob[0], ot[0], it[0], ib[0]))
+        bm.faces.new((ob[-1], ib[-1], it[-1], ot[-1]))
+
+
+def add_section_drum(bm, cx: float, cy: float, z0: float, z1: float, r: float, section, segments: int = 16) -> None:
+    """Solid capped drum with outer radius r * section(angle) (tower base mass below the stair band)."""
+    bot, top = [], []
+    for k in range(segments):
+        a = 2.0 * math.pi * k / segments
+        rr = r * (section(a) if section is not None else 1.0)
+        bot.append(bm.verts.new((cx + rr * math.cos(a), cy + rr * math.sin(a), z0)))
+        top.append(bm.verts.new((cx + rr * math.cos(a), cy + rr * math.sin(a), z1)))
+    for k in range(segments):
+        j = (k + 1) % segments
+        bm.faces.new((bot[k], bot[j], top[j], top[k]))
+    bm.faces.new(list(reversed(bot)))
+    bm.faces.new(top)
+
+
 # ───────────────────────── curves ─────────────────────────
 
 def parabolic_arch_points(base_l: Vector, base_r: Vector, rise: float, n: int = 12, sharp: float = 1.0) -> list[Vector]:

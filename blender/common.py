@@ -32,21 +32,19 @@ os.makedirs(DATA_DIR, exist_ok=True)
 #   -Y = South (5-aisle Nave, Glory Facade, Grand Staircase)
 #   Z = 0.0    Street level outside
 
-GRID = 7.5  # Gaudí's 7.5m fundamental module
-Z_STREET = 0.0
-Z_NAVE = 1.2
-Z_ALTAR = 2.4
-Z_GALLERY = 14.5
-Z_CRYPT = -5.5
-Z_AISLE_VAULT = 31.2      # 30 m above nave floor
-Z_NAVE_VAULT = 46.2       # 45 m above nave floor
-Z_CROSSING_VAULT = 61.2   # 60 m above nave floor
-Z_APSE_VAULT = 74.5       # Authentic 75 m soaring Apse vault rising into Mary tower base
+# Plan constants come from the master layout (blender/layout.py), the single source of truth
+# shared with the web runtime. The old names below are kept as aliases for the builders.
+import layout
+from layout import (
+    GRID, Z_NAVE, Z_ALTAR, Z_GALLERY, Z_CRYPT,
+    Z_AISLE_VAULT, Z_NAVE_VAULT, Z_CROSSING_VAULT, Z_APSE_VAULT, ground_z,
+)
 
-NAVE_SOUTH_Y = -45.0      # 5 bays south of crossing (-7.5 -> -45.0)
-TRANSEPT_X = 30.0         # East/West transept span (-30 .. +30)
-APSE_CENTER_Y = 22.5
-APSE_RADIUS = 15.0
+Z_STREET = 0.0            # legacy flat street datum; the real ground is layout.ground_z(y)
+NAVE_SOUTH_Y = layout.GLORY_INNER_Y
+TRANSEPT_X = layout.TRANSEPT_HALF_LENGTH
+APSE_CENTER_Y = layout.APSE_CENTER[1]
+APSE_RADIUS = layout.APSE_CHAPEL_BACK_R
 
 
 def reset_scene() -> None:

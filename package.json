@@ -7,7 +7,9 @@
     "dev": "vite --port 5173",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173",
-    "build:assets": "blender --background --python blender/build_all.py"
+    "build:assets": "blender --background --python blender/build_all.py",
+    "layout": "python blender/layout.py",
+    "layout:check": "python blender/layout.py --check"
   },
   "dependencies": {
     "three": "^0.175.0",

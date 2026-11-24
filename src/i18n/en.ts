@@ -201,13 +201,16 @@ export const en: Dictionary = {
   'zone.roofBridge': 'Roof stair bridge ({y} m)',
   'zone.roofscape': 'Cathedral roofscape (45 m)',
   'zone.airspace': 'Airspace · above the 18 towers',
-  'zone.crypt': 'Crypt · tomb of Antoni Gaudí (-5.5 m)',
-  'zone.galleries': 'Choir & tower galleries · 14.5 m up',
+  'zone.crypt': 'Crypt · tomb of Antoni Gaudí (-9 m)',
+  'zone.galleries': 'Choir & tower galleries · 16.2 m up',
   'zone.altar': 'High altar & apse',
   'zone.crossing': 'Crossing · beneath the Tower of Jesus',
   'zone.nave': 'Nave · forest of columns',
   'zone.transept': 'Transept',
   'zone.sacristy': 'Sacristy dome',
+  'zone.baptistery': 'Baptistery chapel',
+  'zone.penitence': 'Chapel of Penitence',
+  'zone.assumption': 'Chapel of the Assumption',
   'zone.cloister': 'Perimeter cloister',
   'zone.inPond': 'Plaça de Gaudí · in the reflecting pond',
   'zone.pondEast': 'Plaça de Gaudí · reflecting pond (east)',
@@ -217,7 +220,7 @@ export const en: Dictionary = {
   'zone.glory': 'Glory façade & grand staircase (south)',
   'zone.eixample': 'Eixample · surrounding Barcelona',
 
-  // ── Tower names (spiral-stair zones) ──
+  // ── Tower & crypt-stair names (spiral-stair zones) ──
   'tower.jesus': 'Tower of Jesus Christ',
   'tower.mary': 'Tower of the Virgin Mary',
   'tower.mark': 'Evangelist Mark',
@@ -236,4 +239,6 @@ export const en: Dictionary = {
   'tower.gloryInnerW': 'Glory tower, inner west',
   'tower.gloryInnerE': 'Glory tower, inner east',
   'tower.gloryE': 'Glory tower east',
+  'cryptStair.west': 'Crypt stair west',
+  'cryptStair.east': 'Crypt stair east',
 };

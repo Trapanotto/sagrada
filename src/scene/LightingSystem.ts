@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { LAYOUT, planToWorld, planRectToWorld } from '../data/layout';
+import { isEyeUnderground, isNearCryptLevel } from './walkModel';
+import { FOG_DENSITY_DAY, FOG_DENSITY_NIGHT, SUN_SHADOW_FAR, SUN_SHADOW_HALF_EXTENT } from './atmosphere';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { AtmosphericParticles } from './AtmosphericParticles';
 import { getBootQuality, QualitySettings } from '../utils/quality';
@@ -12,6 +15,17 @@ interface TrackedMaterials {
   lamps: THREE.MeshStandardMaterial[];
 }
 
+
+const LIGHTS = LAYOUT.lights;
+/** Stained-glass projector x (east = +, west mirrored) and the nave bay z they light. */
+const PROJ_X = LIGHTS.eastProjector.pos[0];
+const PROJ_Z = -LIGHTS.eastProjector.pos[1];
+const CRYPT_ACCENT = planToWorld(...LIGHTS.cryptAccent.pos);
+/** Interior lights stay on inside the Sagrada block (+ 8 m beyond the Glory porch). */
+const NEAR_INTERIOR = (() => {
+  const b = planRectToWorld([LAYOUT.block.west, LAYOUT.block.south, LAYOUT.block.east, LAYOUT.block.north]);
+  return { maxX: b.maxX, minZ: b.minZ - 4, maxZ: b.maxZ + 8 };
+})();
 export class LightingSystem {
   public readonly sunLight: THREE.DirectionalLight;
   public readonly hemiLight: THREE.HemisphereLight;
@@ -235,8 +249,8 @@ export class LightingSystem {
     this.shadowMapSize = quality.shadowMapSize;
     this.sunLight.shadow.mapSize.set(this.shadowMapSize, this.shadowMapSize);
     this.sunLight.shadow.camera.near = 25;
-    this.sunLight.shadow.camera.far = 420;
-    const d = 132;
+    this.sunLight.shadow.camera.far = SUN_SHADOW_FAR;
+    const d = SUN_SHADOW_HALF_EXTENT;
     this.sunLight.shadow.camera.left = -d;
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
@@ -262,16 +276,16 @@ export class LightingSystem {
 
       const es = new THREE.SpotLight('#ffffff', 240, 68, Math.PI * 0.44, 0.50, 1.05);
       es.map = texEast;
-      es.position.set(21.4, 19.0, 26.0);
-      es.target.position.set(-4.0, 1.5, 26.0);
+      es.position.set(...planToWorld(...LIGHTS.eastProjector.pos));
+      es.target.position.set(...planToWorld(...LIGHTS.eastProjector.target!));
       this.scene.add(es);
       this.scene.add(es.target);
       this.eastProjector = es;
 
       const ws = new THREE.SpotLight('#ffffff', 240, 68, Math.PI * 0.44, 0.50, 1.05);
       ws.map = texWest;
-      ws.position.set(-21.4, 19.0, 26.0);
-      ws.target.position.set(4.0, 1.5, 26.0);
+      ws.position.set(...planToWorld(...LIGHTS.westProjector.pos));
+      ws.target.position.set(...planToWorld(...LIGHTS.westProjector.target!));
       this.scene.add(ws);
       this.scene.add(ws.target);
       this.westProjector = ws;
@@ -279,16 +293,16 @@ export class LightingSystem {
 
     // 4. Consolidated High-Efficiency Interior Fill Lights (enhanced by real Cycles GI Lightmaps!)
     this.naveFillLight = new THREE.PointLight('#ffe0b0', 56, 82, 1.2);
-    this.naveFillLight.position.set(0, 24.0, 16.0);
+    this.naveFillLight.position.set(...planToWorld(...LIGHTS.naveFill.pos));
     this.scene.add(this.naveFillLight);
 
     this.apseFillLight = new THREE.PointLight('#e4d8c8', 54, 58, 1.25);
-    this.apseFillLight.position.set(0, 14.5, -19.0);
+    this.apseFillLight.position.set(...planToWorld(...LIGHTS.apseFill.pos));
     this.scene.add(this.apseFillLight);
 
     // 5. Dual-Purpose Zone Accent Light (Crypt Candlelight below Y=2.2m <-> Exterior Night Architectural Flood outside!)
     this.zoneAccentLight = new THREE.PointLight('#ff9d3b', 0, 34, 1.3);
-    this.zoneAccentLight.position.set(-3.0, -2.2, -21.5);
+    this.zoneAccentLight.position.set(...CRYPT_ACCENT);
     this.scene.add(this.zoneAccentLight);
 
     this.allLights = [this.sunLight, this.hemiLight, this.naveFillLight, this.apseFillLight, this.zoneAccentLight];
@@ -307,7 +321,7 @@ export class LightingSystem {
         opacity: 0.45,
       })
     );
-    this.starHaloSprite.position.set(0, 134.2, -22.5);
+    this.starHaloSprite.position.set(...planToWorld(...LIGHTS.starHalo.pos));
     this.starHaloSprite.scale.set(22, 22, 1);
     this.scene.add(this.starHaloSprite);
 
@@ -321,7 +335,7 @@ export class LightingSystem {
         opacity: 0.35,
       })
     );
-    this.crossHaloSprite.position.set(0, 165.0, 0);
+    this.crossHaloSprite.position.set(...planToWorld(...LIGHTS.crossHalo.pos));
     this.crossHaloSprite.scale.set(28, 28, 1);
     this.scene.add(this.crossHaloSprite);
 
@@ -477,17 +491,18 @@ export class LightingSystem {
     this.layoutBeams(0.88);
   }
 
-  private readonly beamZ = [15, 23, 31, 39];
+  /** Nave window bays (runtime z) the sunbeams fall through. */
+  private readonly beamZ = LAYOUT.naveWindowBayY.map((y) => -y);
   private readonly beamDummy = new THREE.Object3D();
 
   private layoutBeams(beamTilt: number): void {
     const d = this.beamDummy;
     for (let i = 0; i < this.beamZ.length; i++) {
-      d.position.set(21.4 - Math.sin(beamTilt) * 11.5, 11.5, this.beamZ[i]);
+      d.position.set(PROJ_X - Math.sin(beamTilt) * 11.5, 11.5, this.beamZ[i]);
       d.rotation.set(0, 0, beamTilt);
       d.updateMatrix();
       this.eastBeamMesh.setMatrixAt(i, d.matrix);
-      d.position.set(-21.4 + Math.sin(beamTilt) * 11.5, 11.5, this.beamZ[i]);
+      d.position.set(-PROJ_X + Math.sin(beamTilt) * 11.5, 11.5, this.beamZ[i]);
       d.rotation.set(0, 0, -beamTilt);
       d.updateMatrix();
       this.westBeamMesh.setMatrixAt(i, d.matrix);
@@ -549,7 +564,7 @@ export class LightingSystem {
 
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.copy(this.scratchHor);
-      this.scene.fog.density = THREE.MathUtils.lerp(0.0012, 0.0019, nightFactor);
+      this.scene.fog.density = THREE.MathUtils.lerp(FOG_DENSITY_DAY, FOG_DENSITY_NIGHT, nightFactor);
     }
 
     // Swap prefiltered real 2K PureSky HDRI PMREM instantly (0 ms!)
@@ -603,7 +618,7 @@ export class LightingSystem {
     this.baseEastInt = 12 * dayFactor + eastSunHit * 295;
     if (this.eastProjector) {
       this.eastProjector.intensity = this.baseEastInt;
-      this.eastProjector.target.position.set(21.4 - reach, targetClimbY, 26.0);
+      this.eastProjector.target.position.set(PROJ_X - reach, targetClimbY, PROJ_Z);
       this.eastProjector.target.updateMatrixWorld();
     }
     if (beamTilt !== this.lastBeamTilt) {
@@ -615,7 +630,7 @@ export class LightingSystem {
     this.baseWestInt = 12 * dayFactor + westSunHit * 325;
     if (this.westProjector) {
       this.westProjector.intensity = this.baseWestInt;
-      this.westProjector.target.position.set(-21.4 + reach, targetClimbY, 26.0);
+      this.westProjector.target.position.set(-PROJ_X + reach, targetClimbY, PROJ_Z);
       this.westProjector.target.updateMatrixWorld();
     }
     (this.westBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.16;
@@ -696,13 +711,14 @@ export class LightingSystem {
     // CRITICAL ANTI-STUTTER FIX:
     // NEVER toggle light.visible = false/true while walking! Keep active lights permanently visible
     // and smoothly modulate intensities to prevent GLSL shader recompilation freezes!
-    const inCryptRange = cameraPos.y < 2.2;
+    const inCryptRange = isNearCryptLevel(cameraPos.x, cameraPos.y, cameraPos.z);
+    const underground = isEyeUnderground(cameraPos.x, cameraPos.y, cameraPos.z);
     const nearInterior =
-      cameraPos.y > -2.5 &&
+      !underground &&
       cameraPos.y < 68 &&
-      Math.abs(cameraPos.x) < 56 &&
-      cameraPos.z > -50 &&
-      cameraPos.z < 68;
+      Math.abs(cameraPos.x) < NEAR_INTERIOR.maxX &&
+      cameraPos.z > NEAR_INTERIOR.minZ &&
+      cameraPos.z < NEAR_INTERIOR.maxZ;
     const needNightFloods = this.nightFactor > 0.04 && indoorFactor < 0.92;
 
     // REALISTIC STAINED GLASS: From OUTSIDE in daylight, stained glass is dark reflective leaded cathedral glass;
@@ -727,7 +743,7 @@ export class LightingSystem {
     const outdoorSkyLeak = THREE.MathUtils.lerp(1.0, 0.28, indoorFactor);
     this.hemiLight.intensity = this.baseHemiInt * outdoorSkyLeak;
     this.scene.environmentIntensity = this.baseEnvInt * THREE.MathUtils.lerp(1.0, 0.36, indoorFactor);
-    this.sunLight.intensity = this.baseSunInt * (cameraPos.y < -1.2 ? 0.05 : 1.0);
+    this.sunLight.intensity = this.baseSunInt * (underground ? 0.05 : 1.0);
 
     const intMul = nearInterior && !inCryptRange ? 1.0 : 0.0;
     if (this.eastProjector) this.eastProjector.intensity = this.baseEastInt * intMul;
@@ -742,7 +758,7 @@ export class LightingSystem {
 
     if (inCryptRange) {
       this.zoneAccentLight.color.copy(this.cCryptAccent);
-      this.zoneAccentLight.position.set(-3.0, -2.2, -21.5);
+      this.zoneAccentLight.position.set(...CRYPT_ACCENT);
       this.zoneAccentLight.distance = 34;
       this.zoneAccentLight.decay = 1.3;
     } else if (needNightFloods) {
@@ -755,9 +771,9 @@ export class LightingSystem {
       this.zoneAccentLight.intensity = 0;
     }
 
-    this.particles.points.visible = indoorFactor > 0.15 && cameraPos.y > -1.0;
-    this.starHaloSprite.visible = cameraPos.y > -2.0;
-    this.crossHaloSprite.visible = cameraPos.y > -2.0;
+    this.particles.points.visible = indoorFactor > 0.15 && !underground;
+    this.starHaloSprite.visible = !underground;
+    this.crossHaloSprite.visible = !underground;
   }
 
   public getPerfLightStats(): { activeLights: number; totalLights: number; shadowCached: boolean } {
@@ -775,7 +791,7 @@ export class LightingSystem {
   public update(dt: number, cameraPos: THREE.Vector3, indoorFactor: number): void {
     this.clockSec += dt;
     this.skyUniforms.uTime.value = this.clockSec;
-    this.skyMesh.visible = cameraPos.y > -2.0;
+    this.skyMesh.visible = !isEyeUnderground(cameraPos.x, cameraPos.y, cameraPos.z);
     if (this.skyMesh.visible) {
       this.skyMesh.position.copy(cameraPos);
     }
@@ -786,7 +802,7 @@ export class LightingSystem {
       this.particles.update(dt, this.eastSunHit, this.westSunHit, this.dayFactor);
     }
 
-    if (cameraPos.y < 2.2) {
+    if (isNearCryptLevel(cameraPos.x, cameraPos.y, cameraPos.z)) {
       const flicker = Math.sin(this.clockSec * 5.2) * 0.9 + Math.sin(this.clockSec * 11.7) * 0.45;
       this.zoneAccentLight.intensity = 34 + flicker;
     }

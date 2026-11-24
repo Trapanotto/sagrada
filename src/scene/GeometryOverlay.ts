@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { LAYOUT } from '../data/layout';
+
+const GRID = LAYOUT.frame.grid; // 7.5 m module
+const OVERLAY_Y = LAYOUT.levels.nave + 0.08;
 
 /**
  * Interactive Gaudí Geometry Overlay (toggled with [G]):
@@ -21,20 +25,35 @@ export class GeometryOverlay {
 
   private buildGrid75(): void {
     const pts: number[] = [];
-    const y = 1.28;
-    // 7.5m grid across the nave (-22.5..+22.5, Z: -22.5..+45.0)
-    for (let x = -22.5; x <= 22.5; x += 7.5) {
-      pts.push(x, y, -22.5, x, y, 45.0);
+    const y = OVERLAY_Y;
+    const hw = LAYOUT.nave.halfWidth; // 22.5
+    const tl = LAYOUT.transept.halfLength; // 30
+    const th = LAYOUT.transept.halfWidth; // 15
+    // 7.5 m grid across the nave and crossing (runtime z = -plan y: -15 at the apse side ... the Glory wall)
+    const zN = -th;
+    const zS = Math.floor(-LAYOUT.nave.gloryInnerY / GRID) * GRID; // 45
+    for (let x = -hw; x <= hw + 1e-6; x += GRID) {
+      pts.push(x, y, zN, x, y, zS);
     }
-    for (let z = -22.5; z <= 45.0; z += 7.5) {
-      pts.push(-22.5, y, z, 22.5, y, z);
+    for (let z = zN; z <= zS + 1e-6; z += GRID) {
+      pts.push(-hw, y, z, hw, y, z);
     }
     // Transept grid arms
-    for (let z = -15.0; z <= 15.0; z += 7.5) {
-      pts.push(-30.0, y, z, 30.0, y, z);
+    for (let z = -th; z <= th + 1e-6; z += GRID) {
+      pts.push(-tl, y, z, tl, y, z);
     }
-    for (const x of [-30, 30]) {
-      pts.push(x, y, -15.0, x, y, 15.0);
+    for (const x of [-tl, tl]) {
+      pts.push(x, y, -th, x, y, th);
+    }
+    // Apse rings about the apse centre: presbytery columns, chapel front, chapel back
+    const [acx, acy] = LAYOUT.apse.center;
+    for (const r of [LAYOUT.apse.presbyteryRingR, LAYOUT.apse.chapelFrontR, LAYOUT.apse.chapelBackR]) {
+      const segs = 40;
+      for (let i = 0; i < segs; i++) {
+        const a0 = (i / segs) * Math.PI;
+        const a1 = ((i + 1) / segs) * Math.PI;
+        pts.push(acx + r * Math.cos(a0), y, -(acy + r * Math.sin(a0)), acx + r * Math.cos(a1), y, -(acy + r * Math.sin(a1)));
+      }
     }
 
     const geo = new THREE.BufferGeometry();
@@ -64,7 +83,8 @@ export class GeometryOverlay {
 
     // Crossing central hyperboloid + nave vault hyperboloids
     addRuledHyperboloid(0, 58.2, 0, 3.2, 7.2, 6.2, 24);
-    for (const z of [11.25, 18.75, 26.25, 33.75]) {
+    // Nave bays: 11.25 next to the crossing, then the window bays 18.75 ... 41.25 (layout naveWindowBayY)
+    for (const z of [11.25, ...LAYOUT.naveWindowBayY.map((by) => -by)]) {
       addRuledHyperboloid(0, 44.0, z, 1.65, 5.2, 4.4, 16);
     }
 
@@ -78,12 +98,7 @@ export class GeometryOverlay {
     // Counter-rotating double helices around the 4 central Porphyry crossing columns
     const ptsCW: number[] = [];
     const ptsCCW: number[] = [];
-    const cols: Array<[number, number]> = [
-      [-7.5, -7.5],
-      [7.5, -7.5],
-      [-7.5, 7.5],
-      [7.5, 7.5],
-    ];
+    const cols: Array<[number, number]> = LAYOUT.columns.filter((c) => c.kind === 'porphyry').map((c) => [c.x, -c.y]);
     for (const [cx, cz] of cols) {
       const steps = 40;
       const r = 1.38;

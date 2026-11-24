@@ -1,5 +1,24 @@
 import * as THREE from 'three';
 import { getBootQuality } from '../utils/quality';
+import { LAYOUT } from '../data/layout';
+import { FOG_DENSITY_DAY, FOG_DENSITY_NIGHT } from './atmosphere';
+
+const f = (n: number) => n.toFixed(2);
+const W = LAYOUT.cloister.walks;
+const COVERED_TOP = LAYOUT.cloister.floorZ + LAYOUT.cloister.height;
+/** GLSL: inside one of the four covered cloister walks (runtime z = -plan y). */
+const CLOISTER_GLSL = Object.values(W)
+  .map(([x0, y0, x1, y1]) => `(wp.x > ${f(Math.min(x0, x1))} && wp.x < ${f(Math.max(x0, x1))} && wp.z > ${f(-Math.max(y0, y1))} && wp.z < ${f(-Math.min(y0, y1))})`)
+  .join(' || ');
+// Dry zone of the church: nave + apse (runtime z from behind the apse to the Glory wall), transept
+const DRY_NAVE_X = LAYOUT.zones.transept[2];
+const DRY_NAVE_Z0 = -(LAYOUT.apse.center[1] + LAYOUT.apse.wallOuterR + 1.25);
+const DRY_NAVE_Z1 = -LAYOUT.nave.gloryInnerY + 0.75;
+const DRY_TRANSEPT_X = LAYOUT.transept.halfLength + 3.5;
+const DRY_TRANSEPT_Z = LAYOUT.transept.extWallY + 0.5;
+/** Incense rises above the high altar from 1 m above the presbytery. */
+const ALTAR = LAYOUT.presbytery.altar;
+const INCENSE_BASE_Y = LAYOUT.presbytery.z + 1.0;
 
 export type WeatherMode = 'clear' | 'mist' | 'rain';
 
@@ -32,8 +51,10 @@ export class WeatherSystem {
   private readonly incenseNightCol = new THREE.Color('#ffaa5a');
   private lastAppliedRain = -1;
 
-  private lampCones: THREE.InstancedMesh;
+  private lampCones: THREE.InstancedMesh | null = null;
+  private lampConeGeo: THREE.ConeGeometry;
   private lampConeMat: THREE.ShaderMaterial;
+  private lampTops: THREE.Vector3[] = [];
   private wetMaterials: Array<{ mat: THREE.MeshStandardMaterial; baseRoughness: number; baseEnv: number }> = [];
 
   constructor() {
@@ -71,10 +92,13 @@ export class WeatherSystem {
           vec3 wp = uCamPos + rel;
 
           // Keep cathedral interior & subterranean crypt completely dry!
-          bool inNave = abs(wp.x) < 28.5 && wp.z > -34.0 && wp.z < 50.0 && wp.y < 54.0;
-          bool inTransept = abs(wp.x) < 33.5 && abs(wp.z) < 16.5 && wp.y < 54.0;
+          bool inNave = abs(wp.x) < ${f(DRY_NAVE_X)} && wp.z > ${f(DRY_NAVE_Z0)} && wp.z < ${f(DRY_NAVE_Z1)} && wp.y < 54.0;
+          bool inTransept = abs(wp.x) < ${f(DRY_TRANSEPT_X)} && abs(wp.z) < ${f(DRY_TRANSEPT_Z)} && wp.y < 54.0;
           bool inTowerCore = length(wp.xz) < 10.5 && wp.y < 145.0;
-          float dryMask = (inNave || inTransept || inTowerCore || wp.y < 0.05) ? 0.0 : 1.0;
+          bool inCloister = wp.y < ${f(COVERED_TOP)} && (${CLOISTER_GLSL});
+          // Below the sloped outdoor ground (ground_z(y) = z0 + slope * y, plan y = -z)
+          bool belowGround = wp.y < ${LAYOUT.ground.z0.toFixed(3)} - ${LAYOUT.ground.slopeY.toFixed(4)} * wp.z + 0.05;
+          float dryMask = (inNave || inTransept || inTowerCore || inCloister || belowGround) ? 0.0 : 1.0;
 
           vec4 mvPos = viewMatrix * vec4(wp, 1.0);
           float distFade = smoothstep(42.0, 8.0, length(rel));
@@ -104,16 +128,16 @@ export class WeatherSystem {
     this.rainPoints.visible = false;
     this.group.add(this.rainPoints);
 
-    // ── 2. Rising Golden Sanctuary Incense Smoke above High Altar (0, 3..24m, -17.5) ──
+    // ── 2. Rising Golden Sanctuary Incense Smoke above the high altar (layout presbytery altar) ──
     const incCount = quality.incenseParticles;
     const incPos = new Float32Array(incCount * 3);
     const incSeed = new Float32Array(incCount);
     for (let i = 0; i < incCount; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = Math.random() * 1.6;
-      incPos[i * 3 + 0] = Math.cos(a) * r;
+      incPos[i * 3 + 0] = ALTAR[0] + Math.cos(a) * r;
       incPos[i * 3 + 1] = Math.random(); // normalized vertical phase 0..1
-      incPos[i * 3 + 2] = -17.5 + Math.sin(a) * r;
+      incPos[i * 3 + 2] = -ALTAR[1] + Math.sin(a) * r;
       incSeed[i] = Math.random();
     }
     const incGeo = new THREE.BufferGeometry();
@@ -131,11 +155,11 @@ export class WeatherSystem {
         varying float vAlpha;
         void main() {
           float life = fract(position.y + uTime * (0.045 + aSeed * 0.025));
-          float y = 3.2 + life * 21.0;
+          float y = ${f(INCENSE_BASE_Y)} + life * 21.0;
           float spread = 0.5 + life * 3.8;
           float swirl = uTime * 0.35 + aSeed * 6.283 + life * 3.1;
           vec3 wp = vec3(
-            position.x * spread + sin(swirl) * (0.65 * life),
+            ${f(ALTAR[0])} + (position.x - ${f(ALTAR[0])}) * spread + sin(swirl) * (0.65 * life),
             y,
             position.z + cos(swirl * 0.85) * (0.65 * life)
           );
@@ -162,19 +186,10 @@ export class WeatherSystem {
     this.incensePoints.frustumCulled = false;
     this.group.add(this.incensePoints);
 
-    // ── 3. Warm Volumetric Night Streetlamp Cones (1 draw call for all 24 plaza & avenue lamps!) ──
-    const lampCoords: Array<[number, number]> = [
-      // Plaça de Gaudí & Pond Promenade
-      [62, -22], [62, 0], [62, 22], [103, -22], [103, 0], [103, 22],
-      // Carrer de Marina (East) & Carrer de Sardenya (West)
-      [48, -32], [48, 32], [-48, -32], [-48, 32],
-      // Plaça de la Sagrada Família (West)
-      [-64, -22], [-64, 0], [-64, 22], [-98, -16], [-98, 16],
-      // Carrer de Mallorca (South / Glory) & Provença (North)
-      [-28, 66], [0, 74], [28, 66], [-28, -56], [0, -56], [28, -56],
-    ];
-    const coneGeo = new THREE.ConeGeometry(3.8, 6.2, 12, 1, true);
-    coneGeo.translate(0, -3.1, 0);
+    // ── 3. Warm volumetric night streetlamp cones: one instance per street-lamp globe found in the
+    //       loaded city GLB (registerStreetLamps), so they follow wherever the city package placed the lamps.
+    this.lampConeGeo = new THREE.ConeGeometry(3.8, 6.2, 12, 1, true);
+    this.lampConeGeo.translate(0, -3.1, 0);
     this.lampConeMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -207,17 +222,55 @@ export class WeatherSystem {
         }
       `,
     });
+  }
 
-    this.lampCones = new THREE.InstancedMesh(coneGeo, this.lampConeMat, lampCoords.length);
-    const dummy = new THREE.Object3D();
-    for (let i = 0; i < lampCoords.length; i++) {
-      dummy.position.set(lampCoords[i][0], 6.4, lampCoords[i][1]);
-      dummy.updateMatrix();
-      this.lampCones.setMatrixAt(i, dummy.matrix);
+  /**
+   * Places one light cone under every street-lamp globe of a loaded module (meshes named StreetLamp* ending
+   * in _B, also after auto-instancing). Call once per root after optimizeWithAutoInstancing.
+   */
+  public registerStreetLamps(root: THREE.Object3D): void {
+    root.updateMatrixWorld(true);
+    const tops: THREE.Vector3[] = [];
+    const box = new THREE.Box3();
+    const m = new THREE.Matrix4();
+    const centre = new THREE.Vector3();
+    root.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh) || !obj.name.includes('StreetLamp') || !obj.name.endsWith('_B')) return;
+      obj.geometry.computeBoundingBox();
+      const gb = obj.geometry.boundingBox;
+      if (!gb) return;
+      const count = obj instanceof THREE.InstancedMesh ? obj.count : 1;
+      for (let i = 0; i < count; i++) {
+        if (obj instanceof THREE.InstancedMesh) {
+          obj.getMatrixAt(i, m);
+          m.premultiply(obj.matrixWorld);
+        } else {
+          m.copy(obj.matrixWorld);
+        }
+        box.copy(gb).applyMatrix4(m);
+        box.getCenter(centre);
+        tops.push(new THREE.Vector3(centre.x, box.min.y, centre.z));
+      }
+    });
+    if (!tops.length) return;
+    const all = [...this.lampTops, ...tops];
+    this.lampTops = all;
+    if (this.lampCones) {
+      this.group.remove(this.lampCones);
+      this.lampCones.dispose();
     }
-    this.lampCones.instanceMatrix.needsUpdate = true;
-    this.lampCones.visible = false;
-    this.group.add(this.lampCones);
+    const cones = new THREE.InstancedMesh(this.lampConeGeo, this.lampConeMat, all.length);
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < all.length; i++) {
+      dummy.position.copy(all[i]);
+      dummy.updateMatrix();
+      cones.setMatrixAt(i, dummy.matrix);
+    }
+    cones.instanceMatrix.needsUpdate = true;
+    cones.visible = false;
+    cones.frustumCulled = false;
+    this.lampCones = cones;
+    this.group.add(cones);
   }
 
   public registerExteriorGroundMaterials(root: THREE.Object3D): void {
@@ -282,14 +335,14 @@ export class WeatherSystem {
 
     // Atmospheric fog boost during mist or rain
     if (scene.fog instanceof THREE.FogExp2) {
-      const baseDensity = THREE.MathUtils.lerp(0.0012, 0.0019, nightFactor);
+      const baseDensity = THREE.MathUtils.lerp(FOG_DENSITY_DAY, FOG_DENSITY_NIGHT, nightFactor);
       const mistBoost = this.mistFactor * 0.0046 * (1.0 - indoorFactor * 0.68);
       const rainBoost = this.rainFactor * 0.0022 * (1.0 - indoorFactor * 0.72);
       scene.fog.density = baseDensity + mistBoost + rainBoost;
     }
 
     // Sanctuary incense visible indoors near nave/altar
-    this.incensePoints.visible = indoorFactor > 0.25 && cameraPos.y > -1.0 && cameraPos.y < 48.0;
+    this.incensePoints.visible = indoorFactor > 0.25 && cameraPos.y > LAYOUT.levels.nave - 0.5 && cameraPos.y < 48.0;
     if (this.incensePoints.visible) {
       this.incenseUniforms.uColor.value
         .copy(this.incenseDayCol)
@@ -299,7 +352,7 @@ export class WeatherSystem {
 
     // Night streetlamp volumetric cones
     const lampAlpha = THREE.MathUtils.smoothstep(nightFactor, 0.18, 0.75) * (0.22 + this.mistFactor * 0.18 + this.rainFactor * 0.14);
-    this.lampCones.visible = lampAlpha > 0.01 && indoorFactor < 0.85;
+    if (this.lampCones) this.lampCones.visible = lampAlpha > 0.01 && indoorFactor < 0.85;
     this.lampConeMat.uniforms.uOpacity.value = lampAlpha;
   }
 }

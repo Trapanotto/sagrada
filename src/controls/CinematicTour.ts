@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Localized } from '../i18n';
+import { LAYOUT, cryptDepthBelowNave, groundWorldY, towerByKey } from '../data/layout';
 
 export interface TourChapter {
   title: Localized;
@@ -10,6 +11,18 @@ export interface TourChapter {
   posPoints: Array<[number, number, number]>;
   lookPoints: Array<[number, number, number]>;
 }
+
+// Anchors from the layout (runtime frame: z = -plan y). Camera paths are given relative to them where
+// they frame a building, so they follow the plan; free-flight orbit points are plain numbers.
+const NAT_X = towerByKey('tower.nativityInnerS').x; // Nativity tower line
+const PAS_X = towerByKey('tower.passionInnerS').x; // Passion tower line
+const GLORY_Z = -towerByKey('tower.gloryInnerW').y; // Glory tower line
+const APSE_Z = -LAYOUT.apse.center[1];
+const CRYPT_Y = LAYOUT.levels.crypt;
+const TOMB = { x: LAYOUT.crypt.gaudiTomb[0], z: -LAYOUT.crypt.gaudiTomb[1] };
+const BAY = LAYOUT.naveWindowBayY.map((y) => -y); // nave bay centres (runtime z): 18.75 ... 41.25
+const groundAt = (z: number) => groundWorldY(z);
+const CRYPT_DEPTH = cryptDepthBelowNave(); // 9 m below the basilica floor
 
 const TOUR_CHAPTERS: TourChapter[] = [
   {
@@ -22,16 +35,16 @@ const TOUR_CHAPTERS: TourChapter[] = [
     startHour: 8.1,
     endHour: 9.2,
     posPoints: [
-      [112, 3.2, 16],
-      [96, 4.5, 4],
-      [74, 12.0, -4],
-      [48, 8.5, 0],
+      [160, groundAt(4) + 2.4, 4],
+      [130, 4, -2],
+      [95, 12, -4],
+      [52, 6, 0],
     ],
     lookPoints: [
-      [31, 34, 0],
-      [31, 30, 0],
-      [31, 44, 0],
-      [24, 14, 0],
+      [NAT_X, 34, 0],
+      [NAT_X, 30, 0],
+      [NAT_X, 44, 0],
+      [26, 14, 0],
     ],
   },
   {
@@ -45,17 +58,17 @@ const TOUR_CHAPTERS: TourChapter[] = [
     endHour: 17.7,
     posPoints: [
       [26, 4.2, 0],
-      [8, 4.0, 18],
-      [0, 3.8, 34],
-      [-6, 9.5, 22],
+      [11.25, 4.0, BAY[1]],
+      [0, 3.8, BAY[3]],
+      [-11.25, 9.5, BAY[0]],
       [0, 12.0, 2],
     ],
     lookPoints: [
       [0, 18, 12],
       [0, 24, 24],
-      [0, 22, -10],
-      [6, 26, -16],
-      [0, 15, -20],
+      [0, 22, -14],
+      [6, 26, -20],
+      [0, 15, APSE_Z],
     ],
   },
   {
@@ -68,33 +81,37 @@ const TOUR_CHAPTERS: TourChapter[] = [
     startHour: 17.7,
     endHour: 18.6,
     posPoints: [
-      [-58, 5.5, 18],
-      [-56, 16.0, -8],
-      [-38, 22.0, 48],
-      [0, 14.0, 88],
+      [-70, 4, 18],
+      [-62, 16, -8],
+      [-48, 22, 60],
+      [-20, 16, 74],
+      [0, 10, 100],
     ],
     lookPoints: [
-      [-31, 22, 0],
-      [-31, 28, 0],
-      [-10, 26, 48],
-      [0, 36, 48],
+      [PAS_X, 22, 0],
+      [PAS_X, 28, 0],
+      [-10, 26, GLORY_Z],
+      [0, 36, GLORY_Z],
     ],
   },
   {
     title: { de: 'IV · Stille der Krypta', en: 'IV · The stillness of the crypt' },
-    subtitle: { de: 'Neugotisches Gewölbe (-5,5 m) · Grab von Antoni Gaudí', en: 'Neo-Gothic vault (-5.5 m) · tomb of Antoni Gaudí' },
+    subtitle: {
+      de: `Neugotisches Gewölbe (-${CRYPT_DEPTH} m) · Grab von Antoni Gaudí`,
+      en: `Neo-Gothic vault (-${CRYPT_DEPTH} m) · tomb of Antoni Gaudí`,
+    },
     duration: 9,
     startHour: 18.8,
     endHour: 19.2,
     posPoints: [
-      [3.5, -3.5, -14.5],
-      [0.0, -3.7, -17.0],
-      [-4.2, -3.7, -19.5],
+      [6, CRYPT_Y + 2.2, -16],
+      [0, CRYPT_Y + 1.9, -19],
+      [-6, CRYPT_Y + 1.9, -21],
     ],
     lookPoints: [
-      [-6.0, -4.3, -22.5],
-      [-9.2, -4.5, -23.5],
-      [-9.8, -4.7, -23.5],
+      [-10, CRYPT_Y + 1.4, -17],
+      [-14, CRYPT_Y + 1.0, TOMB.z - 0.25],
+      [TOMB.x, CRYPT_Y + 0.8, TOMB.z - 0.05],
     ],
   },
   {
@@ -107,16 +124,16 @@ const TOUR_CHAPTERS: TourChapter[] = [
     startHour: 19.6,
     endHour: 22.3,
     posPoints: [
-      [118, 65, 95],
-      [148, 118, 45],
-      [115, 148, -95],
-      [-95, 145, -105],
-      [165, 116, 148],
+      [155, 65, 125],
+      [195, 118, 60],
+      [150, 148, -125],
+      [-125, 145, -140],
+      [215, 116, 195],
     ],
     lookPoints: [
       [0, 80, -4],
-      [0, 112, -10],
-      [0, 134, -14],
+      [0, 112, -12],
+      [0, 134, -16],
       [0, 128, -4],
       [0, 78, -4],
     ],

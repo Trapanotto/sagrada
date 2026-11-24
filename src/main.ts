@@ -8,7 +8,9 @@ import { PlayerController } from './controls/PlayerController';
 import { TouchControls } from './controls/TouchControls';
 import type { CinematicTour } from './controls/CinematicTour';
 import type { AmbienceAudio } from './audio/AmbienceAudio';
-import { TELEPORT_PRESETS, FloorLevel } from './data/teleports';
+import { TELEPORT_PRESETS, SPAWN_PRESET, FloorLevel } from './data/teleports';
+import { LAYOUT, groundWorldY, inCryptFootprint, towerByKey } from './data/layout';
+import { GALLERY_BOXES, isEyeUnderground } from './scene/walkModel';
 import { Minimap } from './ui/Minimap';
 import { HotspotPanel } from './ui/HotspotPanel';
 import { PerfMonitor } from './ui/PerfMonitor';
@@ -186,7 +188,7 @@ async function bootstrap(): Promise<void> {
   const tourActive = () => tour?.active ?? false;
 
   // Start at the iconic Plaça de Gaudí viewpoint across the reflective pond facing the Nativity Facade!
-  player.teleportTo(TELEPORT_PRESETS[0], true);
+  player.teleportTo(SPAWN_PRESET, true);
 
   // UI Elements
   const loadingScreen = document.getElementById('loading-screen')!;
@@ -328,33 +330,75 @@ async function bootstrap(): Promise<void> {
 
   // Wire Minimap click-to-teleport!
   minimap.onTeleportClick = (wx: number, wz: number, level: FloorLevel) => {
-    let targetY = 1.75;
+    const eye = collision.eyeHeight;
+    let targetY = eye;
     let fly = false;
     if (level === 'crypt') {
-      // Clamp inside Crypt circle
-      const d = Math.hypot(wx, wz - -21);
-      if (d > 13.5) {
-        wx = (wx / d) * 13.5;
-        wz = -21 + ((wz - -21) / d) * 13.5;
+      // Pull the click into the crypt footprint (1.5 m inside its outer wall), towards the crypt centre
+      const [ccx, ccy] = LAYOUT.crypt.center;
+      const c = { x: ccx, z: -ccy };
+      for (let k = 0; k <= 40; k++) {
+        const f = 1 - k / 40;
+        const px = c.x + (wx - c.x) * f;
+        const pz = c.z + (wz - c.z) * f;
+        const inside =
+          inCryptFootprint(px, -pz) &&
+          inCryptFootprint(px + 1.5, -pz) &&
+          inCryptFootprint(px - 1.5, -pz) &&
+          inCryptFootprint(px, -pz + 1.5) &&
+          inCryptFootprint(px, -pz - 1.5);
+        if (inside || k === 40) {
+          wx = px;
+          wz = pz;
+          break;
+        }
       }
-      targetY = -5.5 + collision.eyeHeight;
+      targetY = LAYOUT.levels.crypt + eye;
     } else if (level === 'gallery') {
-      targetY = 14.5 + collision.eyeHeight;
+      // Snap to the nearest point on a gallery / tribune deck
+      let best = Infinity;
+      let bx = wx;
+      let bz = wz;
+      for (const g of GALLERY_BOXES) {
+        const qx = THREE.MathUtils.clamp(wx, g.minX + 0.6, g.maxX - 0.6);
+        const qz = THREE.MathUtils.clamp(wz, g.minZ + 0.6, g.maxZ - 0.6);
+        const d = Math.hypot(qx - wx, qz - wz);
+        if (d < best) {
+          best = d;
+          bx = qx;
+          bz = qz;
+        }
+      }
+      wx = bx;
+      wz = bz;
+      targetY = LAYOUT.levels.gallery + eye;
     } else if (level === 'towers') {
+      const nat = towerByKey('tower.nativityInnerS');
+      const pas = towerByKey('tower.passionInnerS');
+      const glo = towerByKey('tower.gloryInnerW');
       if (Math.hypot(wx, wz) < 12) {
         wx = 4.2;
         wz = 2.8;
-        targetY = 136.0 + collision.eyeHeight;
-      } else if (Math.abs(wx - 31.5) < 10 && Math.abs(wz) < 10) {
-        wx = 31.5;
+        targetY = LAYOUT.levels.jesusView + eye;
+      } else if (Math.abs(wx - nat.x) < 10 && Math.abs(wz) < 10) {
+        wx = nat.x;
         wz = 0;
-        targetY = 65.0 + collision.eyeHeight;
+        targetY = LAYOUT.levels.skybridgeTransept + eye;
+      } else if (Math.abs(wx - pas.x) < 10 && Math.abs(wz) < 10) {
+        wx = pas.x;
+        wz = 0;
+        targetY = LAYOUT.levels.skybridgeTransept + eye;
+      } else if (Math.abs(wz + glo.y) < 10 && Math.abs(wx) < 10) {
+        wx = 0;
+        wz = -glo.y;
+        targetY = LAYOUT.levels.skybridgeGlory + eye;
       } else {
         targetY = 95.0;
         fly = true;
       }
     } else {
-      const res = collision.resolveWalkPosition(wx, 1.0, wz);
+      // Start the search just above the higher of street and basilica floor (podium, Glory bridge, stairs)
+      const res = collision.resolveWalkPosition(wx, Math.max(groundWorldY(wz), LAYOUT.levels.nave) + 1.0, wz);
       wx = res.clampedX;
       wz = res.clampedZ;
       targetY = res.groundY + collision.eyeHeight;
@@ -573,7 +617,10 @@ async function bootstrap(): Promise<void> {
             if (document.pointerLockElement) document.exitPointerLock();
           } else if (!active) {
             player.syncFromCamera();
-            player.setFlyMode(camera.position.y > 4.0);
+            // Keep flying if the tour left the camera well above the floor below it (ground is sloped now)
+            const feet = camera.position.y - collision.eyeHeight;
+            const floor = collision.resolveWalkPosition(camera.position.x, feet, camera.position.z).groundY;
+            player.setFlyMode(feet - floor > 2.5);
             restoreNormalHud();
           }
         };
@@ -947,7 +994,7 @@ async function bootstrap(): Promise<void> {
     // Physical camera Auto-Eye-Adaptation: stops down in bright Barcelona sun (0.73), opens subtly indoors (0.86) & crypt (0.95)!
     if (!photoMode) {
       const targetExp =
-        camera.position.y < -1.5
+        isEyeUnderground(camera.position.x, camera.position.y, camera.position.z)
           ? 1.1
           : THREE.MathUtils.lerp(
               THREE.MathUtils.lerp(1.0, 0.92, sagrada.lighting.nightFactor),

@@ -11,7 +11,7 @@ Ein vollständiges, interaktives und begehbares 3D-Modell der **Basílica de la 
 ## Highlights & Features
 
 * **Vollständiger Entwurf mit allen 18 Türmen:** Turm Jesu Christi (172,5 m inkl. 17-m-Kreuz & begehbarer Aussichtsgalerie auf 136 m), Marien-Turm (138 m mit leuchtendem 12-zackigem Stern), 4 Evangelisten-Türme (135 m), 12 Apostel-Türme (98,4–120 m) sowie Geburts-, Passions- und geplante Glorienfassade mit großer Freitreppe.
-* **Maximale Begehbarkeit:** 5-schiffiges Hauptschiff (doppelt verdrehte Säulen in Porphyr, Basalt, Granit & Sandstein), Hyperboloid-Gewölbe, Emporen (*Cantories*), 7 Apsis-Kapellen, Taufbecken, Gaudí-Ausstellung (*Hängemodell*), begehbare **Gaudí-Turm-Wendeltreppe** (156 Stufen), 65-m-Turmbrücken, umlaufender Kreuzgang, 2 Sakristei-Kuppeln, unterirdische **Krypta (-5,5 m) mit Gaudís Grab** sowie der umgebende Barcelona-Eixample-Stadtblock inkl. **Plaça de Gaudí mit Echtzeit-Spiegelteich & Springbrunnen**.
+* **Maximale Begehbarkeit:** 5-schiffiges Hauptschiff (doppelt verdrehte Säulen in Porphyr, Basalt, Granit & Sandstein), Hyperboloid-Gewölbe, Emporen (*Cantories*), 7 Apsis-Kapellen, Taufbecken, Gaudí-Ausstellung (*Hängemodell*), begehbare **Gaudí-Turm-Wendeltreppe** (156 Stufen), 65-m-Turmbrücken, umlaufender Kreuzgang, 2 Sakristei-Kuppeln, unterirdische **Krypta (-9 m, über zwei Wendeltreppen erreichbar) mit Gaudís Grab** sowie der umgebende Barcelona-Eixample-Stadtblock inkl. **Plaça de Gaudí mit Echtzeit-Spiegelteich & Springbrunnen**.
 * **AAA-Licht, Cycles-GI & 1K-PureSky-HDRIs:**
   * Gebackene **Blender-Cycles-Global-Illumination-Lightmaps** (`TEXCOORD_1`) für Gewölbe, Boden, Wände & Krypta + raytraced BVH Ambient Occlusion (`COLOR_0`).
   * Dynamischer 24h-Sonnenstand für Barcelona (41,4° N) mit echten **`SpotLight.map`-Buntglas-Projektionen** (kühles Blau/Smaragd im Morgenlicht, warmes Rubin/Gold im Abendrot), weichen GLSL-Sonnenstrahlen, schwebenden Lichtpartikeln, gespiegeltem Marmorboden (`CubeCamera`-Probe) und HDR-Bloom (`AgXToneMapping`).
@@ -74,7 +74,7 @@ blender --background --python blender/bake_cycles_gi.py
 
 **Highlights**
 
-* Walk through the five-aisle nave with its double-twisted columns, hyperboloid vaults, choir galleries (*Cantories*), apse chapels, crypt (-5.5 m), cloister, sacristy domes and a walkable spiral staircase; ride the glass elevator up the Tower of Jesus Christ.
+* Walk through the five-aisle nave with its double-twisted columns, hyperboloid vaults, choir galleries (*Cantories*), apse chapels, the crypt (-9 m, reached by two spiral staircases), cloister, sacristy domes and a walkable spiral staircase; ride the glass elevator up the Tower of Jesus Christ.
 * Baked Cycles global-illumination lightmaps, a 24-hour Barcelona sun (41.4° N) with projected stained-glass light, weather presets and HDR bloom.
 * Construction time-lapse from the crypt (1882) to the completed Glory façade, architectural hotspots with background texts, a four-level interactive plan, a five-chapter cinematic tour, a photo studio with depth of field and PNG export, and procedural spatial audio.
 * **Graphics quality tiers (Auto / Low / Medium / High / Ultra)** in the top bar: *Auto* picks a tier from the GPU, memory, CPU cores and device type; a manual choice is remembered. Most settings apply immediately, a few after a reload.

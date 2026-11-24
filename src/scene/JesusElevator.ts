@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { t, type MessageKey } from '../i18n';
+import { LAYOUT } from '../data/layout';
+
+/** Eye height above the feet (layout `levels.eye`). */
+const EYE = LAYOUT.levels.eye;
 
 export interface ElevatorFloor {
   labelKey: MessageKey;
@@ -7,8 +11,8 @@ export interface ElevatorFloor {
 }
 
 export const ELEVATOR_FLOORS: ElevatorFloor[] = [
-  { labelKey: 'elevator.floorBase', y: 56.0 },
-  { labelKey: 'elevator.floorTop', y: 136.0 },
+  { labelKey: 'elevator.floorBase', y: LAYOUT.levels.jesusDeck },
+  { labelKey: 'elevator.floorTop', y: LAYOUT.levels.jesusView },
 ];
 
 /** Localized floor name (the prompt is re-rendered in the current language on every HUD tick). */
@@ -25,7 +29,7 @@ function floorLabel(idx: number): string {
  */
 export class JesusElevator {
   public readonly group = new THREE.Group();
-  public currentY = 56.0;
+  public currentY = LAYOUT.levels.jesusDeck;
   public targetFloorIdx = 0;
   public isMoving = false;
   public lastDeltaY = 0;
@@ -125,9 +129,9 @@ export class JesusElevator {
   }
 
   public isPlayerInside(pos: THREE.Vector3): boolean {
-    if (pos.y < 54.0) return false;
+    if (pos.y < LAYOUT.levels.jesusDeck - 2) return false;
     const r = Math.hypot(pos.x, pos.z);
-    const feetY = pos.y - 1.75;
+    const feetY = pos.y - EYE;
     return r < 2.05 && Math.abs(feetY - this.currentY) < 1.6;
   }
 
@@ -151,7 +155,7 @@ export class JesusElevator {
     const r = Math.hypot(playerPos.x, playerPos.z);
     if (r > 7.5) return null;
 
-    const feetY = playerPos.y - 1.75;
+    const feetY = playerPos.y - EYE;
     if (this.isPlayerInside(playerPos)) {
       this.targetFloorIdx = (this.targetFloorIdx + 1) % ELEVATOR_FLOORS.length;
       return t('elevator.goingTo', { floor: floorLabel(this.targetFloorIdx) });
@@ -174,7 +178,7 @@ export class JesusElevator {
   public getPromptText(playerPos: THREE.Vector3, isMobile = false): string | null {
     const r = Math.hypot(playerPos.x, playerPos.z);
     if (r > 6.8) return null;
-    const feetY = playerPos.y - 1.75;
+    const feetY = playerPos.y - EYE;
 
     if (this.isPlayerInside(playerPos)) {
       const nextFloor = floorLabel((this.targetFloorIdx + 1) % ELEVATOR_FLOORS.length);

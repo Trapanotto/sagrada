@@ -420,16 +420,20 @@ def _add_tetramorph_figure(bm, c: Vector, f: Vector, s: Vector, face: float, kin
 
 # ───────────────────────────── Mary terminal ─────────────────────────────
 
-def add_mary_terminal(bm_stone, bm_lantern, bm_iron, bm_star, cx: float, cy: float, z_crown0: float) -> float:
+def add_mary_terminal(bm_stone, bm_lantern, bm_iron, bm_star, cx: float, cy: float, z_crown0: float, crown_scale: float = 1.0) -> float:
     """6 m stone crown with twelve wrought-iron stars, 18 m hyperboloid lantern on six legs ending in three
-    arms, twelve-pointed star (7.5 m) whose top is at 138 m. Returns the star centre height."""
+    arms, twelve-pointed star (7.5 m) whose top is at 138 m. Returns the star centre height.
+    crown_scale widens the stone crown (and the iron-star ring / lantern-leg feet) radially so it sits
+    flush on the shaft top (profile designed for a 4.55 m shaft radius); lantern and star keep their size."""
     z_c1 = z_crown0 + 6.0
+    s = crown_scale
     # Stone crown: flaring ring wall (inner radius > the 118 m deck)
-    add_lathe(bm_stone, cx, cy, [(z_crown0, 4.55), (z_crown0 + 2.0, 4.7), (z_crown0 + 4.6, 4.95), (z_c1, 5.15), (z_c1 + 0.35, 4.9), (z_c1 + 0.35, 4.3), (z_crown0, 4.25)], segments=24)
+    add_lathe(bm_stone, cx, cy, [(z_crown0, 4.55 * s), (z_crown0 + 2.0, 4.7 * s), (z_crown0 + 4.6, 4.95 * s), (z_c1, 5.15 * s),
+                                 (z_c1 + 0.35, 4.9 * s), (z_c1 + 0.35, 4.3 * s), (z_crown0, 4.25 * s)], segments=24)
     # Twelve wrought-iron stars on the crown rim
     for k in range(12):
         a = 2.0 * math.pi * (k + 0.5) / 12
-        p = Vector((cx + 5.05 * math.cos(a), cy + 5.05 * math.sin(a), z_c1 + 1.25))
+        p = Vector((cx + 5.05 * s * math.cos(a), cy + 5.05 * s * math.sin(a), z_c1 + 1.25))
         d = Vector((math.cos(a), math.sin(a), 0.0))
         t = Vector((-math.sin(a), math.cos(a), 0.0))
         add_cylinder(bm_iron, p - Vector((0, 0, 1.15)), p, 0.06, 0.06, segments=4, cap=False)
@@ -450,7 +454,7 @@ def add_mary_terminal(bm_stone, bm_lantern, bm_iron, bm_star, cx: float, cy: flo
 
     for k in range(6):
         a = 2.0 * math.pi * k / 6
-        p0 = Vector((cx + 4.45 * math.cos(a), cy + 4.45 * math.sin(a), zl0))
+        p0 = Vector((cx + 4.45 * s * math.cos(a), cy + 4.45 * s * math.sin(a), zl0))
         p1 = Vector((cx + r_h(z_shell0) * math.cos(a), cy + r_h(z_shell0) * math.sin(a), z_shell0 + 0.5))
         add_cylinder(bm_lantern, p0, p1, 0.42, 0.34, segments=6)
     # Lattice shell with triangular / rhomboid openings (diamond pattern on a ruled hyperboloid)

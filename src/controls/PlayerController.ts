@@ -1,5 +1,9 @@
 import * as THREE from 'three';
+import { LAYOUT } from '../data/layout';
 import { CollisionSystem } from '../scene/CollisionSystem';
+
+/** Lowest fly height (crypt floor - 1.2 = -9 m): free flight reaches every part of the crypt. */
+const FLY_MIN_Y = LAYOUT.levels.crypt - 1.2;
 
 export interface TeleportTarget {
   position: [number, number, number];
@@ -311,7 +315,7 @@ export class PlayerController {
       if (move.lengthSq() > 0) {
         move.normalize().multiplyScalar(flySpeed * safeDt);
         this.camera.position.add(move);
-        this.camera.position.y = THREE.MathUtils.clamp(this.camera.position.y, -4.5, 260);
+        this.camera.position.y = THREE.MathUtils.clamp(this.camera.position.y, FLY_MIN_Y, 260);
         this.isMoving = true;
         this.speedMps = flySpeed;
       } else {

@@ -1,8 +1,14 @@
 import * as THREE from 'three';
+import { LAYOUT } from '../data/layout';
+
+const FOUNTAIN = LAYOUT.city.fountain;
+const WATER_Y = LAYOUT.city.pondWaterZ;
+/** Nozzle top (city package): water level + 1.89 m. */
+const NOZZLE_Y = WATER_Y + 1.89;
 
 /**
  * Animated sparkling parabolic water-jet fountain rising from the stone basin
- * in the center of the Plaça de Gaudí reflective pond (X = 82.5, Z = 0).
+ * in the centre of the Plaça de Gaudí reflecting pond (layout `city.fountain`, nozzle 1.89 m above the water).
  */
 export class FountainParticles {
   public readonly points: THREE.Points;
@@ -17,9 +23,9 @@ export class FountainParticles {
     const positions = new Float32Array(count * 3);
 
     for (let i = 0; i < count; i++) {
-      positions[i * 3] = 82.5;
-      positions[i * 3 + 1] = 2.05;
-      positions[i * 3 + 2] = 0.0;
+      positions[i * 3] = FOUNTAIN.x;
+      positions[i * 3 + 1] = NOZZLE_Y;
+      positions[i * 3 + 2] = -FOUNTAIN.y;
 
       seeds[i * 4] = Math.random();                     // cycle phase [0..1]
       seeds[i * 4 + 1] = Math.random() * Math.PI * 2;   // radial angle
@@ -60,7 +66,7 @@ export class FountainParticles {
           p.x += cos(ang) * r;
           p.z += sin(ang) * r;
           p.y += vy * t - 0.5 * g * t * t;
-          p.y = max(p.y, 0.19);
+          p.y = max(p.y, ${(WATER_Y + 0.03).toFixed(3)});
 
           vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
           float dist = max(-mvPos.z, 1.0);

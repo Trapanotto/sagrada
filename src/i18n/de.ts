@@ -202,13 +202,16 @@ export const de = {
   'zone.roofBridge': 'Dach-Treppenbrücke ({y} m)',
   'zone.roofscape': 'Kathedral-Dachlandschaft (45 m)',
   'zone.airspace': 'Luftraum · Über den 18 Türmen',
-  'zone.crypt': 'Krypta · Grab von Antoni Gaudí (-5,5 m)',
-  'zone.galleries': 'Empore & Turm-Galerie · 14,5 m Höhe',
+  'zone.crypt': 'Krypta · Grab von Antoni Gaudí (-9 m)',
+  'zone.galleries': 'Empore & Turm-Galerie · 16,2 m Höhe',
   'zone.altar': 'Hochaltar & Apsis',
   'zone.crossing': 'Vierung · Unter dem Jesus-Turm',
   'zone.nave': 'Hauptschiff · Säulenwald',
   'zone.transept': 'Querschiff',
   'zone.sacristy': 'Sakristei-Kuppel',
+  'zone.baptistery': 'Taufkapelle',
+  'zone.penitence': 'Bußkapelle',
+  'zone.assumption': 'Himmelfahrtskapelle',
   'zone.cloister': 'Umlaufender Kreuzgang',
   'zone.inPond': 'Plaça de Gaudí · Im Spiegelteich',
   'zone.pondEast': 'Plaça de Gaudí · Spiegelteich (Ost)',
@@ -218,7 +221,7 @@ export const de = {
   'zone.glory': 'Glorienfassade & Große Freitreppe (Süd)',
   'zone.eixample': 'Eixample · Umgebung Barcelona',
 
-  // ── Tower names (spiral-stair zones) ──
+  // ── Tower & crypt-stair names (spiral-stair zones) ──
   'tower.jesus': 'Turm Jesu Christi',
   'tower.mary': 'Marien-Turm',
   'tower.mark': 'Evangelist Markus',
@@ -237,6 +240,8 @@ export const de = {
   'tower.gloryInnerW': 'Glorienturm Mitte-West',
   'tower.gloryInnerE': 'Glorienturm Mitte-Ost',
   'tower.gloryE': 'Glorienturm Ost',
+  'cryptStair.west': 'Krypta-Treppe West',
+  'cryptStair.east': 'Krypta-Treppe Ost',
 } as const satisfies Record<string, string>;
 
 export type MessageKey = keyof typeof de;
