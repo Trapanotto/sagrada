@@ -159,7 +159,9 @@ async function bootstrap(): Promise<void> {
   renderer.shadowMap.type = quality.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   renderer.localClippingEnabled = false; // Enabled lazily ONLY when user inspects historical construction timelapse!
   // Blender 4/5 cinema standard: realistic physical exposure (0.74 outdoors -> auto-adapts gently indoors!)
-  renderer.toneMapping = THREE.AgXToneMapping;
+  // ACES instead of AgX: AgX desaturates and flattens the warm sandstone toward grey; ACES keeps the
+  // colour and gives the sunlit stone a filmic contrast curve
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 

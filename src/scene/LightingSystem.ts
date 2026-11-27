@@ -84,10 +84,12 @@ export class LightingSystem {
   private readonly cHorDay = new THREE.Color('#b6d6f4');
   private readonly cHorGolden = new THREE.Color('#f49a52');
   private readonly cHorNight = new THREE.Color('#0e172c');
-  private readonly cSunDay = new THREE.Color('#fff5df');
+  // Warm Mediterranean sun against a cool sky fill: the warm/cool split is what keeps the light from
+  // looking neutral and flat ("clinical")
+  private readonly cSunDay = new THREE.Color('#ffe2b8');
   private readonly cSunGolden = new THREE.Color('#ff9642');
-  private readonly cHemiSkyDay = new THREE.Color('#c8ddf5');
-  private readonly cHemiGroundDay = new THREE.Color('#685543');
+  private readonly cHemiSkyDay = new THREE.Color('#b4cdf0');
+  private readonly cHemiGroundDay = new THREE.Color('#8a6340');
   private readonly cHemiGroundNight = new THREE.Color('#090d16');
   private readonly cCryptAccent = new THREE.Color('#ff9d3b');
   private readonly cNightFlood = new THREE.Color('#ffcb85');
@@ -292,11 +294,11 @@ export class LightingSystem {
     }
 
     // 4. Consolidated High-Efficiency Interior Fill Lights (enhanced by real Cycles GI Lightmaps!)
-    this.naveFillLight = new THREE.PointLight('#ffe0b0', 56, 82, 1.2);
+    this.naveFillLight = new THREE.PointLight('#ffc58a', 56, 82, 1.2);
     this.naveFillLight.position.set(...planToWorld(...LIGHTS.naveFill.pos));
     this.scene.add(this.naveFillLight);
 
-    this.apseFillLight = new THREE.PointLight('#e4d8c8', 54, 58, 1.25);
+    this.apseFillLight = new THREE.PointLight('#ffd6a0', 54, 58, 1.25);
     this.apseFillLight.position.set(...planToWorld(...LIGHTS.apseFill.pos));
     this.scene.add(this.apseFillLight);
 
@@ -474,7 +476,7 @@ export class LightingSystem {
         `,
       });
 
-    const eastColors = ['#29c5e0', '#2ee09b', '#3a86ff', '#26c9a8'];
+    const eastColors = ['#3fb8d8', '#6cc8a0', '#4a8cf0', '#e0b860'];
     const westColors = ['#ff5b24', '#ff9d1c', '#f0293e', '#ffc229'];
 
     const build = (colors: string[]) => {
@@ -605,7 +607,8 @@ export class LightingSystem {
     this.hemiLight.color.copy(this.scratchTop).lerp(this.cHemiSkyDay, 0.35 * dayFactor);
     this.hemiLight.groundColor.copy(this.cHemiGroundDay).lerp(this.cHemiGroundNight, nightFactor * 0.92);
     this.baseHemiInt = THREE.MathUtils.lerp(0.05, 0.4, dayFactor);
-    this.baseEnvInt = THREE.MathUtils.lerp(0.08, 0.8, dayFactor) * THREE.MathUtils.lerp(1.0, 0.85, goldenFactor);
+    // Less sky ambient than before so the sun side and the shadow side separate clearly
+    this.baseEnvInt = THREE.MathUtils.lerp(0.08, 0.58, dayFactor) * THREE.MathUtils.lerp(1.0, 0.85, goldenFactor);
     this.hemiLight.intensity = this.baseHemiInt;
     this.scene.environmentIntensity = this.baseEnvInt;
 
@@ -618,7 +621,7 @@ export class LightingSystem {
     const targetClimbY = THREE.MathUtils.lerp(7.5, 1.2, THREE.MathUtils.clamp(elevation / 0.65, 0, 1));
     const beamTilt = THREE.MathUtils.lerp(1.12, 0.48, THREE.MathUtils.clamp(elevation / 1.0, 0, 1));
 
-    this.baseEastInt = 12 * dayFactor + eastSunHit * 295;
+    this.baseEastInt = 12 * dayFactor + eastSunHit * 230;
     if (this.eastProjector) {
       this.eastProjector.intensity = this.baseEastInt;
       this.eastProjector.target.position.set(PROJ_X - reach, targetClimbY, PROJ_Z);
@@ -628,7 +631,7 @@ export class LightingSystem {
       this.lastBeamTilt = beamTilt;
       this.layoutBeams(beamTilt);
     }
-    (this.eastBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.14;
+    (this.eastBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.22;
 
     this.baseWestInt = 12 * dayFactor + westSunHit * 325;
     if (this.westProjector) {
@@ -636,7 +639,7 @@ export class LightingSystem {
       this.westProjector.target.position.set(-PROJ_X + reach, targetClimbY, PROJ_Z);
       this.westProjector.target.updateMatrixWorld();
     }
-    (this.westBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.16;
+    (this.westBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.24;
 
     this.baseApseInt = 18 * dayFactor + 36;
     this.apseFillLight.intensity = this.baseApseInt;
@@ -745,7 +748,7 @@ export class LightingSystem {
     // Physical outdoor-sky occlusion inside stone cathedral walls:
     const outdoorSkyLeak = THREE.MathUtils.lerp(1.0, 0.28, indoorFactor);
     this.hemiLight.intensity = this.baseHemiInt * outdoorSkyLeak;
-    this.scene.environmentIntensity = this.baseEnvInt * THREE.MathUtils.lerp(1.0, 0.36, indoorFactor);
+    this.scene.environmentIntensity = this.baseEnvInt * THREE.MathUtils.lerp(1.0, 0.3, indoorFactor);
     this.sunLight.intensity = this.baseSunInt * (underground ? 0.05 : 1.0);
 
     const intMul = nearInterior && !inCryptRange ? 1.0 : 0.0;

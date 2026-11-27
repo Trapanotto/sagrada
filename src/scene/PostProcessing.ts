@@ -16,8 +16,8 @@ const CinematicGradeShader = {
   uniforms: {
     tDiffuse: { value: null },
     uVignette: { value: 0.24 },
-    uSaturation: { value: 1.05 },
-    uContrast: { value: 1.04 },
+    uSaturation: { value: 1.06 },
+    uContrast: { value: 1.08 },
     uTime: { value: 0.0 },
   },
   vertexShader: /* glsl */ `
@@ -44,8 +44,8 @@ const CinematicGradeShader = {
       col = (col - 0.5) * uContrast + 0.5;
 
       // Subtle photorealistic Split-Toning: cool shadowed stone recesses + natural warm highlights (no over-brightening)
-      vec3 shadowTint = vec3(0.95, 0.98, 1.03);
-      vec3 highlightTint = vec3(1.015, 0.995, 0.96);
+      vec3 shadowTint = vec3(0.94, 0.97, 1.04);
+      vec3 highlightTint = vec3(1.04, 1.0, 0.92);
       col *= mix(shadowTint, highlightTint, smoothstep(0.18, 0.80, luma));
 
       // Ultra-subtle organic 35mm film grain (breaks sky banding without noise)
