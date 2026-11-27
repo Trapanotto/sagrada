@@ -178,8 +178,8 @@ export class SagradaScene {
     uHazeColor: { value: new THREE.Color('#f0dec4') },
     uHazeStrength: { value: 0.22 },
   };
-  private readonly hazeDayCol = new THREE.Color('#d8be9a');
-  private readonly hazeNightCol = new THREE.Color('#141d32');
+  private readonly hazeDayCol = new THREE.Color('#e6b680');
+  private readonly hazeNightCol = new THREE.Color('#131b30');
   private readonly nightWindowCol = new THREE.Color('#ffbd69');
 
   private eixampleNightMats: THREE.MeshStandardMaterial[] = [];
@@ -602,7 +602,7 @@ export class SagradaScene {
           float rippleSheen = smoothstep(0.45, 0.95, (w1 + w2) * 0.5 + 0.5) * 0.18 + max(0.0, ringWave) * 0.22;
           vec3 col = deepCol + vec3(0.55, 0.78, 0.88) * rippleSheen * (1.0 - uNightFactor * 0.6);
           col = mix(col, vec3(0.92, 0.97, 1.0), clamp(foamRing, 0.0, 0.85));
-          col += uSunColor * spec * 1.9;
+          col += uSunColor * spec * 2.4;
 
           float alpha = clamp(0.36 * (1.0 - fresnel * 0.65) + foamRing * 0.55 + spec * 0.65, 0.14, 0.85);
           gl_FragColor = vec4(col, alpha);
@@ -1176,11 +1176,11 @@ export class SagradaScene {
     this.waterUniforms.uNightFactor.value = this.lighting.nightFactor;
     this.windUniform.value += dt;
 
-    // Restrained warm golden haze in the 45-60m vaults by day, subtle indigo at night (zero allocations!)
+    // Warm golden atmospheric haze in the 45-60m vaults by day, deep indigo at night (zero allocations!)
     this.hazeUniforms.uHazeColor.value
       .copy(this.hazeDayCol)
       .lerp(this.hazeNightCol, this.lighting.nightFactor * 0.88);
-    this.hazeUniforms.uHazeStrength.value = THREE.MathUtils.lerp(0.14, 0.09, this.lighting.nightFactor);
+    this.hazeUniforms.uHazeStrength.value = THREE.MathUtils.lerp(0.18, 0.11, this.lighting.nightFactor);
 
     camera.updateMatrixWorld();
     this.projScreenMat.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);

@@ -144,7 +144,7 @@ export class CandleFlames {
           float d = length(vUv - 0.5) * 2.0;
           float glow = pow(clamp(1.0 - d, 0.0, 1.0), 2.8);
           vec3 col = mix(vec3(1.0, 0.52, 0.12), vec3(1.0, 0.90, 0.60), glow);
-          gl_FragColor = vec4(col * 0.65 * vFlicker, glow * 0.36);
+          gl_FragColor = vec4(col * 0.82 * vFlicker, glow * 0.46);
         }
       `,
     });

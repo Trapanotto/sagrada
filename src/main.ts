@@ -158,9 +158,9 @@ async function bootstrap(): Promise<void> {
   renderer.shadowMap.autoUpdate = false; // Cached sun shadows: only re-rendered when sun moves or scene loads!
   renderer.shadowMap.type = quality.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   renderer.localClippingEnabled = false; // Enabled lazily ONLY when user inspects historical construction timelapse!
-  // Blender 4/5 cinema standard: realistic physical exposure (0.74 outdoors -> auto-adapts gently indoors!)
-  renderer.toneMapping = THREE.AgXToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  // Filmic ACES S-curve for warm sunlit stone, deep shadows & glowing stained glass at 0 ms cost!
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.84;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.25, 1100);
@@ -551,7 +551,7 @@ async function bootstrap(): Promise<void> {
 
   photoResetBtn.addEventListener('click', () => {
     photoFov.value = '62';
-    photoExposure.value = '1.00';
+    photoExposure.value = '0.86';
     photoFocus.value = '26';
     photoAperture.value = '0';
     updatePhotoCameraSettings();
@@ -592,7 +592,7 @@ async function bootstrap(): Promise<void> {
       post.setDof(false);
       camera.fov = 62;
       camera.updateProjectionMatrix();
-      renderer.toneMappingExposure = 1.0;
+      renderer.toneMappingExposure = 0.84;
       restoreNormalHud();
     }
   };
@@ -743,7 +743,7 @@ async function bootstrap(): Promise<void> {
   timeChipBtns.forEach((btn) => {
     btn.addEventListener('click', () => applyTime(parseFloat(btn.dataset.time!)));
   });
-  applyTime(9.5);
+  applyTime(18.08);
 
   // Weather Atmosphere Controls (Klar / Nebel / Regen)
   const weatherBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.weather-btn[data-weather]'));
@@ -1008,14 +1008,14 @@ async function bootstrap(): Promise<void> {
     // Smooth cinematic indoor/outdoor eye & lighting transition (~0.5s glide, ZERO sudden snap at doorway!)
     smoothIndoorFactor = THREE.MathUtils.lerp(smoothIndoorFactor, targetIndoor, Math.min(1, dt * 2.8));
     const indoorFactor = smoothIndoorFactor;
-    // Physical camera Auto-Eye-Adaptation: stops down in bright Barcelona sun (0.73), opens subtly indoors (0.86) & crypt (0.95)!
+    // Physical camera Auto-Eye-Adaptation: warm outdoor exposure (0.84), rich nave glow indoors (0.95), intimate crypt (0.82)
     if (!photoMode) {
       const targetExp =
         isEyeUnderground(camera.position.x, camera.position.y, camera.position.z)
-          ? 1.1
+          ? 0.96
           : THREE.MathUtils.lerp(
-              THREE.MathUtils.lerp(1.0, 0.92, sagrada.lighting.nightFactor),
-              1.18,
+              THREE.MathUtils.lerp(0.84, 0.92, sagrada.lighting.nightFactor),
+              0.95,
               indoorFactor
             );
       renderer.toneMappingExposure = THREE.MathUtils.lerp(

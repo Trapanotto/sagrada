@@ -73,7 +73,7 @@ export class StainedGlassCarpets {
             float endFade = smoothstep(0.0, 0.08, vUv.y) * smoothstep(1.0, 0.92, vUv.y);
             float mask = bayMask * crossMask * endFade;
 
-            vec3 col = pow(glass, vec3(1.15)) * mix(vec3(1.0), uTint, 0.28);
+            vec3 col = pow(glass, vec3(1.22)) * mix(vec3(1.0), uTint, 0.34);
             gl_FragColor = vec4(col * uIntensity * mask, mask * uIntensity);
           }
         `,
@@ -102,12 +102,12 @@ export class StainedGlassCarpets {
 
     this.eastMesh.position.x = reachOffset;
     this.eastMesh.scale.x = THREE.MathUtils.lerp(1.28, 0.72, elev);
-    this.eastUniforms.uIntensity.value = eastSunHit * 0.36;
+    this.eastUniforms.uIntensity.value = eastSunHit * 0.54;
     this.eastMesh.visible = eastSunHit > 0.025;
 
     this.westMesh.position.x = -reachOffset;
     this.westMesh.scale.x = THREE.MathUtils.lerp(1.28, 0.72, elev);
-    this.westUniforms.uIntensity.value = westSunHit * 0.44;
+    this.westUniforms.uIntensity.value = westSunHit * 0.66;
     this.westMesh.visible = westSunHit > 0.025;
   }
 }
