@@ -195,6 +195,8 @@ export class WeatherSystem {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
+      // Additive, no depth write: order-independent, so one double-sided pass (see LightingSystem beams)
+      forceSinglePass: true,
       uniforms: {
         uOpacity: { value: 0.0 },
       },

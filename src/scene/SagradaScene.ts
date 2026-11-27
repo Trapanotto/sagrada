@@ -9,7 +9,7 @@ import { LightingSystem } from './LightingSystem';
 import { GeometryOverlay } from './GeometryOverlay';
 import { FlockingBirds } from './FlockingBirds';
 import { FountainParticles } from './FountainParticles';
-import { optimizeWithAutoInstancing } from './AutoInstancer';
+import { optimizeWithAutoInstancing, InstanceCuller } from './AutoInstancer';
 import { ConstructionTimeline } from './ConstructionTimeline';
 import { CandleFlames } from './CandleFlames';
 import { StainedGlassCarpets } from './StainedGlassCarpets';
@@ -202,6 +202,15 @@ export class SagradaScene {
   private reflDirty = true;
   private reflStationaryPeriod = 8;
   private reflHalfRate = false;
+  /** Pond covers < ~2 % of the screen (aerial / far views): moving refreshes at the stationary rate. */
+  private reflSmallOnScreen = false;
+  private readonly reflCorner = new THREE.Vector3();
+  /** Fine detail left out of the (160–256 px) pond reflection on tiers with reflectorLite; built lazily. */
+  private reflLiteBuilt = false;
+  private readonly reflLite = getBootQuality().reflectorHideDetail;
+  // Per-instance culling of the auto-instanced props (see InstanceCuller in AutoInstancer.ts)
+  private instanceCuller: InstanceCuller | null = null;
+  private readonly probeHiddenObjs: THREE.Object3D[] = [];
 
   constructor(private renderer: THREE.WebGLRenderer) {
     const quality = getBootQuality();
@@ -304,8 +313,21 @@ export class SagradaScene {
       savedExt[i] = this.exteriorShellRoots[i].visible;
       this.exteriorShellRoots[i].visible = true;
     }
+    // The probe sits in the nave: the city, plaza, crypt, tower stairs / upper towers, birds, fountain and
+    // weather are invisible from there (or only as a blur through the 92 % opaque glass), but the six cube
+    // faces drew all of them (~3 M triangles / ~600 draw calls per capture on low). Hide them for the capture.
+    const probeHidden = this.probeHiddenObjs;
+    probeHidden.length = 0;
+    probeHidden.push(this.birds.group, this.fountain.points, this.weather.group, this.lighting.particles.points);
+    if (this.eixampleRoot) probeHidden.push(this.eixampleRoot);
+    if (this.plazaLifeRoot) probeHidden.push(this.plazaLifeRoot);
+    probeHidden.push(...this.cryptMeshes, ...this.internalStairMeshes, ...this.highTowerMeshes);
+    const probeSaved = probeHidden.map((o) => o.visible);
+    for (const o of probeHidden) o.visible = false;
+    this.instanceCuller?.showAll();
 
     this.interiorCubeCam.update(this.renderer, this.scene);
+    for (let i = 0; i < probeHidden.length; i++) probeHidden[i].visible = probeSaved[i];
     const nextEnv = this.interiorPmrem.fromCubemap(this.interiorProbeRT.texture);
 
     for (const mat of this.interiorReflectiveMats) {
@@ -392,6 +414,80 @@ export class SagradaScene {
     return tex;
   }
 
+  /**
+   * Low / medium (reflectorHideDetail): sculpture leaves, gold / trencadís accents and pinnacle "pearls" are
+   * 1–4 px features in the 160–256 px pond reflection under the ripple overlay. Leaving them out of the
+   * reflection pass removes ~65k of its ~240k triangles (the sacristy domes stay: they read clearly in the
+   * reflection). Runs once, after all modules are loaded.
+   */
+  private buildReflectorLiteList(): void {
+    this.reflLiteBuilt = true;
+    if (!this.reflLite) return;
+    const detail = [
+      'Facade_Nativity_Sculpture_Leaves',
+      'Facade_GloryAndRoofs_Sculpture_Leaves',
+      'Facade_Passion_BonesAndRoots_Leaves',
+      'Facade_Passion_Sculpture_Leaves',
+      'Facade_GoldAccents',
+      'Facade_Doves',
+      'Towers_GoldAccents',
+      'Towers_GoldAccents_SanctusLettering',
+      'Instanced_Towers_GoldAccents_Mitre_0',
+      'Instanced_Towers_TrencadisPinnacles_Pearls_0',
+      'Instanced_Towers_TrencadisPinnacles_Mitre_0',
+      'Towers_EvangelistSculptures',
+      'Cloister_Gold',
+      'Sacristy_Trencadis',
+    ];
+    for (const name of detail) {
+      const obj = this.scene.getObjectByName(name);
+      if (obj && !this.reflectorHiddenObjs.includes(obj)) this.reflectorHiddenObjs.push(obj);
+    }
+  }
+
+  /** Per-instance frustum culling of the auto-instanced props (built on the first update after loading). */
+  private updateInstanceCulling(): void {
+    if (!this.instanceCuller) {
+      if (this.exteriorShellRoots.length === 0) return; // modules not attached yet
+      const roots = this.scene.children.filter((o) => o.name.startsWith('Module_'));
+      this.instanceCuller = new InstanceCuller(roots);
+      // Stained-glass windows are flat double-sided transparent panes: three draws such materials twice
+      // (back faces, then front faces) and flips material.side + needsUpdate around each draw, which
+      // re-resolves their shader program twice per frame. For a flat pane only one side faces the camera,
+      // so a single double-sided pass draws the same pixels with half the draw calls and no re-resolve.
+      for (const root of roots) {
+        root.traverse((o) => {
+          const m = (o as THREE.Mesh).material;
+          if (!m || Array.isArray(m) || !m.transparent || m.side !== THREE.DoubleSide) return;
+          if (m.name.includes('StainedGlass')) m.forceSinglePass = true;
+        });
+      }
+    }
+    // A pending sun-shadow update renders every caster: give it the full instance sets
+    if (this.renderer.shadowMap.needsUpdate) this.instanceCuller.showAll();
+    else this.instanceCuller.update(this.frustum, this.pondReflector.visible ? POND.waterY : null);
+  }
+
+  /** Rough screen fraction covered by the pond (bounding box of its projected corners, NDC area / 4). */
+  private pondScreenFraction(camera: THREE.Camera): number {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const b = this.pondBox;
+    const v = this.reflCorner;
+    for (let i = 0; i < 8; i++) {
+      v.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z);
+      v.applyMatrix4(camera.matrixWorldInverse);
+      if (v.z > -0.5) return 1; // a corner at / behind the camera plane: treat as large
+      v.applyMatrix4((camera as THREE.PerspectiveCamera).projectionMatrix);
+      minX = Math.min(minX, v.x);
+      maxX = Math.max(maxX, v.x);
+      minY = Math.min(minY, v.y);
+      maxY = Math.max(maxY, v.y);
+    }
+    const w = Math.min(maxX, 1) - Math.max(minX, -1);
+    const h = Math.min(maxY, 1) - Math.max(minY, -1);
+    return w > 0 && h > 0 ? (w * h) / 4 : 0;
+  }
+
   private buildReflectivePond(multisample: number): void {
     const pondGeo = new THREE.PlaneGeometry(POND.width, POND.depth);
     const reflector = new Reflector(pondGeo, {
@@ -416,10 +512,13 @@ export class SagradaScene {
         this.reflDirty ||
         timeChanged ||
         this.timeline.isHistorical ||
-        (camMoved ? (!this.reflHalfRate || (this.reflFrameCounter & 1) === 0) : this.reflFrameCounter % stationaryPeriod === 0);
+        (camMoved && !this.reflSmallOnScreen
+          ? !this.reflHalfRate || (this.reflFrameCounter & 1) === 0
+          : this.reflFrameCounter % stationaryPeriod === 0);
 
       if (!shouldRender) return;
 
+      if (!this.reflLiteBuilt) this.buildReflectorLiteList();
       this.reflDirty = false;
       this.lastReflCamPos.copy(camera.position);
       this.lastReflCamQuat.copy(camera.quaternion);
@@ -652,6 +751,15 @@ export class SagradaScene {
       report((glbDlFrac * 0.55 + texFrac * 0.45) * 0.64, assetsStatus);
     };
 
+    const quality = getBootQuality();
+    if (quality.maxTextureSize <= 512) {
+      // Low tier: the asset pipeline writes 512 px PBR maps and 1024 px lightmaps next to the full-size
+      // ones (blender/common.py write_low_variant): ~2.5 MB less to download, decode and upload
+      loadingManager.setURLModifier((url) =>
+        url.replace('/textures/pbr/', '/textures/pbr_low/').replace('/textures/lightmaps/', '/textures/lightmaps_low/')
+      );
+    }
+
     const dracoLoader = new DRACOLoader(loadingManager);
     dracoLoader.setDecoderPath('./draco/');
     dracoLoader.setWorkerLimit(Math.min(4, navigator.hardwareConcurrency || 2));
@@ -661,7 +769,6 @@ export class SagradaScene {
     const texLoader = new THREE.TextureLoader(loadingManager);
 
     const eixampleNightTex = this.createEixampleNightWindowTexture();
-    const quality = getBootQuality();
     const maxAniso = Math.min(quality.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
     const lightmapCache = new Map<string, THREE.Texture>();
     // Share identical MeshStandardMaterials across all 7 GLBs (dramatically cuts GPU textures & shader compiles!)
@@ -979,43 +1086,85 @@ export class SagradaScene {
       for (const { gltf } of loadedGltfs) scaled += downscaleTextures(gltf.scene, quality.maxTextureSize);
       if (scaled > 0) console.info(`[Quality] ${scaled} textures downscaled to <= ${quality.maxTextureSize}px`);
     }
+    performance.mark('sagrada:load:assembled');
 
-    // ── STAGE 3 (76% -> 88%): Build 3D BVH collision index & finish HDRI PMREM IBL ──
-    report(0.78, () => t('load.collision'));
-    await nextFrame();
-    const bvhStats = await collision.buildBVH();
-    console.info(`[Collision] 3D BVH ready: ${bvhStats.triangles.toLocaleString()} tris across ${bvhStats.meshes} meshes in ${bvhStats.buildMs} ms`);
+    // ── STAGE 3 (76% -> 88%): finish HDRI PMREM IBL ──
+    // (the collision BVH is built right after the first frame, before the player can move: see main.ts)
     report(0.84, () => t('load.environment'));
     await nextFrame();
     await hdriPromise;
+    performance.mark('sagrada:load:hdri');
 
-    // ── STAGE 4 (88% -> 98%): Pre-compile ALL WebGL shaders, shadow map & interior reflection probe ──
     report(0.88, () => t('load.shaders'));
-    await nextFrame();
-    const prewarmObjs: Array<[THREE.Object3D, boolean]> = [
-      [this.candles.group, this.candles.group.visible],
-      [this.glassCarpets.group, this.glassCarpets.group.visible],
-      [this.lighting.particles.points, this.lighting.particles.points.visible],
-      ...this.internalStairMeshes.map((o): [THREE.Object3D, boolean] => [o, o.visible]),
-    ];
-    for (const [obj] of prewarmObjs) obj.visible = true;
-    await this.renderer.compileAsync(this.scene, camera);
-    for (const [obj, wasVis] of prewarmObjs) obj.visible = wasVis;
+  }
 
-    report(0.94, () => t('load.shadows'));
+  /**
+   * Shader + GPU warm-up behind the loading card (call after loadAllModules and the render pipeline).
+   * Compiles exactly the program variants the first frames use, all at once so the driver can compile
+   * them in parallel (KHR_parallel_shader_compile): the "linear" variant used for every off-screen pass
+   * (pond reflector, interior probe and, on tiers with a composer, the main view) and the tone-mapped
+   * canvas variant only when the main view renders straight to the canvas. Synchronous first-use
+   * compiles in the probe / reflector renders used to cost ~5 s on desktop.
+   * The interior reflection probe is not captured here (the visitor starts outside): see
+   * captureDeferredProbe(), run in idle time after the first frame or on entering the basilica.
+   */
+  public async warmUp(
+    camera: THREE.PerspectiveCamera,
+    collision: CollisionSystem,
+    mainViewOffscreen: boolean,
+    renderFrame: () => void,
+    onProgress: (fraction: number, status: LoadStatus) => void
+  ): Promise<void> {
+    onProgress(0.9, () => t('load.shaders'));
     await nextFrame();
-    this.lighting.requestShadowUpdate(true);
-    this.captureInteriorReflectionProbe();
-
-    // Warm up the live camera view (uploads all visible GPU textures & renders pond reflector + shadow map ONCE!)
-    report(0.97, () => t('load.firstFrame'));
-    await nextFrame();
+    // Start-view visibility first (zone culling, sky, particles): lights and visible set as in frame 1
     this.update(0.016, camera, collision.getIndoorFactor(camera.position));
-    this.renderer.render(this.scene, camera);
-    await nextFrame();
-    this.renderer.render(this.scene, camera);
+    // compile() visits every mesh regardless of visibility; only lights are gathered from visible objects
+    const linearTarget = this.interiorProbeRT;
+    const prevTarget = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(linearTarget);
+    const compiling: Promise<unknown>[] = [this.renderer.compileAsync(this.scene, camera)];
+    this.renderer.setRenderTarget(prevTarget);
+    if (!mainViewOffscreen) compiling.push(this.renderer.compileAsync(this.scene, camera));
+    performance.mark('sagrada:load:compile-issued');
+    // While the driver compiles in its own threads, upload every material texture (the main thread
+    // would otherwise idle here and pay the uploads inside the first frame / on entering the basilica)
+    this.uploadAllTextures();
+    performance.mark('sagrada:load:textures-uploaded');
+    await Promise.all(compiling);
+    performance.mark('sagrada:load:compiled');
 
-    report(1.0, () => t('load.ready'));
+    onProgress(0.96, () => t('load.firstFrame'));
+    await nextFrame();
+    // First real frame (shadow map, pond reflector, texture uploads) behind the loading card
+    this.lighting.requestShadowUpdate(true);
+    this.interiorProbeDirty = true;
+    this.update(0.016, camera, collision.getIndoorFactor(camera.position));
+    // (still compiles the few shadow-depth / post-pass programs synchronously: ~3 on low, ~18 on ultra)
+    renderFrame();
+    performance.mark('sagrada:load:render1');
+    onProgress(1.0, () => t('load.ready'));
+  }
+
+  private uploadAllTextures(): void {
+    const seen = new Set<THREE.Texture>();
+    this.scene.traverse((obj) => {
+      const m = (obj as THREE.Mesh).material;
+      if (!m) return;
+      for (const mat of Array.isArray(m) ? m : [m]) {
+        const std = mat as THREE.MeshStandardMaterial;
+        for (const tex of [std.map, std.normalMap, std.roughnessMap, std.metalnessMap, std.emissiveMap, std.aoMap, std.lightMap, std.alphaMap]) {
+          if (!tex || seen.has(tex) || !tex.image) continue;
+          seen.add(tex);
+          this.renderer.initTexture(tex);
+        }
+      }
+    });
+  }
+
+  /** Captures the interior reflection probe if it is still pending (idle time after the first frame). */
+  public captureDeferredProbe(): void {
+    if (this.interiorProbeDirty) this.captureInteriorReflectionProbe();
   }
 
   public update(dt: number, camera: THREE.PerspectiveCamera, indoorFactor: number): void {
@@ -1048,6 +1197,7 @@ export class SagradaScene {
     }
     this.pondReflector.visible = pondVisible;
     this.reflectorActive = pondVisible;
+    this.reflSmallOnScreen = pondVisible && this.pondScreenFraction(camera) < 0.02;
 
     const distBasilica = Math.hypot(cameraPos.x - BASILICA_XZ.x, cameraPos.z - BASILICA_XZ.z);
     const distApse = Math.hypot(cameraPos.x - APSE_XZ.x, cameraPos.z - APSE_XZ.z);
@@ -1114,6 +1264,7 @@ export class SagradaScene {
     }
 
     this.lighting.update(dt, cameraPos, indoorFactor);
+    this.updateInstanceCulling();
 
     // Update GPU candle flames, stained-glass floor carpets, weather (rain/mist/incense/streetlamp cones)
     this.candles.group.visible = indoorFactor > 0.1 || cameraPos.y < 10.0;

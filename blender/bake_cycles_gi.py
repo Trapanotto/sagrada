@@ -27,7 +27,7 @@ import bpy
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
-from common import MODEL_DIR, TEX_DIR, export_glb
+from common import MODEL_DIR, TEX_DIR, export_glb, write_low_variant
 from layout import BAKE_LIGHTS
 
 LM_DIR = os.path.join(TEX_DIR, "lightmaps")
@@ -38,6 +38,7 @@ os.makedirs(LM_DIR, exist_ok=True)
 
 BAKE_SAMPLES = 1024
 WEBP_QUALITY = 90
+LOW_LIGHTMAP_MAX = 1024
 DETAIL_AREA_M2 = 6.0      # connected UV islands smaller than this are 'detail' (tracery, ribs, pads)
 MARGIN_PX = 4
 
@@ -330,6 +331,8 @@ def encode_and_save(arr: np.ndarray, scale: float, out_filename: str) -> str:
     except TypeError:
         img.save()
     bpy.data.images.remove(img)
+    # Low tier (phones): 1024 px copy in lightmaps_low/ (GI is smooth; quarter of the VRAM and bytes)
+    write_low_variant(out_path, LM_DIR + "_low", LOW_LIGHTMAP_MAX, quality=WEBP_QUALITY)
     print(f"[Cycles GI] Wrote {out_filename} ({os.path.getsize(out_path) / 1024:.0f} kB)")
     return out_path
 

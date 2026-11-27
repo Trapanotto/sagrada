@@ -61,6 +61,9 @@ const CinematicGradeShader = {
   `,
 };
 
+/** Drawing-buffer pixels up to which GTAO reads the main pass depth instead of its own G-buffer pass. */
+const GTAO_REUSE_DEPTH_MAX_PIXELS = 2.6e6;
+
 export interface PostStackConfig {
   bloom: boolean;
   colorGrade: boolean;
@@ -89,11 +92,15 @@ export class PostProcessingStack {
   ) {
     this.width = width;
     this.height = height;
+    this.pixelRatio = pixelRatio;
 
-    // HalfFloat HDR target with its own MSAA (independent of the canvas context's antialias flag)
+    // HalfFloat HDR target with its own MSAA (independent of the canvas context's antialias flag).
+    // Its depth is kept as a texture so GTAO can read the main view's depth instead of rendering the
+    // whole scene a second time into its own normal/depth G-buffer (composer clones it per buffer).
     const rt = new THREE.WebGLRenderTarget(width, height, {
       type: THREE.HalfFloatType,
       samples: msaaSamples,
+      depthTexture: new THREE.DepthTexture(width, height),
     });
     this.composer = new EffectComposer(renderer, rt);
     this.composer.setPixelRatio(pixelRatio);
@@ -139,9 +146,61 @@ export class PostProcessingStack {
       rings: 2,
       samples: 8,
     });
+    const gtaoRender = gtao.render.bind(gtao);
+    gtao.render = (renderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
+      if (this.gtaoReuseDepth) {
+        // The composer swaps its two targets: point GTAO at the depth of the one the RenderPass drew into
+        const depth = readBuffer.depthTexture;
+        if (depth && gtao.gtaoMaterial.uniforms.tDepth.value !== depth) {
+          gtao.gtaoMaterial.uniforms.tDepth.value = depth;
+          gtao.pdMaterial.uniforms.tDepth.value = depth;
+        }
+      }
+      gtaoRender(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    };
     // Insert directly after the RenderPass (index 1), before bloom
     this.composer.insertPass(gtao, 1);
     this.gtaoPass = gtao;
+    this.gtaoReuseDepth = null;
+    this.updateGtaoMode();
+  }
+
+  /**
+   * GTAO G-buffer source, chosen by drawing-buffer size:
+   * - up to ~2.6 MP (1080p-class): read the depth the RenderPass already wrote (normals reconstructed
+   *   from depth in the GTAO shader). Saves GTAO's own full second scene render (~85 draw calls / ~350k
+   *   triangles and two scene traversals per frame on ultra: ~0.5 ms CPU, GPU-neutral at 1080p) and drops
+   *   the dark halos the override-material G-buffer drew around the cross / star sprites and the glass shaft.
+   * - above: three's own half-resolution normal/depth pass. At 4K the 4x-MSAA depth resolve plus
+   *   full-resolution depth sampling cost ~0.5–1 ms more GPU than re-rendering the scene at half size.
+   * Switching recompiles the two GTAO materials once per mode (cached afterwards); it only happens on a
+   * resize or a pixel-ratio change.
+   */
+  private gtaoReuseDepth: boolean | null = null;
+  private pixelRatio = 1;
+
+  private updateGtaoMode(): void {
+    const g = this.gtaoPass;
+    if (!g) return;
+    const pixels = this.width * this.height * this.pixelRatio * this.pixelRatio;
+    const reuse = pixels <= GTAO_REUSE_DEPTH_MAX_PIXELS && this.composer.readBuffer.depthTexture !== null;
+    if (reuse === this.gtaoReuseDepth) return;
+    this.gtaoReuseDepth = reuse;
+    // GTAOPass keeps its G-buffer state in fields three's typings mark internal
+    const internal = g as unknown as { _renderGBuffer: boolean; normalRenderTarget: THREE.WebGLRenderTarget };
+    const own = internal.normalRenderTarget;
+    internal._renderGBuffer = !reuse;
+    const depth = reuse ? this.composer.readBuffer.depthTexture : own.depthTexture;
+    const normal = reuse ? null : own.texture;
+    for (const m of [g.gtaoMaterial, g.pdMaterial]) {
+      m.defines.NORMAL_VECTOR_TYPE = reuse ? 0 : 1;
+      m.uniforms.tDepth.value = depth;
+      m.uniforms.tNormal.value = normal;
+      m.needsUpdate = true;
+    }
+    // The composer targets only need their MSAA depth resolved when GTAO reads it
+    this.composer.renderTarget1.resolveDepthBuffer = reuse;
+    this.composer.renderTarget2.resolveDepthBuffer = reuse;
   }
 
   public configure(cfg: PostStackConfig): void {
@@ -170,6 +229,7 @@ export class PostProcessingStack {
   }
 
   public setPixelRatio(pr: number): void {
+    this.pixelRatio = pr;
     this.composer.setPixelRatio(pr);
     this.setSize(this.width, this.height);
   }
@@ -182,6 +242,7 @@ export class PostProcessingStack {
     const halfH = Math.max(1, Math.floor(height * 0.5));
     this.gtaoPass?.setSize(halfW, halfH);
     this.bloomPass.setSize(halfW, halfH);
+    this.updateGtaoMode();
   }
 
   public render(dt: number): void {

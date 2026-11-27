@@ -10,7 +10,8 @@
     "build:assets": "blender --background --python blender/build_all.py",
     "layout": "python blender/layout.py",
     "layout:check": "python blender/layout.py --check",
-    "bench": "node scripts/bench.mjs"
+    "bench": "node scripts/bench.mjs",
+    "bench:compare": "node scripts/bench-compare.mjs"
   },
   "dependencies": {
     "three": "^0.175.0",

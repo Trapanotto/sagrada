@@ -1306,6 +1306,51 @@ def save_candle_anchors(group_name: str, anchors_blender: list[tuple[float, floa
     print(f"[Candles] Saved {len(anchors_blender)} exact wick anchors for '{group_name}' -> public/data/candles.json")
 
 
+# Low quality tier (phones): the runtime swaps textures/<dir>/ for textures/<dir>_low/ (see
+# SagradaScene.loadAllModules), so it downloads, decodes and uploads small maps instead of downscaling
+# the full-size ones on the CPU. PBR maps are capped at 512 px (the low tier's maxTextureSize).
+LOW_TEX_MAX = 512
+LOW_WEBP_QUALITY = 80
+
+
+def write_low_variant(src_path: str, dst_dir: str, max_size: int, quality: int = LOW_WEBP_QUALITY) -> None:
+    """Writes <dst_dir>/<basename> = src_path downscaled to <= max_size (Lanczos), or a byte copy if already small."""
+    import OpenImageIO as oiio  # bundled with Blender
+
+    os.makedirs(dst_dir, exist_ok=True)
+    dst_path = os.path.join(dst_dir, os.path.basename(src_path))
+    buf = oiio.ImageBuf(src_path)
+    spec = buf.spec()
+    w, h = spec.width, spec.height
+    if max(w, h) <= max_size:
+        with open(src_path, "rb") as f:
+            blob = f.read()
+    else:
+        s = max_size / max(w, h)
+        nw, nh = max(1, round(w * s)), max(1, round(h * s))
+        small = oiio.ImageBufAlgo.resize(buf, filtername="lanczos3", roi=oiio.ROI(0, nw, 0, nh, 0, 1, 0, spec.nchannels))
+        small.specmod().attribute("compression", f"webp:{quality}")
+        tmp_path = dst_path + ".tmp.webp"
+        if not small.write(tmp_path):
+            raise RuntimeError(f"low variant write failed: {small.geterror()}")
+        with open(tmp_path, "rb") as f:
+            blob = f.read()
+        os.remove(tmp_path)
+    if os.path.exists(dst_path):
+        with open(dst_path, "rb") as f:
+            if f.read() == blob:
+                return
+    for attempt in range(8):
+        try:
+            with open(dst_path, "wb") as out_f:
+                out_f.write(blob)
+            return
+        except OSError:
+            if attempt == 7:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+
+
 def _externalize_glb_textures(filepath: str) -> None:
     """Replace embedded WebP image bufferViews inside a GLB with shared ../textures/pbr/<name>.webp URIs."""
     with open(filepath, "rb") as f:
@@ -1364,6 +1409,7 @@ def _externalize_glb_textures(filepath: str) -> None:
                     if attempt == 7:
                         raise
                     time.sleep(0.5 * (attempt + 1))
+        write_low_variant(out_path, PBR_TEX_DIR + "_low", LOW_TEX_MAX)
 
         removed_bvs.add(bv_idx)
         im.pop("bufferView", None)
@@ -1458,7 +1504,11 @@ def export_glb(filepath: str) -> None:
         export_image_format="WEBP",
         export_image_quality=80,
         export_draco_mesh_compression_enable=True,
-        export_draco_mesh_compression_level=6,
+        # Level 10 + 8-bit normals and vertex colours (the baked AO is an 8-bit value anyway):
+        # ~12 % smaller GLBs than level 6 / 10-bit / 10-bit. Positions (14 bit) and UVs (12 bit) unchanged.
+        export_draco_mesh_compression_level=10,
+        export_draco_normal_quantization=8,
+        export_draco_color_quantization=8,
         export_apply=True,
         export_yup=True,
     )

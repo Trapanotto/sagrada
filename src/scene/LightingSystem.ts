@@ -438,6 +438,9 @@ export class LightingSystem {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
+        // Additive + no depth write is order-independent: one double-sided pass equals three's default
+        // back-then-front pair (half the draws, no per-frame program re-resolve from the side flip)
+        forceSinglePass: true,
         uniforms: {
           uOpacity: { value: 0.08 },
         },

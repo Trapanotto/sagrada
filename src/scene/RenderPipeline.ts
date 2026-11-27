@@ -45,6 +45,13 @@ export class RenderPipeline {
     this.settings = settings;
     this.pixelRatio = settings.maxPixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
+    // Opaque objects front-to-back before grouping by material: three's default sorts by material first,
+    // so in the nave the vaults / walls behind the columns were shaded and then overdrawn. Depth-first
+    // order lets early-z reject them (-24 % GPU time in the nave at 4K on an RTX 3080; neutral outside
+    // and on tile-based mobile GPUs). Draw results are unchanged (depth test decides, not order).
+    this.renderer.setOpaqueSort(
+      (a, b) => a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder || a.z - b.z || a.id - b.id
+    );
   }
 
   public get currentPixelRatio(): number {

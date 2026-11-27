@@ -6,6 +6,10 @@
  *   views=<comma list of teleport ids>  default: the 12 walk/fly teleports below
  *   frames=<n> measured frames per view (default 240), warmup=<n> unmeasured frames (default 60)
  *   w=<px> h=<px>  canvas size (drawing buffer at pixel ratio 1)
+ *   seed=<int>  seed for Math.random in bench mode (default 1, see ./seed.ts)
+ *   hold=1  pause after each view until window.__benchResume is set (the runner takes a screenshot)
+ *
+ * While held, window.__benchPaused is the id of the view just measured.
  *
  * Result: window.__benchResult and console.log('BENCH_RESULT ' + JSON). Errors: window.__benchError.
  */
@@ -17,6 +21,7 @@ import { teleportRuntime } from '../data/layout';
 import { TELEPORT_PRESETS } from '../data/teleports';
 import { getQuality, benchTierFromUrl } from '../utils/quality';
 import { frameHooks } from './hooks';
+import { installBenchSeed } from './seed';
 
 const DEFAULT_VIEWS = [
   'placa-gaudi',
@@ -81,6 +86,8 @@ function pushConsoleError(text: string): void {
 export function benchBoot(): void {
   if (bootDone) return;
   bootDone = true;
+  // Before any scene code runs: particles and birds are created later, in the bootstrap body
+  installBenchSeed();
   try {
     performance.setResourceTimingBufferSize(2000);
   } catch {
@@ -146,6 +153,7 @@ export function startBench(deps: BenchDeps): void {
     const warmup = intParam(params, 'warmup', 60);
     const w = intParam(params, 'w', 0);
     const h = intParam(params, 'h', 0);
+    const hold = params.get('hold') === '1';
     if (frames < 1) throw new Error('bench: frames must be >= 1');
 
     const gl = renderer.getContext() as WebGL2RenderingContext;
@@ -172,7 +180,7 @@ export function startBench(deps: BenchDeps): void {
     let firstFrameMarked = false;
     const results: ViewResult[] = [];
 
-    type Phase = 'warmup' | 'measure' | 'drain';
+    type Phase = 'warmup' | 'measure' | 'drain' | 'paused';
     let vi = -1;
     let phase: Phase = 'warmup';
     let count = 0;
@@ -308,8 +316,26 @@ export function startBench(deps: BenchDeps): void {
       }
     };
 
+    const advance = (): void => {
+      if (vi + 1 < viewIds.length) {
+        beginView();
+      } else {
+        finalize();
+      }
+    };
+
     frameHooks.afterFrame = () => {
       if (finished) return;
+      if (phase === 'paused') {
+        // Held for the runner's screenshot; the scene keeps rendering the same camera meanwhile
+        const w2 = window as unknown as Record<string, unknown>;
+        if (w2.__benchResume === true) {
+          w2.__benchResume = false;
+          w2.__benchPaused = null;
+          advance();
+        }
+        return;
+      }
       const cpu = performance.now() - frameT0;
       if (!firstFrameMarked) {
         firstFrameMarked = true;
@@ -354,11 +380,13 @@ export function startBench(deps: BenchDeps): void {
       resolveTimers();
       count++;
       if (pending.length === 0 || count >= DRAIN_MAX_FRAMES) {
+        const doneId = view.id;
         finishView(); // also deletes any timer queries still unresolved (their GPU time stays null)
-        if (vi + 1 < viewIds.length) {
-          beginView();
+        if (hold) {
+          phase = 'paused';
+          (window as unknown as Record<string, unknown>).__benchPaused = doneId;
         } else {
-          finalize();
+          advance();
         }
       }
     };

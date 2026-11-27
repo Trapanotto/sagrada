@@ -87,6 +87,8 @@ export interface QualitySettings {
   reflectorHalfRate: boolean;
   /** Leave trees & street furniture out of the pond reflection (vertex cost on weak GPUs). boot */
   reflectorLite: boolean;
+  /** Leave fine sculpture leaves, gold / trencadís accents and pinnacle pearls out of the pond reflection. boot */
+  reflectorHideDetail: boolean;
   /** Minimum time between sun-shadow re-renders while time of day / timeline animates. live */
   shadowUpdateIntervalMs: number;
 }
@@ -125,6 +127,7 @@ const PRESETS: Record<QualityTier, TierPreset> = {
     reflectorStationaryPeriod: 12,
     reflectorHalfRate: true,
     reflectorLite: true,
+    reflectorHideDetail: true,
     shadowUpdateIntervalMs: 250,
   },
   medium: {
@@ -153,8 +156,10 @@ const PRESETS: Record<QualityTier, TierPreset> = {
     softShadows: true,
     reflectorRes: 256,
     reflectorStationaryPeriod: 8,
-    reflectorHalfRate: false,
+    // 30 Hz reflection refresh while moving (under the ripple overlay) instead of every frame
+    reflectorHalfRate: true,
     reflectorLite: false,
+    reflectorHideDetail: true,
     shadowUpdateIntervalMs: 120,
   },
   high: {
@@ -185,6 +190,7 @@ const PRESETS: Record<QualityTier, TierPreset> = {
     reflectorStationaryPeriod: 6,
     reflectorHalfRate: false,
     reflectorLite: false,
+    reflectorHideDetail: false,
     shadowUpdateIntervalMs: 85,
   },
   ultra: {
@@ -215,6 +221,7 @@ const PRESETS: Record<QualityTier, TierPreset> = {
     reflectorStationaryPeriod: 4,
     reflectorHalfRate: false,
     reflectorLite: false,
+    reflectorHideDetail: false,
     shadowUpdateIntervalMs: 85,
   },
 };
@@ -232,17 +239,55 @@ export interface DeviceSignals {
 
 let cachedSignals: DeviceSignals | null = null;
 
+/** Canvas the app renders into (index.html). The GPU probe creates the app's real context on it. */
+const SCENE_CANVAS_ID = 'scene-canvas';
+
+/**
+ * MSAA of the WebGL context created by the GPU probe on the scene canvas, or null when the probe used a
+ * throw-away canvas. A canvas has exactly one context: THREE.WebGLRenderer gets this one back, so the tier's
+ * `antialias` has to follow it (see initQuality).
+ */
+let probeContextAntialias: boolean | null = null;
+
+/** MSAA the context should get, decided before the GPU is known: a forced / saved tier's preset, else a guess. */
+function contextAntialiasGuess(): boolean {
+  const forced = benchTierFromUrl() ?? loadQualityPreference();
+  if (forced !== 'auto') return PRESETS[forced].antialias;
+  // Auto: phones / tablets start on low (no MSAA), desktops on medium and up (MSAA)
+  const iPadOS = /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
+  return !(isMobileDevice() || iPadOS);
+}
+
 function readGpuString(): { webgl2: boolean; gpu: string } {
   try {
-    const c = document.createElement('canvas');
-    const gl = c.getContext('webgl2', { failIfMajorPerformanceCaveat: false });
+    // Probe on the scene canvas with exactly the attributes THREE.WebGLRenderer requests: the renderer then
+    // reuses this context instead of the browser creating (and initialising) a second one. A separate
+    // probe context cost ~0.55 s before the first download on the startup trace.
+    const scene = document.getElementById(SCENE_CANVAS_ID);
+    const reuse = scene instanceof HTMLCanvasElement;
+    const c = reuse ? scene : document.createElement('canvas');
+    const antialias = contextAntialiasGuess();
+    const gl = c.getContext('webgl2', {
+      alpha: false,
+      depth: true,
+      stencil: false,
+      antialias,
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: false,
+      powerPreference: 'high-performance',
+      failIfMajorPerformanceCaveat: false,
+    });
     if (!gl) return { webgl2: false, gpu: '' };
     let gpu = '';
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     if (ext) gpu = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) ?? '');
     if (!gpu) gpu = String(gl.getParameter(gl.RENDERER) ?? '');
-    // Free the probe context right away (browsers cap the number of live contexts)
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    if (reuse) {
+      probeContextAntialias = Boolean(gl.getContextAttributes()?.antialias);
+    } else {
+      // Free a throw-away probe context right away (browsers cap the number of live contexts)
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
     return { webgl2: true, gpu };
   } catch {
     return { webgl2: false, gpu: '' };
@@ -288,6 +333,15 @@ export function detectQualityTier(s: DeviceSignals): QualityTier {
 
   // Desktop / laptop
   if ((mem !== null && mem <= 2) || cores <= 2) return 'low';
+  // Phone / tablet GPUs behind a desktop user agent (Chromebooks, Android "desktop site", ARM laptops
+  // other than Apple / Snapdragon X): the cheap tier
+  if (/mali|adreno\D*[1-6]\d\d\b|powervr|videocore|vivante|tegra/.test(gpu)) return 'low';
+  // Old / entry Intel iGPUs (HD Graphics 4xx–6xx, UHD Graphics 6xx: ~0.2–0.4 TFLOPS, shared memory
+  // bandwidth) and AMD's smallest APUs: the cheap tier. Newer Xe-LP (Iris Xe, UHD 7xx), Iris Plus / Pro and
+  // the Radeon 680M/780M class stay on medium below.
+  const weakIntegrated =
+    /intel.*\bhd graphics\b|intel.*\buhd graphics\s*6\d\d\b|radeon\s*(r[2-5]\b|vega\s*[2-3]\b)/.test(gpu);
+  if (weakIntegrated) return 'low';
   const discrete =
     /nvidia|geforce|quadro|rtx|gtx|radeon\s*(rx|pro|r9|vii)|\brx\s*\d{3,4}|intel.*\barc\b|apple m\d\s*(pro|max|ultra)/.test(gpu);
   const appleSilicon = /apple m\d|apple gpu/.test(gpu);
@@ -353,6 +407,12 @@ export function initQuality(): QualitySettings {
   activePreference = benchTierFromUrl() ?? loadQualityPreference();
   const tier = activePreference === 'auto' ? autoTier : activePreference;
   activeSettings = buildQualitySettings(tier);
+  // The probe already created the app's context: its MSAA is fixed. Follow it instead of the preset, so
+  // a tier whose preset differs from the guess (auto: weak desktop iGPU -> low keeps MSAA, strong phone
+  // -> medium runs without) does not pull in the post-processing composer just to emulate MSAA.
+  if (probeContextAntialias !== null && activeSettings.antialias !== probeContextAntialias) {
+    activeSettings = { ...activeSettings, antialias: probeContextAntialias };
+  }
   bootSettings = activeSettings;
   return activeSettings;
 }

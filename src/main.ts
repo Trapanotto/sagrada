@@ -114,6 +114,7 @@ function yawToCompass(yaw: number): string {
 
 async function bootstrap(): Promise<void> {
   // Bench mode (?bench) is the only path that loads the bench module; normal loads skip it entirely
+  performance.mark('sagrada:boot:start');
   const bench = new URLSearchParams(window.location.search).has('bench')
     ? await import('./perf/bench')
     : null;
@@ -127,6 +128,7 @@ async function bootstrap(): Promise<void> {
 
   // Central quality tier (auto-detected or user override) drives every rendering-cost decision
   const quality = initQuality();
+  performance.mark('sagrada:boot:quality');
   const signals = getDeviceSignals();
   if (!signals.webgl2) {
     showFatalError('error.noWebgl2Title', 'error.noWebgl2Body');
@@ -149,6 +151,7 @@ async function bootstrap(): Promise<void> {
     showFatalError('error.rendererFailTitle', 'error.rendererFailBody');
     return;
   }
+  performance.mark('sagrada:boot:renderer');
   renderer.setPixelRatio(quality.maxPixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
@@ -162,6 +165,7 @@ async function bootstrap(): Promise<void> {
 
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.25, 1100);
   const sagrada = new SagradaScene(renderer);
+  performance.mark('sagrada:boot:scene');
   const contextAA = Boolean(renderer.getContext().getContextAttributes()?.antialias);
   const post = new RenderPipeline(renderer, sagrada.scene, camera, quality, contextAA);
   const collision = new CollisionSystem();
@@ -178,6 +182,7 @@ async function bootstrap(): Promise<void> {
       console.warn('[Audio] module failed to load:', err);
       return null;
     });
+  performance.mark('sagrada:boot:post');
   const player = new PlayerController(camera, canvas, collision);
   const touchControls = new TouchControls(canvas);
   touchControls.onLookDelta = (dx, dy) => player.applyLookDelta(dx, dy);
@@ -898,21 +903,21 @@ async function bootstrap(): Promise<void> {
     false
   );
 
+  performance.mark('sagrada:boot:ui');
   // Honest complete load: all GLBs + shared PBR WebP textures + 3D BVH + HDRIs + shader & GPU warm-up!
   try {
-    await Promise.all([
-      sagrada.loadAllModules(camera, collision, (fraction, status) => {
-        const pct = Math.min(100, Math.max(0, Math.round(fraction * 100)));
-        loadingFill.style.width = `${pct}%`;
-        loadingPct = pct;
-        loadingStatusMsg = status;
-        renderLoadingText();
-      }),
-      post.prepare(),
-      audioReady,
-    ]);
-    // Warm the post stack (if this tier uses one) behind the loading screen: compiles its shaders now
-    post.render(0.016);
+    const onLoadProgress = (fraction: number, status: LoadStatus) => {
+      const pct = Math.min(100, Math.max(0, Math.round(fraction * 100)));
+      loadingFill.style.width = `${pct}%`;
+      loadingPct = pct;
+      loadingStatusMsg = status;
+      renderLoadingText();
+    };
+    await Promise.all([sagrada.loadAllModules(camera, collision, onLoadProgress), post.prepare(), audioReady]);
+    performance.mark('sagrada:load:modules-done');
+    // Shader warm-up for exactly the variants this tier draws, then one real frame (shadow map,
+    // pond reflector, texture uploads, post stack) behind the loading card
+    await sagrada.warmUp(camera, collision, post.usingComposer, () => post.render(0.016), onLoadProgress);
     performance.mark('sagrada:assets-ready');
   } catch (err) {
     console.error(err);
@@ -1123,13 +1128,32 @@ async function bootstrap(): Promise<void> {
   if (!document.hidden) startLoop();
   else loopStarted = true; // visibilitychange will start it
 
+  // Collision BVH right after the first frame instead of before it: the visitor cannot move before
+  // the start gate is passed, and player.enabled waits for this promise (no walking without floors).
+  // (rAF registered after startLoop's: the first live frame is drawn, then the BVH task runs)
+  const collisionReady = new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)))
+    .then(() => collision.buildBVH())
+    .then((s) => {
+      performance.mark('sagrada:bvh-ready');
+      console.info(`[Collision] 3D BVH ready: ${s.triangles.toLocaleString()} tris across ${s.meshes} meshes in ${s.buildMs} ms`);
+    });
+  collisionReady.catch((err) => {
+    console.error(err);
+    showFatalError('error.genericFailTitle', 'error.genericFailBody');
+  });
+
   // Remaining time-of-day HDRIs only after the first frame (they are not needed to show the scene)
   const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
     .requestIdleCallback;
-  if (idle) idle(() => sagrada.lighting.loadDeferredHdris(), { timeout: 3000 });
-  else setTimeout(() => sagrada.lighting.loadDeferredHdris(), 1000);
+  const deferredWork = () => {
+    // Interior reflection probe (not needed for the outdoor start view; update() also captures it on entering)
+    sagrada.captureDeferredProbe();
+    sagrada.lighting.loadDeferredHdris();
+  };
+  if (idle) idle(deferredWork, { timeout: 3000 });
+  else setTimeout(deferredWork, 1000);
 
-  // Scene is 100% loaded, BVH built, shaders compiled & live-rendering -> reveal "Basílica betreten" gate!
+  // Scene is 100% loaded, shaders compiled & live-rendering -> reveal "Basílica betreten" gate!
   loadingScreen.classList.add('loading-ready');
   loadingProgressWrap.classList.add('hidden');
   loadingEnterWrap.classList.remove('hidden');
@@ -1138,7 +1162,9 @@ async function bootstrap(): Promise<void> {
   const enterBasilica = () => {
     if (entered) return;
     entered = true;
-    player.enabled = true;
+    void collisionReady.then(() => {
+      player.enabled = true;
+    });
     btnEnterBasilica.blur();
 
     // Unlock spatial Web Audio cleanly on the user gesture (module was loaded with the scene)
@@ -1180,7 +1206,9 @@ async function bootstrap(): Promise<void> {
       post,
       onReady: () => {
         entered = true;
-        player.enabled = true;
+        void collisionReady.then(() => {
+          player.enabled = true;
+        });
         loadingScreen.classList.add('hidden');
       },
     });
