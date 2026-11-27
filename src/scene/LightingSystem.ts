@@ -33,7 +33,7 @@ export class LightingSystem {
   public readonly particles: AtmosphericParticles;
   public readonly sunDir = new THREE.Vector3(0.6, 0.7, 0.2);
 
-  public timeHours = 18.08;
+  public timeHours = 9.5;
   public dayFactor = 1.0;
   public nightFactor = 0.0;
   public eastSunHit = 0.0;
@@ -78,21 +78,19 @@ export class LightingSystem {
   private crossHaloSprite: THREE.Sprite;
 
   // Pre-allocated scratch Colors & perf object for zero-GC per-frame updates
-  private readonly cTopDay = new THREE.Color('#124898');
-  private readonly cTopGolden = new THREE.Color('#1b356e');
-  private readonly cTopNight = new THREE.Color('#050a18');
-  private readonly cHorDay = new THREE.Color('#d2dfee');
-  private readonly cHorGolden = new THREE.Color('#f5924c');
-  private readonly cHorNight = new THREE.Color('#0e1930');
-  private readonly cSunDay = new THREE.Color('#ffefd0');
-  private readonly cSunGolden = new THREE.Color('#ff8730');
-  private readonly cHemiSkyDay = new THREE.Color('#9ec3f0');
-  private readonly cHemiGroundDay = new THREE.Color('#8a6646');
+  private readonly cTopDay = new THREE.Color('#1654a8');
+  private readonly cTopGolden = new THREE.Color('#254684');
+  private readonly cTopNight = new THREE.Color('#040814');
+  private readonly cHorDay = new THREE.Color('#b6d6f4');
+  private readonly cHorGolden = new THREE.Color('#f49a52');
+  private readonly cHorNight = new THREE.Color('#0e172c');
+  private readonly cSunDay = new THREE.Color('#fff5df');
+  private readonly cSunGolden = new THREE.Color('#ff9642');
+  private readonly cHemiSkyDay = new THREE.Color('#c8ddf5');
+  private readonly cHemiGroundDay = new THREE.Color('#685543');
   private readonly cHemiGroundNight = new THREE.Color('#090d16');
-  private readonly cCryptAccent = new THREE.Color('#ff8828');
+  private readonly cCryptAccent = new THREE.Color('#ff9d3b');
   private readonly cNightFlood = new THREE.Color('#ffcb85');
-  private readonly cNaveDay = new THREE.Color('#ffe2bc');
-  private readonly cNaveWarm = new THREE.Color('#ffb86c');
   private readonly scratchTop = new THREE.Color();
   private readonly scratchHor = new THREE.Color();
   private readonly scratchSun = new THREE.Color();
@@ -276,7 +274,7 @@ export class LightingSystem {
       texWest.wrapS = THREE.ClampToEdgeWrapping;
       texWest.wrapT = THREE.ClampToEdgeWrapping;
 
-      const es = new THREE.SpotLight('#d4fff6', 240, 68, Math.PI * 0.44, 0.50, 1.05);
+      const es = new THREE.SpotLight('#ffffff', 240, 68, Math.PI * 0.44, 0.50, 1.05);
       es.map = texEast;
       es.position.set(...planToWorld(...LIGHTS.eastProjector.pos));
       es.target.position.set(...planToWorld(...LIGHTS.eastProjector.target!));
@@ -284,7 +282,7 @@ export class LightingSystem {
       this.scene.add(es.target);
       this.eastProjector = es;
 
-      const ws = new THREE.SpotLight('#ffd2a6', 240, 68, Math.PI * 0.44, 0.50, 1.05);
+      const ws = new THREE.SpotLight('#ffffff', 240, 68, Math.PI * 0.44, 0.50, 1.05);
       ws.map = texWest;
       ws.position.set(...planToWorld(...LIGHTS.westProjector.pos));
       ws.target.position.set(...planToWorld(...LIGHTS.westProjector.target!));
@@ -294,16 +292,16 @@ export class LightingSystem {
     }
 
     // 4. Consolidated High-Efficiency Interior Fill Lights (enhanced by real Cycles GI Lightmaps!)
-    this.naveFillLight = new THREE.PointLight('#ffb86c', 34, 82, 1.25);
+    this.naveFillLight = new THREE.PointLight('#ffe0b0', 56, 82, 1.2);
     this.naveFillLight.position.set(...planToWorld(...LIGHTS.naveFill.pos));
     this.scene.add(this.naveFillLight);
 
-    this.apseFillLight = new THREE.PointLight('#ffbc6b', 38, 58, 1.3);
+    this.apseFillLight = new THREE.PointLight('#e4d8c8', 54, 58, 1.25);
     this.apseFillLight.position.set(...planToWorld(...LIGHTS.apseFill.pos));
     this.scene.add(this.apseFillLight);
 
     // 5. Dual-Purpose Zone Accent Light (Crypt Candlelight below Y=2.2m <-> Exterior Night Architectural Flood outside!)
-    this.zoneAccentLight = new THREE.PointLight('#ff8828', 0, 26, 1.55);
+    this.zoneAccentLight = new THREE.PointLight('#ff9d3b', 0, 34, 1.3);
     this.zoneAccentLight.position.set(...CRYPT_ACCENT);
     this.scene.add(this.zoneAccentLight);
 
@@ -359,7 +357,7 @@ export class LightingSystem {
     const solarProgress = (this.timeHours - 6.5) / 13.0;
     const elevation = Math.sin(solarProgress * Math.PI) * 1.12;
     const dayFactor = THREE.MathUtils.smoothstep(elevation, -0.08, 0.28);
-    const goldenFactor = Math.exp(-Math.pow((elevation - 0.24) / 0.34, 2)) * dayFactor;
+    const goldenFactor = Math.exp(-Math.pow((elevation - 0.14) / 0.24, 2)) * dayFactor;
     const nightFactor = 1.0 - THREE.MathUtils.smoothstep(elevation, -0.15, 0.12);
     return nightFactor > 0.55 ? 'night' : goldenFactor > 0.42 ? 'sunset' : 'day';
   }
@@ -550,7 +548,7 @@ export class LightingSystem {
     this.sunLight.target.position.set(0, 12, 0);
 
     const dayFactor = THREE.MathUtils.smoothstep(elevation, -0.08, 0.28);
-    const goldenFactor = Math.exp(-Math.pow((elevation - 0.24) / 0.34, 2)) * dayFactor;
+    const goldenFactor = Math.exp(-Math.pow((elevation - 0.14) / 0.24, 2)) * dayFactor;
     const nightFactor = 1.0 - THREE.MathUtils.smoothstep(elevation, -0.15, 0.12);
 
     this.dayFactor = dayFactor;
@@ -592,8 +590,8 @@ export class LightingSystem {
     }
 
     this.sunLight.color.copy(this.scratchSun);
-    // Crisp, sculptural warm Mediterranean sunlight outdoors
-    this.baseSunInt = dayFactor * THREE.MathUtils.lerp(2.25, 1.85, goldenFactor * 0.65);
+    // Physically grounded solar intensity: strong crisp shadows without blowing out sandstone highlights!
+    this.baseSunInt = dayFactor * THREE.MathUtils.lerp(3.3, 2.5, goldenFactor * 0.75);
     this.sunLight.intensity = this.baseSunInt;
     // castShadow stays permanently on: toggling it at dusk changed NUM_DIR_LIGHT_SHADOWS and forced every
     // lit material to recompile (visible hitch on the time slider / during the tour). At night the sun's
@@ -603,11 +601,11 @@ export class LightingSystem {
     }
 
     // Avoid double-stacking HemisphereLight + HDRI PMREM IBL!
-    // Cool Mediterranean sky fill vs warm sandstone ground bounce for rich sculptural contrast
+    // HDRI provides realistic sky ambient; HemiLight adds only subtle warm ground-bounce fill.
     this.hemiLight.color.copy(this.scratchTop).lerp(this.cHemiSkyDay, 0.35 * dayFactor);
     this.hemiLight.groundColor.copy(this.cHemiGroundDay).lerp(this.cHemiGroundNight, nightFactor * 0.92);
-    this.baseHemiInt = THREE.MathUtils.lerp(0.06, 0.28, dayFactor);
-    this.baseEnvInt = THREE.MathUtils.lerp(0.08, 0.38, dayFactor) * THREE.MathUtils.lerp(1.0, 0.84, goldenFactor);
+    this.baseHemiInt = THREE.MathUtils.lerp(0.05, 0.4, dayFactor);
+    this.baseEnvInt = THREE.MathUtils.lerp(0.08, 0.8, dayFactor) * THREE.MathUtils.lerp(1.0, 0.85, goldenFactor);
     this.hemiLight.intensity = this.baseHemiInt;
     this.scene.environmentIntensity = this.baseEnvInt;
 
@@ -620,7 +618,7 @@ export class LightingSystem {
     const targetClimbY = THREE.MathUtils.lerp(7.5, 1.2, THREE.MathUtils.clamp(elevation / 0.65, 0, 1));
     const beamTilt = THREE.MathUtils.lerp(1.12, 0.48, THREE.MathUtils.clamp(elevation / 1.0, 0, 1));
 
-    this.baseEastInt = 16 * dayFactor + eastSunHit * 380;
+    this.baseEastInt = 12 * dayFactor + eastSunHit * 295;
     if (this.eastProjector) {
       this.eastProjector.intensity = this.baseEastInt;
       this.eastProjector.target.position.set(PROJ_X - reach, targetClimbY, PROJ_Z);
@@ -630,31 +628,29 @@ export class LightingSystem {
       this.lastBeamTilt = beamTilt;
       this.layoutBeams(beamTilt);
     }
-    (this.eastBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.24;
+    (this.eastBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = eastSunHit * 0.14;
 
-    this.baseWestInt = 16 * dayFactor + westSunHit * 420;
+    this.baseWestInt = 12 * dayFactor + westSunHit * 325;
     if (this.westProjector) {
       this.westProjector.intensity = this.baseWestInt;
       this.westProjector.target.position.set(-PROJ_X + reach, targetClimbY, PROJ_Z);
       this.westProjector.target.updateMatrixWorld();
     }
-    (this.westBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.26;
+    (this.westBeamMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = westSunHit * 0.16;
 
-    this.baseApseInt = 16 * dayFactor + 24;
+    this.baseApseInt = 18 * dayFactor + 36;
     this.apseFillLight.intensity = this.baseApseInt;
 
-    const ambientGlass = 0.28 * dayFactor + 0.14;
-    this.baseEastGlassGlow = ambientGlass + eastSunHit * 2.5;
-    this.baseWestGlassGlow = ambientGlass + westSunHit * 2.7;
-    this.baseApseGlassGlow = 0.70 + dayFactor * 1.25;
+    const ambientGlass = 0.24 * dayFactor + 0.12;
+    this.baseEastGlassGlow = ambientGlass + eastSunHit * 2.1;
+    this.baseWestGlassGlow = ambientGlass + westSunHit * 2.3;
+    this.baseApseGlassGlow = 0.55 + dayFactor * 1.05;
     for (const m of this.trackedMats.east) m.emissiveIntensity = this.baseEastGlassGlow;
     for (const m of this.trackedMats.west) m.emissiveIntensity = this.baseWestGlassGlow;
     for (const m of this.trackedMats.apse) m.emissiveIntensity = this.baseApseGlassGlow;
 
-    // Sacred Chiaroscuro interior fill: let stained glass & sanctuary candles define column flutes & vaults!
-    const warmMood = THREE.MathUtils.clamp(goldenFactor * 0.85 + Math.max(0, -eastWest) * 0.45 + nightFactor * 0.9, 0, 1);
-    this.naveFillLight.color.copy(this.cNaveDay).lerp(this.cNaveWarm, warmMood);
-    this.baseInteriorInt = THREE.MathUtils.lerp(30, 42, nightFactor);
+    // Realistic stone basilica Chiaroscuro: restrained ambient fill so stained glass & candles define the space!
+    this.baseInteriorInt = THREE.MathUtils.lerp(46, 62, nightFactor);
     this.naveFillLight.intensity = this.baseInteriorInt;
 
     this.baseNightInt = nightFactor * 195;
@@ -746,12 +742,11 @@ export class LightingSystem {
       m.color.setScalar(diffuseShade);
     }
 
-    // Physical outdoor-sky & direct-sunlight occlusion inside stone cathedral walls:
-    const outdoorSkyLeak = underground ? 0.06 : THREE.MathUtils.lerp(1.0, 0.22, indoorFactor);
-    const sunIndoorMul = underground ? 0.0 : THREE.MathUtils.lerp(1.0, 0.16, indoorFactor);
+    // Physical outdoor-sky occlusion inside stone cathedral walls:
+    const outdoorSkyLeak = THREE.MathUtils.lerp(1.0, 0.28, indoorFactor);
     this.hemiLight.intensity = this.baseHemiInt * outdoorSkyLeak;
-    this.scene.environmentIntensity = this.baseEnvInt * (underground ? 0.08 : THREE.MathUtils.lerp(1.0, 0.28, indoorFactor));
-    this.sunLight.intensity = this.baseSunInt * sunIndoorMul;
+    this.scene.environmentIntensity = this.baseEnvInt * THREE.MathUtils.lerp(1.0, 0.36, indoorFactor);
+    this.sunLight.intensity = this.baseSunInt * (underground ? 0.05 : 1.0);
 
     const intMul = nearInterior && !inCryptRange ? 1.0 : 0.0;
     if (this.eastProjector) this.eastProjector.intensity = this.baseEastInt * intMul;
@@ -768,7 +763,7 @@ export class LightingSystem {
       this.zoneAccentLight.color.copy(this.cCryptAccent);
       this.zoneAccentLight.position.set(...CRYPT_ACCENT);
       this.zoneAccentLight.distance = 34;
-      this.zoneAccentLight.decay = 1.35;
+      this.zoneAccentLight.decay = 1.3;
     } else if (needNightFloods) {
       this.zoneAccentLight.color.copy(this.cNightFlood);
       this.zoneAccentLight.position.set(48, 28, 16);
@@ -812,7 +807,7 @@ export class LightingSystem {
 
     if (isNearCryptLevel(cameraPos.x, cameraPos.y, cameraPos.z)) {
       const flicker = Math.sin(this.clockSec * 5.2) * 0.9 + Math.sin(this.clockSec * 11.7) * 0.45;
-      this.zoneAccentLight.intensity = 38 + flicker;
+      this.zoneAccentLight.intensity = 34 + flicker;
     }
   }
 }
