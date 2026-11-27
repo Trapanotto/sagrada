@@ -962,6 +962,7 @@ export class SagradaScene {
 
     await Promise.all([lightmapsPromise, candlesPromise]);
     dracoLoader.dispose();
+    performance.mark('sagrada:glb-loaded'); // bench startup milestone (all core GLBs + lightmaps)
 
     // ── STAGE 2 (64% -> 76%): Attach modules, deduplicate materials & optimize GPU instancing ──
     report(0.66, () => t('load.assemble'));

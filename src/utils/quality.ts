@@ -334,11 +334,23 @@ let autoTier: QualityTier = 'high';
 let bootSettings: QualitySettings | null = null;
 let activeSettings: QualitySettings | null = null;
 
+/** Bench mode only (`?bench&tier=<tier>`): forced tier for this page load, never persisted. */
+export function benchTierFromUrl(): QualityTier | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('bench')) return null;
+    const v = params.get('tier');
+    return v && (QUALITY_TIERS as readonly string[]).includes(v) ? (v as QualityTier) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Call once at startup (before creating the renderer). */
 export function initQuality(): QualitySettings {
   const signals = getDeviceSignals();
   autoTier = detectQualityTier(signals);
-  activePreference = loadQualityPreference();
+  activePreference = benchTierFromUrl() ?? loadQualityPreference();
   const tier = activePreference === 'auto' ? autoTier : activePreference;
   activeSettings = buildQualitySettings(tier);
   bootSettings = activeSettings;

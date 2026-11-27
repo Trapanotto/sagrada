@@ -14,6 +14,7 @@ import { GALLERY_BOXES, isEyeUnderground } from './scene/walkModel';
 import { Minimap } from './ui/Minimap';
 import { HotspotPanel } from './ui/HotspotPanel';
 import { PerfMonitor } from './ui/PerfMonitor';
+import { frameHooks } from './perf/hooks';
 import { prefersTouchUI, triggerHaptic } from './utils/device';
 import {
   t,
@@ -112,6 +113,11 @@ function yawToCompass(yaw: number): string {
 }
 
 async function bootstrap(): Promise<void> {
+  // Bench mode (?bench) is the only path that loads the bench module; normal loads skip it entirely
+  const bench = new URLSearchParams(window.location.search).has('bench')
+    ? await import('./perf/bench')
+    : null;
+  bench?.benchBoot();
   const canvas = document.getElementById('scene-canvas') as HTMLCanvasElement;
 
   // Apply the active language to all static markup and wire the DE | EN switches first,
@@ -907,6 +913,7 @@ async function bootstrap(): Promise<void> {
     ]);
     // Warm the post stack (if this tier uses one) behind the loading screen: compiles its shaders now
     post.render(0.016);
+    performance.mark('sagrada:assets-ready');
   } catch (err) {
     console.error(err);
     if (err instanceof AssetLoadError) {
@@ -961,7 +968,12 @@ async function bootstrap(): Promise<void> {
   const animate = (now: number) => {
     if (!running) return;
     rafId = requestAnimationFrame(animate);
-    const rawDt = (now - lastTime) / 1000;
+    frameHooks.beforeFrame?.(); // bench mode only (see src/perf/hooks.ts)
+    renderFrame(now);
+    frameHooks.afterFrame?.();
+  };
+  const renderFrame = (now: number) => {
+    const rawDt = frameHooks.fixedDt ?? (now - lastTime) / 1000;
     const dt = Math.min(rawDt, 0.1);
     lastTime = now;
 
@@ -1157,6 +1169,22 @@ async function bootstrap(): Promise<void> {
       enterBasilica();
     }
   });
+
+  // Bench mode: same effect as the start gate (scene visible, player live) minus pointer lock and audio
+  if (bench) {
+    bench.startBench({
+      renderer,
+      camera,
+      sagrada,
+      player,
+      post,
+      onReady: () => {
+        entered = true;
+        player.enabled = true;
+        loadingScreen.classList.add('hidden');
+      },
+    });
+  }
 }
 
 void bootstrap();
